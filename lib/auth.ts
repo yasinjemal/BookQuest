@@ -1,0 +1,90 @@
+import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  createSession,
+  createUser,
+  deleteSession,
+  getSessionUser,
+  getUserByEmail,
+  type UserRow,
+} from "./db";
+
+export const SESSION_COOKIE = "bq_session";
+
+export function hashPassword(password: string): string {
+  return bcrypt.hashSync(password, 10);
+}
+
+export function verifyPassword(password: string, hash: string): boolean {
+  return bcrypt.compareSync(password, hash);
+}
+
+export function register(
+  email: string,
+  name: string,
+  password: string
+): { user?: UserRow; error?: string } {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
+  if (name.trim().length < 2) return { error: "Enter your name." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (getUserByEmail(email)) return { error: "An account with this email already exists." };
+  return { user: createUser(email, name, hashPassword(password)) };
+}
+
+export function login(
+  email: string,
+  password: string
+): { user?: UserRow; error?: string } {
+  const user = getUserByEmail(email);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return { error: "Wrong email or password." };
+  }
+  return { user };
+}
+
+export function startSession(res: NextResponse, userId: number) {
+  const token = crypto.randomBytes(32).toString("hex");
+  createSession(userId, token);
+  res.cookies.set(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 30 * 24 * 3600,
+  });
+}
+
+export function endSession(req: NextRequest, res: NextResponse) {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  if (token) deleteSession(token);
+  res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
+}
+
+/** Returns the logged-in user for a route handler request, or undefined. */
+export function getUser(req: NextRequest): UserRow | undefined {
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  return token ? getSessionUser(token) : undefined;
+}
+
+/** 401 helper: returns [user, undefined] or [undefined, response]. */
+export function requireUser(
+  req: NextRequest
+): [UserRow, undefined] | [undefined, NextResponse] {
+  const user = getUser(req);
+  if (!user) {
+    return [undefined, NextResponse.json({ error: "Not signed in" }, { status: 401 })];
+  }
+  return [user, undefined];
+}
+
+/** Public view of a user (never expose password_hash). */
+export function publicUser(user: UserRow) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    credits: user.credits,
+    premium_until: user.premium_until,
+  };
+}
