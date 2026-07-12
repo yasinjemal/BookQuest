@@ -132,6 +132,9 @@ export default function CoursePathPage() {
         {/* Owner publish controls */}
         {data.course.isOwner && data.course.status === "ready" && (
           <div className="mt-3 rounded-xl bg-card border border-line px-4 py-3">
+            <Link href={`/studio/${id}`} className="block text-center rounded-lg bg-primary/10 text-primary-deep font-bold text-sm py-2 mb-3">
+              Edit in Studio
+            </Link>
             {data.course.published ? (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-teal">

@@ -19,7 +19,7 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-const ALLOWED = new Set(["pdf", "docx", "md", "txt", "markdown"]);
+const ALLOWED = new Set(["pdf", "docx", "pptx", "md", "txt", "markdown"]);
 
 export async function POST(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   const ext = file.name.toLowerCase().split(".").pop() ?? "";
   if (!ALLOWED.has(ext)) {
     return NextResponse.json(
-      { error: `Unsupported file type .${ext}. Use PDF, DOCX, MD or TXT.` },
+      { error: `Unsupported file type .${ext}. Use PDF, DOCX, PPTX, MD or TXT.` },
       { status: 400 }
     );
   }

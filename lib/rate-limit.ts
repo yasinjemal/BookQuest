@@ -101,6 +101,11 @@ export const RATE_LIMITS = {
     limit: 60,
     windowSeconds: 60 * 60,
   },
+  studioMutationUser: {
+    scope: "studio.mutation.user",
+    limit: 240,
+    windowSeconds: 60 * 60,
+  },
   outboxTelemetryUser: {
     scope: "telemetry.outbox.user",
     limit: 120,

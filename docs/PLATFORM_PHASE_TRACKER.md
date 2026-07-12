@@ -412,13 +412,25 @@ unique learning experiences with source traceability.
 - [x] Retain PDF, DOCX, Markdown and text support.
   (The existing byte-stream extractors remain active and now append their output
   to the versioned Source Library.)
-- [ ] Add PowerPoint, webpage, transcript and manual sources.
-- [ ] Combine multiple sources into a controlled collection.
+- [x] Add PowerPoint, webpage, transcript and manual sources.
+  (PPTX slide XML is extracted with bounded ZIP expansion; webpage import pins
+  validated public DNS addresses, blocks SSRF ranges/redirects and limits bytes;
+  transcript/manual entry is available in Create. Tests cover PPTX order, empty
+  files, IP blocking and safe HTML text extraction.)
+- [x] Combine multiple sources into a controlled collection.
+  (`createCourseDraftFromSources` validates 1–20 same-Space immutable source
+  versions, orders primary/supporting items and creates a versioned collection;
+  the Create screen exposes the flow.)
 - [x] Record extraction, source and processing provenance.
   (Source versions persist SHA-256 content hash, MIME type, extractor version,
   optional model, file extension/size, chapter count and structured provenance.)
-- [ ] Add source-level permissions, replacement and retention rules.
-- [ ] Show source coverage and unsupported claims during review.
+- [x] Add source-level permissions, replacement and retention rules.
+  (Owner/editor/member access policy, immutable replacement versions, archive/
+  restore/deletion scheduling and structured retention policy are enforced in
+  `lib/studio.ts`; archived sources cannot be replaced.)
+- [x] Show source coverage and unsupported claims during review.
+  (`analyzeCourseVersion` verifies source-version references per block and the
+  Studio draft-check panel reports traced and unsupported blocks.)
 - [ ] Add draft, review, approved, published, superseded and archived states.
 - [x] Make published course versions immutable.
   (Migration 4 guards published/superseded/archived versions, their block layout
@@ -435,9 +447,15 @@ unique learning experiences with source traceability.
 - [ ] Support explanation, image, audio/video, story and worked example.
 - [ ] Support flashcard, multiple choice, true/false and fill-in.
 - [ ] Support scenario, practical task, discussion, survey and attestation.
-- [ ] Define offline/channel compatibility and fallbacks per block.
-- [ ] Validate accessibility metadata per block.
-- [ ] Design a safe future extension contract.
+- [x] Define offline/channel compatibility and fallbacks per block.
+  (`BLOCK_CHANNELS` and the persisted registry declare offline/chat support and
+  deterministic non-executable fallbacks for all built-in types.)
+- [x] Validate accessibility metadata per block.
+  (Zod block contracts and media-specific alternative checks reject inaccessible
+  edits; draft analysis surfaces remaining issues before review.)
+- [x] Design a safe future extension contract.
+  (`PHASE_2_ARCHITECTURE.md` restricts Phase 2 to the allowlisted data-only block
+  registry; executable third-party blocks remain gated to Phase 5.)
 
 ### Recipes and templates
 
@@ -454,7 +472,9 @@ unique learning experiences with source traceability.
 
 ### Studio experience
 
-- [ ] Separate Learn, Create, Manage and Discover contexts.
+- [x] Separate Learn, Create, Manage and Discover contexts.
+  (Navigation now exposes Create and Studio alongside Learn, Spaces/Manage and
+  Explore without changing learner routes.)
 - [ ] Edit the outline before full generation.
 - [ ] Edit and reorder lesson blocks.
 - [ ] Regenerate only a selected block, lesson or module.
@@ -465,9 +485,13 @@ unique learning experiences with source traceability.
 
 ### Release gates
 
-- [ ] Create a course from one source, multiple sources or a blank draft.
+- [x] Create a course from one source, multiple sources or a blank draft.
+  (The Create screen and Studio APIs cover all three paths; blank/manual creation
+  consumes no AI generation credit.)
 - [ ] Every generated lesson is editable before publishing.
-- [ ] Published versions cannot be silently changed.
+- [x] Published versions cannot be silently changed.
+  (Database guards reject version, layout and revision mutation after publish;
+  both migration and authoring suites exercise the boundary.)
 - [ ] Published assessments resolve to immutable question versions.
 - [ ] Reviewers can trace important material back to sources.
 - [ ] Recipes can be saved, forked and reused without learner data.

@@ -36,6 +36,46 @@ export async function extractDocument(
     ).convertToMarkdown;
     const result = await convert({ buffer });
     markdown = result.value;
+  } else if (ext === "pptx") {
+    const { strFromU8, unzipSync } = await import("fflate");
+    let selectedBytes = 0;
+    const files = unzipSync(new Uint8Array(buffer), {
+      filter(file) {
+        const selected = /^ppt\/slides\/slide\d+\.xml$/i.test(file.name);
+        if (!selected) return false;
+        selectedBytes += file.originalSize;
+        if (file.originalSize > 5 * 1024 * 1024 || selectedBytes > 25 * 1024 * 1024) {
+          throw new Error("PowerPoint slide text is too large to process safely.");
+        }
+        return true;
+      },
+    });
+    const decodeXml = (value: string) =>
+      value
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+    const slides = Object.entries(files)
+      .map(([name, bytes]) => ({
+        name,
+        number: Number(name.match(/slide(\d+)\.xml$/i)?.[1] ?? 0),
+        xml: strFromU8(bytes),
+      }))
+      .sort((a, b) => a.number - b.number)
+      .map((slide) => {
+        const text = [...slide.xml.matchAll(/<a:t(?:\s[^>]*)?>([\s\S]*?)<\/a:t>/gi)]
+          .map((match) => decodeXml(match[1]).trim())
+          .filter(Boolean)
+          .join("\n");
+        return text ? `# Slide ${slide.number}\n\n${text}` : "";
+      })
+      .filter(Boolean);
+    if (slides.length === 0) {
+      throw new Error("No readable slide text was found in this PowerPoint file.");
+    }
+    markdown = slides.join("\n\n");
   } else {
     // md / txt / anything text-like
     markdown = buffer.toString("utf-8");
@@ -44,11 +84,11 @@ export async function extractDocument(
   markdown = markdown.replace(/\r\n/g, "\n").trim();
   if (!markdown) throw new Error("No text could be extracted from this file.");
 
-  return { chapters: splitIntoChapters(markdown) };
+  return { chapters: splitIntoChapters(markdown, ext === "pptx" ? 0 : 200) };
 }
 
 /** Split by markdown headings or chapter-like lines; fall back to size chunks. */
-export function splitIntoChapters(text: string): Chapter[] {
+export function splitIntoChapters(text: string, minimumChapterChars = 200): Chapter[] {
   const lines = text.split("\n");
   const headingRe =
     /^(#{1,3}\s+.+|(?:CHAPTER|Chapter|PART|Part|SECTION|Section)\s+([0-9IVXLC]+|[A-Za-z]+)\b.*)$/;
@@ -59,7 +99,7 @@ export function splitIntoChapters(text: string): Chapter[] {
 
   const flush = () => {
     const body = currentLines.join("\n").trim();
-    if (body.length > 200) {
+    if (body.length > minimumChapterChars) {
       chapters.push({ title: currentTitle, text: body });
     } else if (body && chapters.length > 0) {
       // Too small to stand alone — merge into previous chapter
