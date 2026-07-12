@@ -1,0 +1,213 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Pool, type PoolClient } from "pg";
+import { applyPendingMigrations, MIGRATIONS } from "../lib/migrations";
+
+// Upgrade test: prove the migration runner turns a realistic *old* production
+// database (the earliest Postgres schema, before the columns/tables later work
+// layered on) into the current schema without losing data. It owns the scratch
+// database (it resets `public`), so it is skipped unless TEST_DATABASE_URL is set:
+//   TEST_DATABASE_URL=postgres://…scratch-branch… npm test
+const TEST_DB = process.env.TEST_DATABASE_URL;
+
+const OLD_SCHEMA_SQL = readFileSync(
+  fileURLToPath(new URL("./fixtures/pre-ledger-schema.sql", import.meta.url)),
+  "utf8"
+);
+
+// A distinctive stored timestamp so the email_verified_at backfill is verifiable.
+const USER_CREATED_AT = "2026-01-02T03:04:05.000Z";
+
+describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
+  let raw: Pool;
+  let courseRunId: string;
+
+  beforeAll(async () => {
+    raw = new Pool({ connectionString: TEST_DB });
+
+    // Reset the scratch database to the old schema, then seed pre-migration rows.
+    await raw.query("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;");
+    await raw.query(OLD_SCHEMA_SQL);
+
+    await raw.query(
+      `INSERT INTO users (id, email, name, password_hash, role, created_at)
+       VALUES (1, 'legacy@example.com', 'Legacy Learner', 'hash', 'admin', $1)`,
+      [USER_CREATED_AT]
+    );
+    await raw.query(
+      `INSERT INTO courses (id, owner_id, title, source_filename, status, content_version)
+       VALUES (1, 1, 'Legacy Course', 'legacy.pdf', 'ready', 2)`
+    );
+    await raw.query(
+      `INSERT INTO modules (id, course_id, title, summary, position, status)
+       VALUES (1, 1, 'Module A', 'first', 0, 'ready'),
+              (2, 1, 'Module B', 'second', 1, 'ready')`
+    );
+    await raw.query(
+      `INSERT INTO lessons (id, module_id, title, position, cards, generator_model, prompt_version)
+       VALUES (1, 1, 'Lesson A1', 0, '[]', 'legacy-model', 'legacy-prompt'),
+              (2, 2, 'Lesson B1', 0, '[]', 'legacy-model', 'legacy-prompt')`
+    );
+    await raw.query(
+      `INSERT INTO progress (user_id, lesson_id, score, total, xp_earned)
+       VALUES (1, 1, 3, 4, 20)`
+    );
+    await raw.query("INSERT INTO enrollments (user_id, course_id) VALUES (1, 1)");
+    await raw.query(
+      `INSERT INTO concept_mastery (user_id, course_id, concept, correct, wrong, mastery)
+       VALUES (1, 1, 'legacy concept', 2, 1, 0.6)`
+    );
+
+    // Run the real migration path against the old database.
+    const client: PoolClient = await raw.connect();
+    try {
+      const applied = await applyPendingMigrations(client);
+      expect(applied).toContain(1);
+    } finally {
+      client.release();
+    }
+  });
+
+  afterAll(async () => {
+    await raw?.end();
+  });
+
+  it("records the baseline in the migration ledger", async () => {
+    const rows = (
+      await raw.query("SELECT id, name FROM schema_migrations ORDER BY id")
+    ).rows;
+    expect(rows).toEqual([{ id: 1, name: "baseline_schema" }]);
+  });
+
+  it("adds and backfills the generation-run columns", async () => {
+    const course = (
+      await raw.query(
+        `SELECT generation_run_id, generation_attempts, generation_heartbeat
+         FROM courses WHERE id = 1`
+      )
+    ).rows[0] as {
+      generation_run_id: string;
+      generation_attempts: number;
+      generation_heartbeat: string | null;
+    };
+    // The ADD COLUMN default (md5 hex) gives each existing course a run id.
+    expect(course.generation_run_id).toMatch(/^[0-9a-f]{32}$/);
+    expect(course.generation_attempts).toBe(0);
+    expect(course.generation_heartbeat).toBeNull();
+    courseRunId = course.generation_run_id;
+
+    const modules = (
+      await raw.query(
+        "SELECT generation_run_id, attempts, chapter_indexes FROM modules ORDER BY id"
+      )
+    ).rows as {
+      generation_run_id: string;
+      attempts: number;
+      chapter_indexes: string | null;
+    }[];
+    expect(modules).toHaveLength(2);
+    for (const m of modules) {
+      // Backfilled from the parent course.
+      expect(m.generation_run_id).toBe(courseRunId);
+      expect(m.attempts).toBe(0);
+      expect(m.chapter_indexes).toBeNull();
+    }
+
+    const lessons = (
+      await raw.query("SELECT generation_run_id FROM lessons ORDER BY id")
+    ).rows as { generation_run_id: string }[];
+    expect(lessons).toHaveLength(2);
+    // Backfilled course -> module -> lesson.
+    for (const l of lessons) expect(l.generation_run_id).toBe(courseRunId);
+  });
+
+  it("adds and backfills users.email_verified_at from created_at", async () => {
+    const user = (
+      await raw.query(
+        "SELECT created_at, email_verified_at FROM users WHERE id = 1"
+      )
+    ).rows[0] as { created_at: string; email_verified_at: string | null };
+    expect(user.created_at).toBe(USER_CREATED_AT);
+    expect(user.email_verified_at).toBe(USER_CREATED_AT);
+  });
+
+  it("creates the tables added after the old snapshot", async () => {
+    const present = (
+      await raw.query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+      )
+    ).rows.map((r) => (r as { table_name: string }).table_name);
+    const expected = [
+      "account_tokens",
+      "rate_limit_buckets",
+      "operational_events",
+      "learning_identities",
+      "concepts",
+      "question_versions",
+      "practice_sessions",
+      "answer_sessions",
+      "learning_events",
+      "lesson_completion_events",
+    ];
+    for (const table of expected) expect(present).toContain(table);
+  });
+
+  it("preserves every pre-existing row and value", async () => {
+    const course = (
+      await raw.query("SELECT title, content_version FROM courses WHERE id = 1")
+    ).rows[0] as { title: string; content_version: number };
+    expect(course).toEqual({ title: "Legacy Course", content_version: 2 });
+
+    const counts = (
+      await raw.query(
+        `SELECT
+           (SELECT count(*)::int FROM modules) AS modules,
+           (SELECT count(*)::int FROM lessons) AS lessons,
+           (SELECT count(*)::int FROM enrollments) AS enrollments`
+      )
+    ).rows[0] as { modules: number; lessons: number; enrollments: number };
+    expect(counts).toEqual({ modules: 2, lessons: 2, enrollments: 1 });
+
+    const progress = (
+      await raw.query(
+        "SELECT score, total, xp_earned FROM progress WHERE user_id = 1 AND lesson_id = 1"
+      )
+    ).rows[0] as { score: number; total: number; xp_earned: number };
+    expect(progress).toEqual({ score: 3, total: 4, xp_earned: 20 });
+
+    const mastery = (
+      await raw.query(
+        "SELECT mastery FROM concept_mastery WHERE user_id = 1 AND course_id = 1"
+      )
+    ).rows[0] as { mastery: number };
+    expect(mastery.mastery).toBeCloseTo(0.6);
+  });
+
+  it("installs the append-only ledger guards", async () => {
+    const triggers = (
+      await raw.query("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")
+    ).rows.map((r) => (r as { tgname: string }).tgname);
+    expect(triggers).toEqual(
+      expect.arrayContaining([
+        "learning_events_no_update",
+        "learning_events_no_delete",
+        "question_versions_no_content_update",
+        "question_versions_no_delete",
+      ])
+    );
+  });
+
+  it("is idempotent: a second run applies and changes nothing", async () => {
+    const client = await raw.connect();
+    try {
+      expect(await applyPendingMigrations(client)).toEqual([]);
+    } finally {
+      client.release();
+    }
+    const count = (
+      await raw.query("SELECT count(*)::int AS n FROM schema_migrations")
+    ).rows[0] as { n: number };
+    expect(count.n).toBe(MIGRATIONS.length);
+  });
+});

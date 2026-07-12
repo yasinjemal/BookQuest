@@ -65,11 +65,15 @@ across instances). It was a real migration to managed Postgres.
 - A single `pg.Pool` per worker (`max: 5`), reused across requests via a
   `globalThis` singleton. Neon's PgBouncer pooler (the `-pooler` host in
   `DATABASE_URL`) fans the connections out safely.
-- **Schema is created lazily and once per worker.** The first query triggers
-  `ensureSchema()`, which runs all the `CREATE TABLE IF NOT EXISTS …` DDL inside
-  a transaction guarded by `pg_advisory_xact_lock`. Concurrent cold-starts wait
-  on the lock, then see the schema already exists — no race, no duplicate-DDL
-  errors.
+- **Versioned transactional migrations, applied lazily once per worker.** The
+  first query triggers `ensureSchema()` ([`lib/pg.ts`](../lib/pg.ts)), which takes
+  a session-scoped `pg_advisory_lock`, then applies every migration in
+  [`lib/migrations.ts`](../lib/migrations.ts) that is not yet recorded in the
+  `schema_migrations` ledger. Each migration runs in its own transaction and
+  records its id in that same transaction, so a migration is either fully applied
+  and recorded or not at all. Concurrent cold-starts wait on the lock, then find
+  the migrations already recorded and skip them — no re-running DDL or backfills on
+  every boot. See [Schema migrations](#8-schema-migrations) below.
 - Helpers: `q()` (parameterized query), `one()` (first row), `many()` (all rows),
   and `tx()` (run a function inside one transaction). Each accepts an optional
   `Queryable` so a function can run on either the pool or an open transaction
@@ -173,8 +177,9 @@ still complete).
      sender on the exact domain/subdomain verified with Resend. When no key is
      configured outside production, the UI exposes local-only preview links.
    - *(optional)* `FLW_SECRET_KEY` — enables live Flutterwave billing
-3. **Redeploy.** The schema auto-creates on the first request; no migration step
-   is required.
+3. **Redeploy.** Pending migrations apply automatically on the first request (see
+   [Schema migrations](#8-schema-migrations)); no manual step is required. You can
+   also apply them ahead of traffic with `node scripts/migrate.mjs`.
 4. The **first account registered on the live site becomes the admin/owner**
    (the Neon database starts empty).
 
@@ -187,7 +192,7 @@ gitignored and the connection string is not committed anywhere.
 
 | Script | Purpose |
 |---|---|
-| `node scripts/migrate.mjs` | Applies the schema and prints table count (connectivity check). Runs the exact same `ready()` the app uses. |
+| `node scripts/migrate.mjs` | Applies any pending migrations and prints the `schema_migrations` ledger plus table count. Runs the exact same `ready()` the app uses, so it doubles as a connectivity check. |
 | `node scripts/seed-demo.mjs` | Seeds a small "Money Basics" demo course (reads `DATABASE_URL` from `.env.local`). |
 
 ---
@@ -195,15 +200,22 @@ gitignored and the connection string is not committed anywhere.
 ## 6. Tests
 
 - `npm run typecheck` — clean.
-- `npm test` (`vitest`) — passes. Pure-logic tests (`learning`, `answer-outbox`)
-  run always.
-- `tests/learning-ledger.test.ts` is a **database integration test**. It
-  `TRUNCATE`s tables, so it is **skipped unless `TEST_DATABASE_URL` is set**, to
-  avoid touching the real database. To run it, point it at a scratch database
-  (Neon branching is ideal for this):
+- `npm test` (`vitest`) — passes. Pure-logic tests (`learning`, `answer-outbox`,
+  `migrations` list invariants) run always.
+- `tests/learning-ledger.test.ts`, the `migration runner` block in
+  `tests/migrations.test.ts`, and `tests/migration-upgrade.test.ts` are **database
+  integration tests**. They touch a real database (the ledger test `TRUNCATE`s
+  tables; the upgrade test resets `public`), so they are **skipped unless
+  `TEST_DATABASE_URL` is set**, and `vitest.config.ts` runs test files serially so
+  they never race on the shared scratch database. Point at a scratch database (Neon
+  branching is ideal for this):
   ```
   TEST_DATABASE_URL=postgres://…scratch-branch… npm test
   ```
+- `tests/migration-upgrade.test.ts` is the **upgrade test**: it applies the
+  earliest Postgres schema (`tests/fixtures/pre-ledger-schema.sql`), seeds rows,
+  runs the real `applyPendingMigrations`, and asserts the baseline adds the newer
+  columns/tables, backfills provenance, and preserves existing data.
 
 ### Verified live
 
@@ -230,8 +242,13 @@ Roughly in priority order.
    uploads, generation, retries, fresh practice, and answer submission.
 
 ### Infrastructure hardening
-4. **CI with an ephemeral Neon branch.** Create a Neon branch per CI run, set it
-   as `TEST_DATABASE_URL`, and let the ledger integration test run for real.
+4. ✅ **CI runs the database integration tests — done.**
+   [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs typecheck, build
+   and `npm test` against a throwaway Postgres 16 service container (set as both
+   `DATABASE_URL` and `TEST_DATABASE_URL`), so the ledger, migration-runner and
+   upgrade tests execute for real on every push and PR. A managed-Postgres variant
+   (ephemeral Neon branch per run) can replace the service container later if you
+   want CI to exercise Neon specifically.
 5. **Pin the SSL mode.** `pg` warns that `sslmode=require` is treated as
    `verify-full` today; make it explicit (`sslmode=verify-full`) to be
    future-proof, or set it consciously.
@@ -251,3 +268,41 @@ Roughly in priority order.
 11. **Object storage for originals** — only if you decide you need to
     re-process source files (different chunking, re-extraction) rather than the
     stored chapters.
+
+---
+
+## 8. Schema migrations
+
+The schema is defined as an ordered list of **versioned, forward-only
+migrations** in [`lib/migrations.ts`](../lib/migrations.ts), applied by the runner
+in [`lib/pg.ts`](../lib/pg.ts) (`ensureSchema`). This replaced the earlier "lazy
+schema evolution", where one big idempotent DDL block re-ran on every worker cold
+start.
+
+### How it works
+
+- Each migration is `{ id, name, sql }`. Ids start at `1` and increase by `1` with
+  no gaps; `assertMigrationsWellFormed()` enforces this at import time.
+- A `schema_migrations` ledger (`id`, `name`, `applied_at`) records what a database
+  has already applied.
+- On first use, the runner takes a **session-scoped `pg_advisory_lock`**, creates
+  the ledger if needed, reads the applied ids, and applies each pending migration
+  **in its own transaction**, inserting the ledger row in that same transaction. So
+  a migration commits atomically with its record, and concurrent cold-start workers
+  serialize on the lock, then skip already-recorded migrations.
+- Migration `1` is the **baseline**: the entire schema at the time migrations were
+  introduced, kept idempotent (`CREATE TABLE IF NOT EXISTS …`, `ADD COLUMN IF NOT
+  EXISTS …`, one-time backfills). On a fresh database it builds everything; on the
+  pre-migrations production database every statement is a no-op and it is simply
+  recorded as applied — so both converge without re-running anything twice.
+
+### Adding a schema change
+
+1. **Append** a new migration with the next id (never edit or reorder a shipped
+   one — the ledger means an edit would never run on databases past that id).
+2. It is forward-only, so it may assume all earlier migrations ran; no `IF NOT
+   EXISTS` guards are needed (only the baseline is idempotent).
+3. Keep it transactional — avoid statements Postgres refuses inside a transaction
+   (e.g. `CREATE INDEX CONCURRENTLY`).
+4. Apply and verify with `node scripts/migrate.mjs`, and run the
+   `migration runner` integration test against a scratch database.

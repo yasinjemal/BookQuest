@@ -148,10 +148,17 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [x] Add abuse, unexpected-cost and production-error monitoring.
 - [x] Add email verification and password recovery.
 - [ ] Test backups and point-in-time recovery.
-- [ ] Run database integration tests in CI on a scratch database.
+- [x] Run database integration tests in CI on a scratch database.
+  (`.github/workflows/ci.yml` runs typecheck, build and `npm test` against a
+  throwaway Postgres 16 service, so the gated integration tests execute for real.)
 - [x] Add generation-run tokens to block stale worker writes.
-- [ ] Replace lazy schema evolution with versioned transactional migrations.
-- [ ] Test upgrades using a realistic pre-ledger database copy.
+- [x] Replace lazy schema evolution with versioned transactional migrations.
+  (`lib/migrations.ts` ledger + `ensureSchema` runner; tests in
+  `tests/migrations.test.ts`.)
+- [x] Test upgrades using a realistic pre-ledger database copy.
+  (`tests/migration-upgrade.test.ts` applies the earliest Postgres schema in
+  `tests/fixtures/pre-ledger-schema.sql`, seeds rows, runs the real
+  `applyPendingMigrations`, and asserts backfills, new tables and preserved data.)
 - [ ] Queue lesson completion for fully offline reconciliation.
 - [ ] Add consent, retention, export and erasure workflows.
 - [ ] Define archive, soft-delete and controlled-redaction rules.
@@ -610,6 +617,7 @@ What should not be built yet:
 | 12 Jul 2026 | Compliance is the first institutional pilot | Clear document-to-evidence buying journey | Partners reject the problem or model |
 | 12 Jul 2026 | Learning Genome waits for representative evidence | Avoid confident decisions from weak samples | Data and validation thresholds pass |
 | 12 Jul 2026 | Messaging is a channel, not another learning system | Preserves shared progress and evidence | A channel proves irreducibly different |
+| 12 Jul 2026 | Versioned forward-only migrations with an idempotent baseline | Deterministic, once-only, transactional schema changes replace per-boot lazy DDL | A change needs non-transactional DDL (e.g. `CREATE INDEX CONCURRENTLY`) |
 
 ---
 
