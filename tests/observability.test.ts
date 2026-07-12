@@ -34,6 +34,10 @@ describe("privacy-safe operational monitoring", () => {
     expect(metadata.error_fingerprint).toMatch(/^[a-f0-9]{24}$/);
     expect(JSON.stringify(metadata)).not.toContain("Private document");
     expect(JSON.stringify(metadata)).not.toContain("secret section");
+
+    const sanitized = sanitizeOperationalMetadata(metadata);
+    expect(sanitized.error_name).toBe("Error");
+    expect(sanitized.error_fingerprint).toBe(metadata.error_fingerprint);
   });
 
   it("hashes subjects and raises configurable volume alerts", () => {

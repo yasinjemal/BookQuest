@@ -14,6 +14,7 @@ export interface OperationalEventInput {
 
 const SENSITIVE_KEY =
   /(^|_)(email|password|secret|token|phone|address|ip|name)$|^(answer|response|document|content|source|prompt)(_text|_body|_raw)?$/i;
+const SAFE_ERROR_KEY = /^(error_name|error_code|error_fingerprint)$/;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 let lastCleanupAt = 0;
 
@@ -25,7 +26,7 @@ export function sanitizeOperationalMetadata(
   for (const [key, value] of Object.entries(metadata).slice(0, 16)) {
     const safeKey = key.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64);
     if (!safeKey) continue;
-    if (SENSITIVE_KEY.test(safeKey)) {
+    if (!SAFE_ERROR_KEY.test(safeKey) && SENSITIVE_KEY.test(safeKey)) {
       safe[safeKey] = "[redacted]";
     } else if (typeof value === "string") {
       safe[safeKey] = value.slice(0, 160);

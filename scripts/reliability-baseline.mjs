@@ -32,7 +32,15 @@ const { one, pool, ready } = await jiti.import(
 
 try {
   await ready();
-  const [ledger, operations, delivery, reconciliation, generation, outbox] =
+  const [
+    ledger,
+    operations,
+    delivery,
+    reconciliation,
+    generation,
+    outbox,
+    errorGroups,
+  ] =
     await Promise.all([
       learningLedgerHealth(),
       operationalHealth(),
@@ -44,6 +52,13 @@ try {
           COUNT(*) FILTER (WHERE status = 'ready')::int AS ready,
           COUNT(*) FILTER (WHERE status = 'error')::int AS failed,
           COUNT(*) FILTER (WHERE status NOT IN ('ready', 'error'))::int AS active,
+          COUNT(*) FILTER (
+            WHERE status NOT IN ('ready', 'error')
+              AND (
+                generation_heartbeat IS NULL OR
+                generation_heartbeat::timestamptz < now() - interval '3 minutes'
+              )
+          )::int AS stalled,
           MIN(generation_heartbeat) FILTER (
             WHERE status NOT IN ('ready', 'error')
           ) AS oldest_active_heartbeat
@@ -63,6 +78,23 @@ try {
         FROM operational_events
         WHERE event_type = 'learning.outbox_health'
           AND occurred_at::timestamptz >= now() - interval '1 day'
+      `),
+      one(`
+        SELECT COALESCE(json_agg(grouped), '[]'::json) AS groups
+        FROM (
+          SELECT event_type, area,
+            metadata_json::jsonb ->> 'error_name' AS error_name,
+            metadata_json::jsonb ->> 'error_code' AS error_code,
+            metadata_json::jsonb ->> 'error_fingerprint' AS error_fingerprint,
+            COUNT(*)::int AS events,
+            MAX(occurred_at::timestamptz) AS last_seen
+          FROM operational_events
+          WHERE severity = 'error'
+            AND occurred_at::timestamptz >= now() - interval '1 day'
+          GROUP BY 1, 2, 3, 4, 5
+          ORDER BY events DESC
+          LIMIT 10
+        ) AS grouped
       `),
     ]);
 
@@ -87,6 +119,7 @@ try {
       ready: Number(generation?.ready ?? 0),
       failed: Number(generation?.failed ?? 0),
       active: Number(generation?.active ?? 0),
+      stalled: Number(generation?.stalled ?? 0),
       oldestActiveHeartbeat: generation?.oldest_active_heartbeat ?? null,
     },
     operations: {
@@ -96,6 +129,10 @@ try {
       rateLimited24h: operations.rate_limited_24h,
       aiRequests24h: operations.ai_requests_24h,
       aiFailures24h: operations.ai_failures_24h,
+      alerts: operations.alerts,
+      topErrorGroups24h: Array.isArray(errorGroups?.groups)
+        ? errorGroups.groups
+        : [],
     },
     outbox: {
       reports24h: Number(outbox?.reports ?? 0),
@@ -109,8 +146,14 @@ try {
           : null,
     },
   };
+  report.healthy =
+    report.reconciliation.ok &&
+    Number(report.ledger.malformed ?? 0) === 0 &&
+    report.delivery.answerFailures24h === 0 &&
+    report.generation.stalled === 0 &&
+    report.operations.errors24h === 0;
   console.log(JSON.stringify(report, null, 2));
-  process.exitCode = reconciliation.ok ? 0 : 1;
+  process.exitCode = report.healthy ? 0 : 1;
 } finally {
   await pool.end();
 }

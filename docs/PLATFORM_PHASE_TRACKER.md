@@ -212,7 +212,10 @@ changing outcomes twice, and operate reliably enough for organizations.
   (12 July 2026 isolated PostgreSQL 16 drill: snapshot dump restored into a
   guarded disposable database; 28 tables, 2 rows, 203 schema objects and both
   migrations matched. Provider-level Neon PITR remains a separate open item.)
-- [ ] Type checking, tests and production build pass in CI.
+- [x] Type checking, tests and production build pass in CI.
+  ([GitHub Actions CI #5](https://github.com/yasinjemal/BookQuest/actions/runs/29209648156)
+  passed for commit `9bb0938` on 12 July 2026; the Postgres-backed typecheck,
+  production build and test job completed successfully.)
 - [x] No known critical or high-severity security issue remains open.
   (`docs/PHASE_0_THREAT_MODEL.md` records the route/threat review and resolved
   billing, generation, class-evidence and concurrency findings; all 65 tests pass.
@@ -673,7 +676,11 @@ Phase 0 closure ownership:
 | Remaining proof | Owner role | Target |
 |---|---|---|
 | Restore a historical production timestamp to a temporary Neon branch; record RPO/RTO | Deployment operator with Neon console/API access | 13 July 2026 |
-| Commit/push this slice and confirm the GitHub Actions run is green | Repository maintainer with GitHub write access | Next controlled push, no later than 13 July 2026 |
+| Establish and store the production reliability baseline | Deployment operator with production database access | Immediately after deployment |
+
+Completed proof: commit `9bb0938` was pushed to `main` and
+[GitHub Actions CI #5](https://github.com/yasinjemal/BookQuest/actions/runs/29209648156)
+passed on 12 July 2026.
 
 1. [x] Assign owners and target dates to the remaining Phase 0 gates.
 2. [x] Write the Space, membership, role and capability domain model.
@@ -697,7 +704,13 @@ Phase 0 closure ownership:
    (`npm run reliability:baseline` now produces the aggregate record without
    identities or samples; authenticated browser beacons now supply aggregate
    queue age/depth and replay-drain counts. Run it against production after
-   migration/CI, then store the dated output.)
+   migration/CI, then store the dated output. The first production run at
+   `2026-07-12T21:46:46Z` is stored in
+   `docs/evidence/phase0-reliability-baseline-2026-07-12T214646Z.json`; it is
+   intentionally not accepted as the closing baseline because it exposed one
+   stalled generation and 6,153 error events, including a 6,151-event recovery
+   retry storm. The atomic recovery-lease remediation must deploy and a healthy
+   post-deploy baseline must replace it before this item is checked.)
 
 The first Phase 1 vertical slice should be:
 

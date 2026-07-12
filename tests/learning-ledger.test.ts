@@ -333,4 +333,38 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
     ])) as { generation_run_id: string };
     expect(module.generation_run_id).toBe(nextRunId);
   });
+
+  it("atomically leases a stalled generation recovery once per cooldown", async () => {
+    const created = await data.createCourse(userId, "recovery-lease.pdf");
+    await data.setCourseStatus(
+      created.id,
+      "generating",
+      undefined,
+      created.generationRunId
+    );
+    await pg.q(
+      "UPDATE courses SET generation_heartbeat = $2 WHERE id = $1",
+      [created.id, "2026-01-01T00:00:00.000Z"]
+    );
+
+    const staleBefore = "2026-01-01T00:05:00.000Z";
+    const claimedAt = "2026-01-01T00:10:00.000Z";
+    const claims = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        data.claimStalledCourses(userId, staleBefore, claimedAt)
+      )
+    );
+    expect(claims.flat()).toEqual([
+      { id: created.id, generation_run_id: created.generationRunId },
+    ]);
+
+    expect(
+      await data.claimStalledCourses(userId, staleBefore, claimedAt)
+    ).toEqual([]);
+    const course = (await pg.one(
+      "SELECT generation_heartbeat FROM courses WHERE id = $1",
+      [created.id]
+    )) as { generation_heartbeat: string };
+    expect(new Date(course.generation_heartbeat).toISOString()).toBe(claimedAt);
+  });
 });

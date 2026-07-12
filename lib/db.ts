@@ -639,17 +639,33 @@ export async function recoverStuckModules(
   );
 }
 
-/** Owned courses whose generation appears stalled (heartbeat gone stale). */
-export async function listStalledCourses(
+/**
+ * Atomically lease owned courses whose generation appears stalled.
+ *
+ * Moving the heartbeat as part of the claim prevents every concurrent course
+ * poll from firing the same recovery request. If the trigger fails, the lease
+ * naturally expires after the normal stale window and another request retries.
+ */
+export async function claimStalledCourses(
   ownerId: number,
-  staleBeforeIso: string
+  staleBeforeIso: string,
+  claimedAtIso: string
 ): Promise<{ id: number; generation_run_id: string }[]> {
   return (await many(
-    `SELECT id, generation_run_id FROM courses
-     WHERE owner_id = $1
-       AND status IN ('outlining', 'generating')
-       AND (generation_heartbeat IS NULL OR generation_heartbeat < $2)`,
-    [ownerId, staleBeforeIso]
+    `WITH stalled AS (
+       SELECT id
+       FROM courses
+       WHERE owner_id = $1
+         AND status IN ('outlining', 'generating')
+         AND (generation_heartbeat IS NULL OR generation_heartbeat < $2)
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE courses AS course
+     SET generation_heartbeat = $3
+     FROM stalled
+     WHERE course.id = stalled.id
+     RETURNING course.id, course.generation_run_id`,
+    [ownerId, staleBeforeIso, claimedAtIso]
   )) as { id: number; generation_run_id: string }[];
 }
 

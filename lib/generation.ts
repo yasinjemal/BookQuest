@@ -29,9 +29,16 @@ const INTERNAL_GENERATE_PATH = "/api/internal/generate";
 
 /** Absolute base URL for internal self-calls, working in dev and on Vercel. */
 export function resolveBaseUrl(req: NextRequest): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  // VERCEL_URL is system-controlled and points to this exact deployment. It
+  // must win over APP_URL so a stale canonical URL cannot route workers to an
+  // older deployment. Never trust a production request Host with the internal
+  // secret: proxies can permit spoofed hosts unless explicitly constrained.
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return req.nextUrl.origin;
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.NODE_ENV !== "production") {
+    return req.nextUrl.origin.replace(/\/$/, "");
+  }
+  throw new Error("A trusted generation worker origin is not configured");
 }
 
 /** Guard for the internal endpoint. Open in dev when no secret is configured. */
@@ -50,6 +57,7 @@ export async function kickGeneration(
   generationRunId: string,
   baseUrl: string
 ): Promise<void> {
+  let responseStatus: number | null = null;
   try {
     const response = await fetch(`${baseUrl}${INTERNAL_GENERATE_PATH}`, {
       method: "POST",
@@ -60,6 +68,7 @@ export async function kickGeneration(
       body: JSON.stringify({ courseId, generationRunId }),
       cache: "no-store",
     });
+    responseStatus = response.status;
     if (!response.ok) {
       throw new Error(`Generation trigger returned ${response.status}`);
     }
@@ -70,6 +79,7 @@ export async function kickGeneration(
       area: "course.generation",
       error: err,
       subjectKey: operationalSubject("course", courseId),
+      metadata: { http_status: responseStatus },
     });
   }
 }

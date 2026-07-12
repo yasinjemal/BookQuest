@@ -6,7 +6,7 @@ import {
   listLessons,
   listModules,
   listOwnedCourses,
-  listStalledCourses,
+  claimStalledCourses,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import type { PlatformCourseCols } from "@/lib/db";
@@ -54,8 +54,15 @@ export async function GET(req: NextRequest) {
 
   // Self-heal: if a course's generation chain died (heartbeat gone stale),
   // resume it in the background whenever the owner views their courses.
-  const staleBefore = new Date(Date.now() - GENERATION_STALE_MS).toISOString();
-  const stalled = await listStalledCourses(user.id, staleBefore);
+  const recoveryClaimedAt = new Date();
+  const staleBefore = new Date(
+    recoveryClaimedAt.getTime() - GENERATION_STALE_MS
+  ).toISOString();
+  const stalled = await claimStalledCourses(
+    user.id,
+    staleBefore,
+    recoveryClaimedAt.toISOString()
+  );
   if (stalled.length > 0) {
     const baseUrl = resolveBaseUrl(req);
     after(() =>

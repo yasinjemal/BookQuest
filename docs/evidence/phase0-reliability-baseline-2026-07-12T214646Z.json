@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-12T21:46:46.702Z",
+  "deployedCommit": "9bb0938",
+  "ledger": {
+    "events": 55,
+    "events_24h": 55,
+    "learners": 1,
+    "question_versions": 44,
+    "malformed": 0
+  },
+  "reconciliation": {
+    "ok": true,
+    "scanned": 30,
+    "missing": 0,
+    "mismatched": 0,
+    "orphaned": 0
+  },
+  "delivery": {
+    "delayedEvents24h": 0,
+    "maxDelaySeconds": 2,
+    "answerFailures24h": 0
+  },
+  "generation": {
+    "courses": 2,
+    "ready": 1,
+    "failed": 0,
+    "active": 1,
+    "stalled": 1,
+    "oldestActiveHeartbeat": "2026-07-12T13:52:55.483Z"
+  },
+  "operations": {
+    "total24h": 6153,
+    "errors24h": 6153,
+    "warnings24h": 0,
+    "rateLimited24h": 0,
+    "aiRequests24h": 0,
+    "aiFailures24h": 0,
+    "alerts": [
+      "6153 production error event(s) in the last 24 hours."
+    ],
+    "topErrorGroups24h": [
+      {
+        "event_type": "generation.trigger_failed",
+        "area": "course.generation",
+        "error_name": "[redacted]",
+        "error_code": null,
+        "error_fingerprint": "bda04b13fd1f9c61834f282a",
+        "events": 6151,
+        "last_seen": "2026-07-12T21:16:52.334+00:00"
+      },
+      {
+        "event_type": "generation.trigger_failed",
+        "area": "course.generation",
+        "error_name": "[redacted]",
+        "error_code": null,
+        "error_fingerprint": "368d469354d87b6800574f1b",
+        "events": 1,
+        "last_seen": "2026-07-12T21:31:56.681+00:00"
+      },
+      {
+        "event_type": "email.delivery_failed",
+        "area": "account.verification",
+        "error_name": "[redacted]",
+        "error_code": null,
+        "error_fingerprint": "f6905f4bc75d60816b15ca5a",
+        "events": 1,
+        "last_seen": "2026-07-12T17:45:57.272+00:00"
+      }
+    ]
+  },
+  "outbox": {
+    "reports24h": 0,
+    "oldestQueueSeconds": 0,
+    "maxQueueDepth": 0,
+    "attemptedDrains": 0,
+    "successfulDrains": 0,
+    "replayDrainRate": null
+  },
+  "healthy": false
+}
