@@ -71,6 +71,36 @@ export const RATE_LIMITS = {
     limit: 1200,
     windowSeconds: 5 * 60,
   },
+  privacyExportUser: {
+    scope: "privacy.export.user",
+    limit: 3,
+    windowSeconds: 60 * 60,
+  },
+  privacyMutationUser: {
+    scope: "privacy.mutation.user",
+    limit: 10,
+    windowSeconds: 60 * 60,
+  },
+  billingCheckoutUser: {
+    scope: "billing.checkout.user",
+    limit: 10,
+    windowSeconds: 60 * 60,
+  },
+  classroomMutationUser: {
+    scope: "classroom.mutation.user",
+    limit: 30,
+    windowSeconds: 60 * 60,
+  },
+  classroomJoinIp: {
+    scope: "classroom.join.ip",
+    limit: 60,
+    windowSeconds: 60 * 60,
+  },
+  outboxTelemetryUser: {
+    scope: "telemetry.outbox.user",
+    limit: 120,
+    windowSeconds: 60 * 60,
+  },
   internalGenerationCourse: {
     scope: "generation.internal.course",
     limit: 60,

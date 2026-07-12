@@ -16,6 +16,7 @@ import {
 import type { PoolClient } from "pg";
 import { many, one, q, tx, type Queryable } from "./pg";
 import { newGenerationRunId } from "./generation-run";
+import { SERVICE_CONSENT_VERSION } from "./privacy";
 
 /**
  * Data layer, backed by Neon Postgres (see ./pg for the connection + schema).
@@ -39,13 +40,17 @@ export interface UserRow {
   credits: number;
   premium_until: string | null;
   email_verified_at: string | null;
+  account_status: "active" | "deletion_scheduled" | "erased";
+  deletion_scheduled_at: string | null;
+  erased_at: string | null;
   created_at: string;
 }
 
 export async function createUser(
   email: string,
   name: string,
-  passwordHash: string
+  passwordHash: string,
+  serviceConsentVersion = SERVICE_CONSENT_VERSION
 ): Promise<UserRow> {
   return tx(async (c) => {
     const count = (await c.query("SELECT COUNT(*)::int AS n FROM users")).rows[0] as {
@@ -70,6 +75,12 @@ export async function createUser(
     await c.query(
       "INSERT INTO user_stats (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
       [id]
+    );
+    await c.query(
+      `INSERT INTO consent_records
+        (user_id, purpose, version, decision, source)
+       VALUES ($1, 'service', $2, 'granted', 'registration')`,
+      [id, serviceConsentVersion]
     );
     return (await c.query("SELECT * FROM users WHERE id = $1", [id])).rows[0] as UserRow;
   });
@@ -131,7 +142,10 @@ export async function createSession(userId: number, token: string, days = 30) {
 
 export async function getSessionUser(token: string): Promise<UserRow | undefined> {
   const row = (await one(
-    "SELECT user_id FROM sessions WHERE token = $1 AND expires_at::timestamptz > now()",
+    `SELECT s.user_id FROM sessions s
+      JOIN users u ON u.id = s.user_id
+     WHERE s.token = $1 AND s.expires_at::timestamptz > now()
+       AND u.account_status <> 'erased'`,
     [token]
   )) as { user_id: number } | undefined;
   return row ? getUserById(row.user_id) : undefined;
@@ -1891,11 +1905,64 @@ export async function markTransaction(
   status: "successful" | "failed",
   providerRef?: string
 ) {
-  await q("UPDATE transactions SET status = $1, provider_ref = $2 WHERE tx_ref = $3", [
-    status,
-    providerRef ?? null,
-    txRef,
-  ]);
+  await q(
+    `UPDATE transactions SET status = $1, provider_ref = $2
+      WHERE tx_ref = $3 AND status = 'pending'`,
+    [status, providerRef ?? null, txRef]
+  );
+}
+
+/** Claim and fulfill a verified payment exactly once. The transaction row lock,
+ * status transition, and entitlement updates commit together, so concurrent
+ * provider redirects/webhooks cannot double-grant or leave a successful ledger
+ * row without its credits. */
+export async function fulfillTransactionAtomically(
+  txRef: string,
+  providerRef: string,
+  grant: { credits?: number; premiumDays?: number }
+): Promise<boolean> {
+  return tx(async (client) => {
+    const row = (
+      await client.query(
+        `SELECT t.user_id, t.status, u.premium_until
+           FROM transactions t JOIN users u ON u.id = t.user_id
+          WHERE t.tx_ref = $1 FOR UPDATE OF t, u`,
+        [txRef]
+      )
+    ).rows[0] as {
+      user_id: number;
+      status: TxRow["status"];
+      premium_until: string | null;
+    } | undefined;
+    if (!row || row.status !== "pending") return false;
+
+    await client.query(
+      `UPDATE transactions SET status = 'successful', provider_ref = $1
+        WHERE tx_ref = $2`,
+      [providerRef, txRef]
+    );
+    const credits = Math.max(0, Math.trunc(grant.credits ?? 0));
+    if (credits > 0) {
+      await client.query("UPDATE users SET credits = credits + $1 WHERE id = $2", [
+        credits,
+        row.user_id,
+      ]);
+    }
+    const premiumDays = Math.max(0, Math.trunc(grant.premiumDays ?? 0));
+    if (premiumDays > 0) {
+      const now = new Date();
+      const base =
+        row.premium_until && row.premium_until > now.toISOString()
+          ? new Date(row.premium_until)
+          : now;
+      base.setUTCDate(base.getUTCDate() + premiumDays);
+      await client.query("UPDATE users SET premium_until = $1 WHERE id = $2", [
+        base.toISOString(),
+        row.user_id,
+      ]);
+    }
+    return true;
+  });
 }
 
 export async function platformCounts() {

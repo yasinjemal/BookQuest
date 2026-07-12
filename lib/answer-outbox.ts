@@ -339,5 +339,55 @@ export function flushCompletionOutbox(): Promise<void> {
  * can pass — then flush queued lesson completions.
  */
 export function flushLearningOutbox(): Promise<void> {
-  return flushAnswerOutbox().then(() => flushCompletionOutbox());
+  const accountId = currentAccountId();
+  const beforeAnswers = accountId ? readOutbox(accountId) : [];
+  const beforeCompletions = accountId ? readCompletions(accountId) : [];
+  return flushAnswerOutbox()
+    .then(() => flushCompletionOutbox())
+    .then(() => {
+      if (!accountId) return;
+      const afterAnswers = readOutbox(accountId);
+      const afterCompletions = readCompletions(accountId);
+      const attempted = beforeAnswers.length + beforeCompletions.length;
+      const remaining = afterAnswers.length + afterCompletions.length;
+      if (attempted === 0 && remaining === 0) return;
+      const oldestQueuedAt = [...afterAnswers, ...afterCompletions]
+        .map((item) => Date.parse(item.queuedAt))
+        .filter(Number.isFinite)
+        .sort((a, b) => a - b)[0];
+      const oldestQueueSeconds = oldestQueuedAt
+        ? Math.max(0, Math.min(30 * 86_400, Math.trunc((Date.now() - oldestQueuedAt) / 1000)))
+        : 0;
+      reportOutboxHealth({
+        answerQueueDepth: afterAnswers.length,
+        completionQueueDepth: afterCompletions.length,
+        oldestQueueSeconds,
+        attempted,
+        drained: Math.max(0, attempted - remaining),
+      });
+    });
+}
+
+interface OutboxHealthTelemetry {
+  answerQueueDepth: number;
+  completionQueueDepth: number;
+  oldestQueueSeconds: number;
+  attempted: number;
+  drained: number;
+}
+
+/** Best-effort aggregate telemetry. Cookies authenticate the beacon; no account,
+ * event, course, lesson, answer or session identifier is included in the body. */
+function reportOutboxHealth(telemetry: OutboxHealthTelemetry) {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+    return;
+  }
+  try {
+    navigator.sendBeacon(
+      "/api/telemetry/outbox",
+      new Blob([JSON.stringify(telemetry)], { type: "application/json" })
+    );
+  } catch {
+    // Monitoring is deliberately best-effort and must never block learning.
+  }
 }

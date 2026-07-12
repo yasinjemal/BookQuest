@@ -194,6 +194,9 @@ gitignored and the connection string is not committed anywhere.
 |---|---|
 | `node scripts/migrate.mjs` | Applies any pending migrations and prints the `schema_migrations` ledger plus table count. Runs the exact same `ready()` the app uses, so it doubles as a connectivity check. |
 | `node scripts/reconcile.mjs [--rebuild] [--course=<id>]` | Reconciles the `concept_mastery` projection against the immutable `learning_events` ledger; reports drift (exit non-zero) or, with `--rebuild`, recomputes and replaces it, then re-verifies. |
+| `npm run backup:drill -- --confirm-reset=<database> --artifact=<path>` | Takes a snapshot-consistent logical backup, resets a separately configured disposable database, restores into it, and verifies every public table, row count and schema object. Requires `BACKUP_RESTORE_DATABASE_URL` and PostgreSQL client tools. |
+| `npm run privacy:maintain` | Erases accounts whose 30-day deletion window has elapsed and purges expired sessions, account tokens and rate-limit buckets. Safe to run repeatedly from a scheduler. |
+| `npm run reliability:baseline` | Prints a versioned, privacy-safe aggregate baseline for ledger health, projection drift, delivery delay/failures, generation and operational events. Exits non-zero on projection drift. |
 | `node scripts/seed-demo.mjs` | Seeds a small "Money Basics" demo course (reads `DATABASE_URL` from `.env.local`). |
 
 ---
@@ -258,6 +261,37 @@ Roughly in priority order.
    health summaries are implemented. An external alerting destination remains a
    later enhancement.
 7. **Confirm backups / PITR** are enabled on the Neon project.
+
+### Backup and recovery drill
+
+CI now proves that the application database can be logically backed up and
+restored. The drill uses an exported PostgreSQL snapshot, restores only into a
+different database whose name clearly identifies it as disposable, and requires
+the operator to repeat that target database name in `--confirm-reset`. It then
+compares the complete public-table set, every row count, and the inventory of
+sequences, views, indexes, constraints, triggers and functions with the exact
+source snapshot. The source is read-only throughout and is never reset.
+The `pg_dump` and `pg_restore` major versions must match the PostgreSQL server;
+the script checks this before creating the artifact.
+
+**Latest successful logical restoration:** 12 July 2026, isolated PostgreSQL 16.
+The restored target matched 28 public tables, 2 rows, 203 schema objects and both
+applied migrations. This proves the application-level logical recovery path; it
+does not replace the managed Neon PITR exercise below.
+
+For a manual drill, create an empty scratch database and run:
+
+```powershell
+$env:BACKUP_RESTORE_DATABASE_URL = "postgres://.../bookquest_restore_drill"
+npm run backup:drill -- --confirm-reset=bookquest_restore_drill --artifact=./artifacts/bookquest.dump
+```
+
+This validates BookQuest's logical backup and restoration path. It does **not**
+prove Neon's managed point-in-time recovery. Before closing the Phase 0 gate, an
+operator must also confirm the production project's backup/PITR entitlement and
+retention window, restore a chosen historical timestamp to a temporary Neon
+branch, run `node scripts/migrate.mjs` and `node scripts/reconcile.mjs` against
+that branch, record recovery point and recovery time, and delete the branch.
 
 ### Product (from the blueprint)
 8. **Marketplace payouts** — schema is ready (`courses.price_cents`,

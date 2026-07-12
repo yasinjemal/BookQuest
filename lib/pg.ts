@@ -99,6 +99,7 @@ export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> 
 // Namespace for per-course generation locks (keeps them distinct from any other
 // advisory lock the app might take). Paired with the course id as the lock key.
 const GENERATION_LOCK_NAMESPACE = 828170;
+const LESSON_COMPLETION_LOCK_NAMESPACE = 828171;
 
 /**
  * Run `fn` while holding an exclusive advisory lock for one course, so only one
@@ -124,6 +125,34 @@ export async function withCourseGenerationLock<T>(
       await client.query("SELECT pg_advisory_unlock($1, $2)", [
         GENERATION_LOCK_NAMESPACE,
         courseId,
+      ]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/** Serialize the complete evidence -> progress -> credential workflow for one
+ * lesson answer session. The route performs several idempotent writes, but they
+ * must be observed as one ordered workflow so two simultaneous HTTP retries
+ * cannot both pass the completion guard before either records it. */
+export async function withLessonCompletionLock<T>(
+  answerSessionId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  await ready();
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1, hashtext($2))", [
+      LESSON_COMPLETION_LOCK_NAMESPACE,
+      answerSessionId,
+    ]);
+    try {
+      return await fn();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1, hashtext($2))", [
+        LESSON_COMPLETION_LOCK_NAMESPACE,
+        answerSessionId,
       ]);
     }
   } finally {

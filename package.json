@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "backup:drill": "node scripts/backup-restore-drill.mjs",
+    "privacy:maintain": "node scripts/privacy-maintenance.mjs",
+    "reliability:baseline": "node scripts/reliability-baseline.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

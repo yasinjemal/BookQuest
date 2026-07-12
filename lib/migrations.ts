@@ -427,12 +427,82 @@ CREATE TRIGGER question_versions_no_delete BEFORE DELETE ON question_versions
   FOR EACH ROW EXECUTE FUNCTION question_versions_block_write();
 `;
 
+const PRIVACY_LIFECYCLE_SQL = `
+ALTER TABLE users
+  ADD COLUMN account_status TEXT NOT NULL DEFAULT 'active'
+    CHECK (account_status IN ('active', 'deletion_scheduled', 'erased')),
+  ADD COLUMN deletion_scheduled_at TEXT,
+  ADD COLUMN erased_at TEXT;
+
+ALTER TABLE courses
+  ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'active'
+    CHECK (lifecycle_status IN ('active', 'archived')),
+  ADD COLUMN archived_at TEXT;
+
+ALTER TABLE classrooms
+  ADD COLUMN lifecycle_status TEXT NOT NULL DEFAULT 'active'
+    CHECK (lifecycle_status IN ('active', 'archived')),
+  ADD COLUMN archived_at TEXT;
+
+CREATE TABLE consent_records (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  purpose TEXT NOT NULL CHECK (purpose IN ('service', 'analytics', 'product_research')),
+  version TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('granted', 'withdrawn')),
+  source TEXT NOT NULL DEFAULT 'account',
+  recorded_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_consent_records_user_purpose_time
+  ON consent_records(user_id, purpose, recorded_at DESC, id DESC);
+
+CREATE TABLE privacy_actions (
+  id BIGSERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  action TEXT NOT NULL CHECK (action IN (
+    'export_created', 'deletion_scheduled', 'deletion_cancelled', 'erasure_completed'
+  )),
+  effective_at TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  recorded_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_privacy_actions_user_time
+  ON privacy_actions(user_id, recorded_at DESC, id DESC);
+
+-- Existing accounts accepted the service terms in force when they registered.
+-- Preserve that historical fact explicitly rather than inventing an optional
+-- analytics/research choice for them.
+INSERT INTO consent_records (user_id, purpose, version, decision, source, recorded_at)
+SELECT id, 'service', 'service-v1', 'granted', 'legacy_migration', created_at
+  FROM users;
+
+CREATE OR REPLACE FUNCTION privacy_history_block_write() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'privacy and consent history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER consent_records_no_update
+  BEFORE UPDATE ON consent_records
+  FOR EACH ROW EXECUTE FUNCTION privacy_history_block_write();
+CREATE TRIGGER consent_records_no_delete
+  BEFORE DELETE ON consent_records
+  FOR EACH ROW EXECUTE FUNCTION privacy_history_block_write();
+CREATE TRIGGER privacy_actions_no_update
+  BEFORE UPDATE ON privacy_actions
+  FOR EACH ROW EXECUTE FUNCTION privacy_history_block_write();
+CREATE TRIGGER privacy_actions_no_delete
+  BEFORE DELETE ON privacy_actions
+  FOR EACH ROW EXECUTE FUNCTION privacy_history_block_write();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
  */
 export const MIGRATIONS: readonly Migration[] = [
   { id: 1, name: "baseline_schema", sql: BASELINE_SQL },
+  { id: 2, name: "privacy_lifecycle", sql: PRIVACY_LIFECYCLE_SQL },
 ];
 
 /**

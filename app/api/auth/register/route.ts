@@ -21,15 +21,18 @@ export async function POST(req: NextRequest) {
   let email = "";
   let name = "";
   let password = "";
+  let acceptedServiceTerms = false;
   try {
     const body = (await req.json()) as {
       email?: string;
       name?: string;
       password?: string;
+      acceptedServiceTerms?: boolean;
     };
     email = body.email ?? "";
     name = body.name ?? "";
     password = body.password ?? "";
+    acceptedServiceTerms = body.acceptedServiceTerms === true;
   } catch {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
@@ -40,7 +43,12 @@ export async function POST(req: NextRequest) {
   );
   if (!accountLimit.allowed) return tooManyRequests(accountLimit);
 
-  const result = await register(email ?? "", name ?? "", password ?? "");
+  const result = await register(
+    email ?? "",
+    name ?? "",
+    password ?? "",
+    acceptedServiceTerms
+  );
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

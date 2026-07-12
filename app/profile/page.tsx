@@ -21,6 +21,15 @@ interface Data {
   dueReviews: number;
   leaderboard: { user_id: number; name: string; xp: number }[];
   certificates: { id: string; course_title: string; score_pct: number }[];
+  privacy: {
+    accountStatus: "active" | "deletion_scheduled" | "erased";
+    deletionScheduledAt: string | null;
+    consents: {
+      service: { decision: "granted" | "withdrawn" } | null;
+      analytics: { decision: "granted" | "withdrawn" } | null;
+      product_research: { decision: "granted" | "withdrawn" } | null;
+    };
+  };
 }
 
 const LEVELS = [0, 50, 150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000];
@@ -48,12 +57,19 @@ function ProfileInner() {
   );
 
   const load = useCallback(async () => {
-    const res = await fetch("/api/stats");
+    const [res, privacyRes] = await Promise.all([
+      fetch("/api/stats"),
+      fetch("/api/account/privacy"),
+    ]);
     if (res.status === 401) {
       router.push("/login");
       return;
     }
-    setData(await res.json());
+    if (!res.ok || !privacyRes.ok) {
+      setNotice("Could not load your account settings.");
+      return;
+    }
+    setData({ ...(await res.json()), privacy: await privacyRes.json() });
   }, [router]);
 
   useEffect(() => {
@@ -91,6 +107,55 @@ function ProfileInner() {
     clearAnswerOutboxAccount();
     router.push("/login");
     router.refresh();
+  }
+
+  async function setConsent(
+    purpose: "analytics" | "product_research",
+    granted: boolean
+  ) {
+    const res = await fetch("/api/account/privacy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purpose, granted }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      setNotice(result.error ?? "Could not save your privacy choice.");
+      return;
+    }
+    setNotice("Privacy choice saved.");
+    await load();
+  }
+
+  async function scheduleDeletion() {
+    if (!window.confirm(
+      "Schedule account deletion? You will have 30 days to cancel. Download your data first if you want a copy."
+    )) return;
+    const password = window.prompt("Enter your password to confirm account deletion:");
+    if (!password) return;
+    const res = await fetch("/api/account/deletion", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      setNotice(result.error ?? "Could not schedule deletion.");
+      return;
+    }
+    setNotice(`Deletion scheduled for ${new Date(result.effectiveAt).toLocaleDateString()}.`);
+    await load();
+  }
+
+  async function cancelDeletion() {
+    const res = await fetch("/api/account/deletion", { method: "POST" });
+    const result = await res.json();
+    if (!res.ok) {
+      setNotice(result.error ?? "Could not cancel deletion.");
+      return;
+    }
+    setNotice("Account deletion cancelled.");
+    await load();
   }
 
   if (!data) return <p className="p-8 text-center text-ink-soft">Loading…</p>;
@@ -254,6 +319,80 @@ function ProfileInner() {
               <span className="font-bold text-primary-deep">{row.xp} XP</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">
+          Privacy &amp; your data
+        </h2>
+        <div className="rounded-2xl bg-card border border-line p-4 shadow-sm space-y-4">
+          <div>
+            <p className="text-sm font-bold">Portable account export</p>
+            <p className="text-xs text-ink-soft mt-1">
+              Download your profile, owned course content, learning history,
+              consent history, credentials and billing records as JSON. Passwords,
+              sessions and security tokens are never included.
+            </p>
+            <a
+              href="/api/account/export"
+              className="inline-block mt-2 rounded-lg border border-line px-3 py-2 text-xs font-bold text-primary-deep"
+            >
+              Download my data
+            </a>
+          </div>
+
+          <div className="border-t border-line pt-3 space-y-3">
+            <p className="text-sm font-bold">Optional data use</p>
+            {([
+              ["analytics", "Improve product analytics"],
+              ["product_research", "Use eligible data for product research"],
+            ] as const).map(([purpose, label]) => (
+              <label key={purpose} className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={data.privacy.consents[purpose]?.decision === "granted"}
+                  onChange={(e) => setConsent(purpose, e.target.checked)}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span>
+                  {label}
+                  <span className="block text-xs text-ink-soft">
+                    Optional. You can withdraw this choice at any time.
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="border-t border-line pt-3">
+            <p className="text-sm font-bold text-no">Delete account</p>
+            <p className="text-xs text-ink-soft mt-1">
+              Deletion has a 30-day cancellation period. Direct identifiers and
+              private content are erased afterward. Pseudonymous evidence,
+              consent history and legally required financial records are retained.
+            </p>
+            {data.privacy.accountStatus === "deletion_scheduled" ? (
+              <div className="mt-2">
+                <p className="text-xs font-bold text-no">
+                  Scheduled for {new Date(data.privacy.deletionScheduledAt!).toLocaleDateString()}
+                </p>
+                <button
+                  onClick={cancelDeletion}
+                  className="mt-2 rounded-lg border border-line px-3 py-2 text-xs font-bold"
+                >
+                  Cancel deletion
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={scheduleDeletion}
+                className="mt-2 rounded-lg border border-no/40 px-3 py-2 text-xs font-bold text-no"
+              >
+                Schedule account deletion
+              </button>
+            )}
+          </div>
         </div>
       </section>
 

@@ -37,7 +37,10 @@ export function resolveBaseUrl(req: NextRequest): string {
 /** Guard for the internal endpoint. Open in dev when no secret is configured. */
 export function verifyGenerationSecret(req: NextRequest): boolean {
   const secret = process.env.GENERATION_SECRET;
-  if (!secret) return true;
+  // Local development can run without configuration. Production must fail
+  // closed: a missing secret must never turn an expensive internal worker into
+  // a public endpoint.
+  if (!secret) return process.env.NODE_ENV !== "production";
   return req.headers.get("x-generation-secret") === secret;
 }
 

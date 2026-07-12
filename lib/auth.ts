@@ -17,11 +17,15 @@ export const SESSION_COOKIE = "bq_session";
 export async function register(
   email: string,
   name: string,
-  password: string
+  password: string,
+  acceptedServiceTerms: boolean
 ): Promise<{ user?: UserRow; error?: string }> {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
   if (name.trim().length < 2) return { error: "Enter your name." };
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (!acceptedServiceTerms) {
+    return { error: "Accept the service terms and privacy notice to create an account." };
+  }
   if (await getUserByEmail(email)) return { error: "An account with this email already exists." };
   return { user: await createUser(email, name, hashPassword(password)) };
 }
@@ -43,6 +47,7 @@ export async function startSession(res: NextResponse, userId: number) {
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 30 * 24 * 3600,
   });
@@ -81,5 +86,7 @@ export function publicUser(user: UserRow) {
     credits: user.credits,
     premium_until: user.premium_until,
     email_verified_at: user.email_verified_at,
+    account_status: user.account_status,
+    deletion_scheduled_at: user.deletion_scheduled_at,
   };
 }

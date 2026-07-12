@@ -6,6 +6,13 @@ import {
   listMyClassrooms,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  requestIp,
+  tooManyRequests,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +20,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
+  const userLimit = await consumeRateLimit(
+    RATE_LIMITS.classroomMutationUser,
+    rateLimitSubject("user", user.id)
+  );
+  if (!userLimit.allowed) return tooManyRequests(userLimit);
   return NextResponse.json({ classes: await listMyClassrooms(user.id) });
 }
 
@@ -27,6 +39,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ classroom });
   }
   if (body.code?.trim()) {
+    const ipLimit = await consumeRateLimit(
+      RATE_LIMITS.classroomJoinIp,
+      rateLimitSubject("ip", requestIp(req))
+    );
+    if (!ipLimit.allowed) return tooManyRequests(ipLimit);
     const classroom = await getClassroomByCode(body.code);
     if (!classroom) {
       return NextResponse.json(

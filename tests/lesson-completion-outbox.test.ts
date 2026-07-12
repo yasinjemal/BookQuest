@@ -173,4 +173,44 @@ describe("lesson completion outbox", () => {
     expect(answersIdx).toBeGreaterThanOrEqual(0);
     expect(completeIdx).toBeGreaterThan(answersIdx);
   });
+
+  it("reports only aggregate queue health after replay", async () => {
+    installBrowser();
+    const beacons: Blob[] = [];
+    vi.stubGlobal("navigator", {
+      sendBeacon: (_url: string, body: Blob) => {
+        beacons.push(body);
+        return true;
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("offline"); }));
+    setAnswerOutboxAccount(1);
+    await submitAnswer({
+      eventId: "private_event_id",
+      source: "lesson",
+      sessionId: "private_session_id",
+      lessonId: 7,
+      cardIndex: 0,
+      answer: 0,
+      responseTimeMs: 100,
+      occurredAt: new Date().toISOString(),
+      attemptNumber: 1,
+      hintCount: 0,
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ ok: true })));
+    await flushLearningOutbox();
+
+    expect(beacons).toHaveLength(1);
+    const payload = await beacons[0].text();
+    expect(JSON.parse(payload)).toMatchObject({
+      answerQueueDepth: 0,
+      completionQueueDepth: 0,
+      attempted: 1,
+      drained: 1,
+    });
+    expect(payload).not.toContain("private_event_id");
+    expect(payload).not.toContain("private_session_id");
+    expect(payload).not.toContain('"answer"');
+  });
 });

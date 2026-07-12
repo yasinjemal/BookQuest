@@ -10,6 +10,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptedServiceTerms, setAcceptedServiceTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +23,9 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          mode === "register" ? { email, name, password } : { email, password }
+          mode === "register"
+            ? { email, name, password, acceptedServiceTerms }
+            : { email, password }
         ),
       });
       const data = await res.json();
@@ -75,6 +78,21 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           autoComplete="email"
           className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
         />
+        {mode === "register" && (
+          <label className="flex items-start gap-2 text-xs text-ink-soft">
+            <input
+              type="checkbox"
+              checked={acceptedServiceTerms}
+              onChange={(e) => setAcceptedServiceTerms(e.target.checked)}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              I accept the service terms and privacy notice. Required learning
+              evidence is kept pseudonymously; optional analytics and research
+              consent can be changed from my profile.
+            </span>
+          </label>
+        )}
         {mode === "login" && (
           <div className="text-right">
             <Link href="/forgot-password" className="text-sm font-semibold text-primary-deep">

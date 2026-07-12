@@ -63,7 +63,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     const client: PoolClient = await raw.connect();
     try {
       const applied = await applyPendingMigrations(client);
-      expect(applied).toContain(1);
+      expect(applied).toEqual([1, 2]);
     } finally {
       client.release();
     }
@@ -77,7 +77,10 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     const rows = (
       await raw.query("SELECT id, name FROM schema_migrations ORDER BY id")
     ).rows;
-    expect(rows).toEqual([{ id: 1, name: "baseline_schema" }]);
+    expect(rows).toEqual([
+      { id: 1, name: "baseline_schema" },
+      { id: 2, name: "privacy_lifecycle" },
+    ]);
   });
 
   it("adds and backfills the generation-run columns", async () => {
@@ -149,8 +152,35 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "answer_sessions",
       "learning_events",
       "lesson_completion_events",
+      "consent_records",
+      "privacy_actions",
     ];
     for (const table of expected) expect(present).toContain(table);
+  });
+
+  it("backfills the service consent and active lifecycle state", async () => {
+    const user = (
+      await raw.query(
+        "SELECT account_status, deletion_scheduled_at, erased_at FROM users WHERE id = 1"
+      )
+    ).rows[0];
+    expect(user).toEqual({
+      account_status: "active",
+      deletion_scheduled_at: null,
+      erased_at: null,
+    });
+    const consent = (
+      await raw.query(
+        "SELECT purpose, version, decision, source, recorded_at FROM consent_records WHERE user_id = 1"
+      )
+    ).rows[0];
+    expect(consent).toEqual({
+      purpose: "service",
+      version: "service-v1",
+      decision: "granted",
+      source: "legacy_migration",
+      recorded_at: USER_CREATED_AT,
+    });
   });
 
   it("preserves every pre-existing row and value", async () => {

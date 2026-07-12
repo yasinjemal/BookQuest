@@ -41,7 +41,7 @@ export async function GET(
     }
   }
 
-  const members = await Promise.all(
+  const allMembers = await Promise.all(
     (await classroomMembers(classroom.id)).map(async (member) => {
       const completed = await getCompletedLessonIds(member.user_id);
       const doneLessons = assignedLessonIds.filter((lid) => completed.has(lid)).length;
@@ -57,9 +57,15 @@ export async function GET(
     })
   );
 
+  // Learners can see only their own progress. Aggregate/member evidence belongs
+  // to the teacher until Phase 1 introduces explicit manager/auditor roles.
+  const members = isOwner
+    ? allMembers
+    : allMembers.filter((member) => member.user_id === user.id);
+
   const weakConcepts = isOwner
     ? await classWeakConcepts(
-        members.map((m) => m.user_id),
+        allMembers.map((m) => m.user_id),
         assignments.map((a) => a.id)
       )
     : [];

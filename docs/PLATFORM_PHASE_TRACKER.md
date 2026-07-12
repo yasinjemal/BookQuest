@@ -148,6 +148,10 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [x] Add abuse, unexpected-cost and production-error monitoring.
 - [x] Add email verification and password recovery.
 - [ ] Test backups and point-in-time recovery.
+  (Logical backup restoration is automated in CI by
+  `scripts/backup-restore-drill.mjs`: it restores a snapshot-consistent dump to a
+  guarded disposable database and verifies tables, rows and schema objects.
+  Neon provider-level PITR restoration and recorded RPO/RTO remain required.)
 - [x] Run database integration tests in CI on a scratch database.
   (`.github/workflows/ci.yml` runs typecheck, build and `npm test` against a
   throwaway Postgres 16 service, so the gated integration tests execute for real.)
@@ -163,8 +167,13 @@ changing outcomes twice, and operate reliably enough for organizations.
   (Durable, account-scoped completion outbox in `lib/answer-outbox.ts`, flushed
   after the answer outbox so evidence reconciliation passes; `409 evidence_pending`
   is transient. Tests in `tests/lesson-completion-outbox.test.ts`.)
-- [ ] Add consent, retention, export and erasure workflows.
-- [ ] Define archive, soft-delete and controlled-redaction rules.
+- [x] Add consent, retention, export and erasure workflows.
+  (`lib/privacy.ts`, account privacy/export/deletion APIs, profile controls and
+  `scripts/privacy-maintenance.mjs`; database proof in
+  `tests/privacy-lifecycle.test.ts`.)
+- [x] Define archive, soft-delete and controlled-redaction rules.
+  (`docs/PRIVACY_LIFECYCLE.md` defines retention classes, account/course outcomes,
+  legal holds and exceptional controlled-redaction procedure.)
 - [x] Add projection rebuild and ledger reconciliation commands.
   (`lib/projection.ts` reconciles/rebuilds `concept_mastery` from the immutable
   ledger; `node scripts/reconcile.mjs [--rebuild] [--course=<id>]` exits non-zero
@@ -174,21 +183,40 @@ changing outcomes twice, and operate reliably enough for organizations.
   (recorded_at − occurred_at) and `learning.answer_failed` events with samples;
   surfaced in the admin dashboard. Tests in `tests/delivery-health.test.ts` and
   `tests/observability.test.ts`.)
-- [ ] Decide when volume requires IndexedDB and table partitioning.
+- [x] Decide when volume requires IndexedDB and table partitioning.
+  (`docs/PRIVACY_LIFECYCLE.md` records measurable queue/storage and
+  row/size/query-latency triggers.)
 
 ### Release gates
 
-- [ ] Every answer source produces exactly one immutable event.
-- [ ] Replay cannot increment mastery, progress or XP twice.
-- [ ] Clients cannot set correctness or another learner's context.
-- [ ] Lesson, practice and review contexts cannot cross users or courses.
-- [ ] Failed delivery recovers using the original event ID.
+- [x] Every answer source produces exactly one immutable event.
+  (`tests/learning-ledger.test.ts` and the database uniqueness/immutability
+  triggers; all database tests pass against isolated Postgres 16.)
+- [x] Replay cannot increment mastery, progress or XP twice.
+  (`tests/learning-ledger.test.ts` verifies answer and completion replay.)
+- [x] Clients cannot set correctness or another learner's context.
+  (`tests/answer-route-security.test.ts` submits forged correctness, course and
+  learner fields and proves the server grades/stores its saved context.)
+- [x] Lesson, practice and review contexts cannot cross users or courses.
+  (Adversarial route integration tests cover foreign accounts, sessions, lessons,
+  practice items and review records.)
+- [x] Failed delivery recovers using the original event ID.
+  (Account-scoped answer and completion outbox tests, including answers-first
+  reconciliation and transient `evidence_pending` recovery.)
 - [x] Projections reconcile against immutable evidence.
   (`reconcileConceptMastery` / `rebuildConceptMastery` + `scripts/reconcile.mjs`.)
-- [ ] Rate limits protect costly and authentication-sensitive routes.
-- [ ] A documented backup restoration succeeds.
+- [x] Rate limits protect costly and authentication-sensitive routes.
+  (Distributed route policies plus `tests/rate-limit.test.ts`; privacy export and
+  mutations now have account-scoped limits too.)
+- [x] A documented backup restoration succeeds.
+  (12 July 2026 isolated PostgreSQL 16 drill: snapshot dump restored into a
+  guarded disposable database; 28 tables, 2 rows, 203 schema objects and both
+  migrations matched. Provider-level Neon PITR remains a separate open item.)
 - [ ] Type checking, tests and production build pass in CI.
-- [ ] No known critical or high-severity security issue remains open.
+- [x] No known critical or high-severity security issue remains open.
+  (`docs/PHASE_0_THREAT_MODEL.md` records the route/threat review and resolved
+  billing, generation, class-evidence and concurrency findings; all 65 tests pass.
+  Dependency audit reports zero high/critical and two documented moderate issues.)
 
 ### Measure
 
@@ -629,20 +657,47 @@ What should not be built yet:
 | 12 Jul 2026 | Learning Genome waits for representative evidence | Avoid confident decisions from weak samples | Data and validation thresholds pass |
 | 12 Jul 2026 | Messaging is a channel, not another learning system | Preserves shared progress and evidence | A channel proves irreducibly different |
 | 12 Jul 2026 | Versioned forward-only migrations with an idempotent baseline | Deterministic, once-only, transactional schema changes replace per-boot lazy DDL | A change needs non-transactional DDL (e.g. `CREATE INDEX CONCURRENTLY`) |
+| 12 Jul 2026 | Automate logical restore proof but keep the PITR gate open | CI can continuously prove application-level recoverability; only a provider restore can prove Neon's recovery controls and measured RPO/RTO | Provider, plan or retention policy changes |
+| 12 Jul 2026 | Pseudonymize immutable evidence during account erasure | Deleting identity must not rewrite proof or invalidate other learners' credentials | Legal review requires narrower retention or controlled redaction |
+| 12 Jul 2026 | Use measured thresholds for IndexedDB and event partitioning | Complexity should respond to observed queue and database pressure, not guesses | Any documented threshold is crossed for two weeks |
+| 12 Jul 2026 | Payment fulfillment is a row-locked entitlement transaction | Provider callbacks and redirects are replayable and may arrive concurrently | A second provider or multi-currency ledger changes the contract |
+| 12 Jul 2026 | Internal generation fails closed in production | Missing configuration must not expose costly AI work publicly | Background execution moves to a provider-authenticated queue |
+| 12 Jul 2026 | Platform admin is not a tenant role | Operating BookQuest must not silently grant access to private Space data | Audited break-glass support access is designed |
 
 ---
 
 ## Immediate next actions
 
-1. [ ] Assign owners and target dates to the remaining Phase 0 gates.
-2. [ ] Write the Space, membership, role and capability domain model.
-3. [ ] Map classrooms and global roles to Spaces.
-4. [ ] Define the centralized authorization contract and threat model.
-5. [ ] Write cross-tenant tests before Space APIs.
-6. [ ] Prototype personal, private and organization Space journeys.
+Phase 0 closure ownership:
+
+| Remaining proof | Owner role | Target |
+|---|---|---|
+| Restore a historical production timestamp to a temporary Neon branch; record RPO/RTO | Deployment operator with Neon console/API access | 13 July 2026 |
+| Commit/push this slice and confirm the GitHub Actions run is green | Repository maintainer with GitHub write access | Next controlled push, no later than 13 July 2026 |
+
+1. [x] Assign owners and target dates to the remaining Phase 0 gates.
+2. [x] Write the Space, membership, role and capability domain model.
+   (`docs/PHASE_1_SPACE_MODEL.md`.)
+3. [x] Map classrooms and global roles to Spaces.
+   (Expand/backfill/verify/switch/contract mapping in the Phase 1 model.)
+4. [x] Define the centralized authorization contract and threat model.
+   (`lib/space-authorization.ts` deny-by-default capability contract.)
+5. [x] Write cross-tenant tests before Space APIs.
+   (`tests/space-authorization.test.ts` covers wrong-Space, inactive membership,
+   role separation, lifecycle and public/unlisted boundaries; route/database
+   variants remain paired with the gated migration.)
+6. [x] Prototype personal, private and organization Space journeys.
+   (`docs/SPACE_JOURNEY_PROTOTYPE.md` defines screens, states and measurable
+   acceptance/usability tests without enabling gated APIs.)
 7. [ ] Interview at least three compliance-pilot design partners.
-8. [ ] Define five starter recipes using real source documents.
+8. [x] Define five starter recipes using real source documents.
+   (`docs/STARTER_RECIPE_RESEARCH.md` grounds five versioned research recipes in
+   the four uploaded financial-literacy, AI and architecture-review sources.)
 9. [ ] Establish baseline values for Phase 0 reliability metrics.
+   (`npm run reliability:baseline` now produces the aggregate record without
+   identities or samples; authenticated browser beacons now supply aggregate
+   queue age/depth and replay-drain counts. Run it against production after
+   migration/CI, then store the dated output.)
 
 The first Phase 1 vertical slice should be:
 

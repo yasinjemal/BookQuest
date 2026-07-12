@@ -61,3 +61,17 @@ jobs:
 
       - name: Test (unit + database integration)
         run: npm test
+
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client-16
+
+      - name: Create disposable restore database
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE bookquest_restore_drill"
+
+      - name: Prove logical backup restoration
+        env:
+          BACKUP_RESTORE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bookquest_restore_drill
+        run: >-
+          npm run backup:drill --
+          --confirm-reset=bookquest_restore_drill
+          --artifact=${{ runner.temp }}/bookquest-ci.dump

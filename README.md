@@ -58,6 +58,9 @@ design baseline.
 - Cookie sessions + bcryptjs password hashing (`lib/auth.ts`)
 - One-time email-verification and password-reset links; reset invalidates every
   active session and local development provides safe preview links
+- Explicit, append-only consent history; portable account export; optional-data
+  controls; and reversible 30-day account deletion with pseudonymous evidence
+  preservation
 - Distributed Postgres-backed rate limits on authentication, uploads, AI work,
   retries, and answer submission; identifiers are stored only as keyed hashes
 - Generation-run isolation prevents delayed AI workers from writing into a
@@ -92,6 +95,15 @@ design baseline.
   and success metrics.
 - [`docs/LEARNING_EVIDENCE_LEDGER.md`](docs/LEARNING_EVIDENCE_LEDGER.md) — the
   append-only answer foundation, API contract, privacy model, and release gaps.
+- [`docs/PRIVACY_LIFECYCLE.md`](docs/PRIVACY_LIFECYCLE.md) — consent, retention,
+  export, erasure, archive/redaction rules, and scaling thresholds.
+- [`docs/PHASE_0_THREAT_MODEL.md`](docs/PHASE_0_THREAT_MODEL.md) — Phase 0 assets,
+  trust boundaries, route review, resolved findings and accepted limitations.
+- [`docs/PHASE_1_SPACE_MODEL.md`](docs/PHASE_1_SPACE_MODEL.md) — the gated Space,
+  membership, migration and centralized authorization contract.
+- [`docs/SPACE_JOURNEY_PROTOTYPE.md`](docs/SPACE_JOURNEY_PROTOTYPE.md) and
+  [`docs/STARTER_RECIPE_RESEARCH.md`](docs/STARTER_RECIPE_RESEARCH.md) — source-
+  grounded product research prepared behind the phase gates.
 
 ## Going live (when ready)
 

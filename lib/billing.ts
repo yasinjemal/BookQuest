@@ -1,9 +1,8 @@
 import crypto from "crypto";
 import {
-  adjustCredits,
   createTransaction,
+  fulfillTransactionAtomically,
   getTransaction,
-  grantPremium,
   markTransaction,
 } from "./db";
 
@@ -119,10 +118,5 @@ export async function fulfill(txRef: string, providerRef: string) {
   if (!tx || tx.status === "successful") return;
   const p = PRODUCTS[tx.product as ProductId];
   if (!p) return;
-  await markTransaction(txRef, "successful", providerRef);
-  if ("credits" in p.grant && p.grant.credits)
-    await adjustCredits(tx.user_id, p.grant.credits);
-  if ("premiumDays" in p.grant && p.grant.premiumDays) {
-    await grantPremium(tx.user_id, p.grant.premiumDays);
-  }
+  await fulfillTransactionAtomically(txRef, providerRef, p.grant);
 }
