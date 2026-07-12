@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Card } from "@/lib/schemas";
+import type { QuizAnswerResult } from "@/lib/learning-types";
 
 type QuizCardType = Extract<
   Card,
@@ -17,15 +18,18 @@ export default function QuizCard({
   onAnswered,
 }: {
   card: QuizCardType;
-  onAnswered: (correct: boolean) => void;
+  onAnswered: (result: QuizAnswerResult) => void;
 }) {
+  const [startedAt] = useState(() => Date.now());
+  const submitted = useRef(false);
   const [choice, setChoice] = useState<number | boolean | null>(null);
   const [typed, setTyped] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [correct, setCorrect] = useState(false);
 
   function submit(answer: number | boolean | string) {
-    if (revealed) return;
+    if (submitted.current || revealed) return;
+    submitted.current = true;
     let ok = false;
     if (card.type === "quiz_mcq" && typeof answer === "number") {
       ok = answer === card.correct_index;
@@ -39,7 +43,19 @@ export default function QuizCard({
     }
     setCorrect(ok);
     setRevealed(true);
-    onAnswered(ok);
+    const fallbackId = `evt_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    onAnswered({
+      eventId:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : fallbackId,
+      answer,
+      correct: ok,
+      responseTimeMs: Math.max(0, Date.now() - startedAt),
+      occurredAt: new Date().toISOString(),
+      attemptNumber: 1,
+      hintCount: 0,
+    });
   }
 
   return (

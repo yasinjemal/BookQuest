@@ -2,6 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { Card } from "@/lib/schemas";
+import type { QuizAnswerResult } from "@/lib/learning-types";
+import {
+  setAnswerOutboxAccount,
+  startAnswerOutboxSync,
+  submitAnswer,
+} from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
 
 type QuizCardType = Extract<
@@ -17,6 +23,7 @@ interface ReviewItem {
 
 export default function ReviewSessionPage() {
   const [items, setItems] = useState<ReviewItem[] | null>(null);
+  const [answerSessionId, setAnswerSessionId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [answered, setAnswered] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
@@ -31,19 +38,31 @@ export default function ReviewSessionPage() {
         }
         return r.json();
       })
-      .then((d) => setItems(d.items))
+      .then((d) => {
+        if (d.viewerId) setAnswerOutboxAccount(d.viewerId);
+        setItems(d.items);
+        setAnswerSessionId(d.answerSessionId ?? null);
+      })
       .catch(() => setItems([]));
   }, []);
 
-  async function onAnswered(correct: boolean) {
-    if (!items) return;
+  useEffect(() => startAnswerOutboxSync(), []);
+
+  async function onAnswered(result: QuizAnswerResult) {
+    if (!items || !answerSessionId) return;
     setAnswered(true);
-    if (correct) setCorrectCount((n) => n + 1);
+    if (result.correct) setCorrectCount((n) => n + 1);
     try {
-      await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewId: items[index].reviewId, correct }),
+      await submitAnswer({
+      source: "review",
+      sessionId: answerSessionId,
+        reviewId: items[index].reviewId,
+        eventId: result.eventId,
+        answer: result.answer,
+        responseTimeMs: result.responseTimeMs,
+        occurredAt: result.occurredAt,
+        attemptNumber: result.attemptNumber,
+        hintCount: result.hintCount,
       });
     } catch {
       /* offline — the item stays due, that's fine */

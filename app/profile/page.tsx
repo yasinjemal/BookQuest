@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import {
+  clearAnswerOutboxAccount,
+  flushAnswerOutbox,
+} from "@/lib/answer-outbox";
 
 interface Data {
   user: {
@@ -82,7 +86,9 @@ function ProfileInner() {
   }
 
   async function logout() {
+    await flushAnswerOutbox();
     await fetch("/api/auth/logout", { method: "POST" });
+    clearAnswerOutboxAccount();
     router.push("/login");
     router.refresh();
   }

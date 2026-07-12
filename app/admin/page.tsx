@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 
 interface AdminData {
   counts: { users: number; courses: number; published: number; revenue_cents: number };
+  learningLedger: {
+    events: number;
+    events_24h: number;
+    learners: number;
+    question_versions: number;
+    malformed: number;
+  };
   users: {
     id: number;
     email: string;
@@ -65,6 +72,31 @@ export default function AdminPage() {
           </div>
         ))}
       </div>
+
+      <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
+        Learning evidence
+      </h2>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          ["Answer events", data.learningLedger.events],
+          ["Last 24 hours", data.learningLedger.events_24h],
+          ["Learners captured", data.learningLedger.learners],
+          ["Question versions", data.learningLedger.question_versions],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+          >
+            <div className="text-xl font-extrabold">{value ?? 0}</div>
+            <div className="text-xs text-ink-soft">{label}</div>
+          </div>
+        ))}
+      </div>
+      {data.learningLedger.malformed > 0 && (
+        <p className="mt-2 text-sm text-no font-semibold">
+          {data.learningLedger.malformed} malformed evidence events need attention.
+        </p>
+      )}
 
       <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
         Users

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   canAccessCourse,
+  createPracticeSession,
   getCourse,
   getCourseMastery,
   isPremium,
@@ -8,15 +9,25 @@ import {
   listModules,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { generatePracticeQuiz } from "@/lib/generator";
+import {
+  generatePracticeQuiz,
+  GENERATOR_MODEL,
+  PRACTICE_PROMPT_VERSION,
+} from "@/lib/generator";
 import type { Card } from "@/lib/schemas";
+import type { QuizCard } from "@/lib/learning-types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 interface PracticeCard {
   concept: string;
-  card: Card;
+  card: QuizCard;
+  questionId: string;
+  lessonId: number;
+  cardIndex: number;
+  generatorModel: string | null;
+  promptVersion: string | null;
 }
 
 /** Build a practice session for a course.
@@ -40,12 +51,21 @@ export async function POST(req: NextRequest) {
   for (const m of listModules(course.id)) {
     for (const l of listLessons(m.id)) {
       const cards = JSON.parse(l.cards) as Card[];
-      for (const card of cards) {
+      for (let cardIndex = 0; cardIndex < cards.length; cardIndex++) {
+        const card = cards[cardIndex];
         if (card.type.startsWith("quiz_")) {
           const concept =
             ("concept" in card && (card as { concept?: string }).concept) ||
             l.title;
-          allQuiz.push({ concept: concept.toLowerCase(), card });
+          allQuiz.push({
+            concept: concept.toLowerCase(),
+            card: card as QuizCard,
+            questionId: `lesson:${l.id}:card:${cardIndex}`,
+            lessonId: l.id,
+            cardIndex,
+            generatorModel: l.generator_model,
+            promptVersion: l.prompt_version,
+          });
         } else if (card.type === "concept" || card.type === "example") {
           conceptTexts.push(`${card.title}: ${card.body}`);
         }
@@ -77,14 +97,29 @@ export async function POST(req: NextRequest) {
         concepts,
         conceptTexts.join("\n")
       );
-      return NextResponse.json({
-        fresh: true,
-        cards: cards.map((card) => ({
+      const items = cards
+        .filter((card): card is QuizCard => card.type.startsWith("quiz_"))
+        .map((card) => ({
           concept:
             ("concept" in card && (card as { concept?: string }).concept) ||
             concepts[0],
           card,
-        })),
+        }));
+      const session = createPracticeSession(
+        user.id,
+        course.id,
+        items,
+        true,
+        {
+          generatorModel: GENERATOR_MODEL,
+          promptVersion: PRACTICE_PROMPT_VERSION,
+        }
+      );
+      return NextResponse.json({
+        sessionId: session.id,
+        viewerId: user.id,
+        fresh: true,
+        cards: session.items,
       });
     } catch (err) {
       return NextResponse.json(
@@ -100,5 +135,16 @@ export async function POST(req: NextRequest) {
   );
   const rest = allQuiz.filter((q) => !inWeakest.includes(q));
   const shuffled = [...inWeakest.sort(() => Math.random() - 0.5), ...rest.sort(() => Math.random() - 0.5)];
-  return NextResponse.json({ fresh: false, cards: shuffled.slice(0, 8) });
+  const session = createPracticeSession(
+    user.id,
+    course.id,
+    shuffled.slice(0, 8),
+    false
+  );
+  return NextResponse.json({
+    sessionId: session.id,
+    viewerId: user.id,
+    fresh: false,
+    cards: session.items,
+  });
 }

@@ -1,8 +1,8 @@
 /* BookQuest service worker.
-   - API GETs: network-first, cache fallback → always fresh online, still works offline.
-   - Pages & static assets: stale-while-revalidate → instant loads.
-   Course data therefore plays offline once it has been viewed online. */
-const CACHE = "bookquest-v4";
+   - Authenticated APIs: network-only so cached data never crosses accounts.
+   - Pages and static assets: stale-while-revalidate for low-bandwidth loads.
+   - Answer POSTs: the app's account-scoped outbox handles offline replay. */
+const CACHE = "bookquest-v6";
 const PRECACHE = [
   "/",
   "/explore",
@@ -15,7 +15,7 @@ const PRECACHE = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
   );
 });
 
@@ -24,44 +24,30 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))
       )
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return; // uploads/completions need the network
-  const url = new URL(req.url);
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith("/api/")) {
-    // Network-first: fresh data online, last-known data offline
-    event.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        try {
-          const res = await fetch(req);
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        } catch {
-          const cached = await cache.match(req);
-          if (cached) return cached;
-          throw new Error("offline and not cached");
-        }
-      })
-    );
+    event.respondWith(fetch(request));
     return;
   }
 
-  // Stale-while-revalidate for pages and assets
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(req);
-      const network = fetch(req)
-        .then((res) => {
-          if (res.ok) cache.put(req, res.clone());
-          return res;
+      const cached = await cache.match(request);
+      const network = fetch(request)
+        .then((response) => {
+          if (response.ok) cache.put(request, response.clone());
+          return response;
         })
         .catch(() => cached);
       return cached || network;

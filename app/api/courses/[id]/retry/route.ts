@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
-import { db, getCourse, setCourseStatus } from "@/lib/db";
+import { getCourse, prepareCourseRetry, setCourseStatus } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { extractDocument } from "@/lib/extract";
 import { generateCourse } from "@/lib/generator";
@@ -37,8 +37,12 @@ export async function POST(
   }
 
   // Retrying a failed generation is free — the credit was already spent.
-  db.prepare("DELETE FROM modules WHERE course_id = ?").run(course.id);
-  setCourseStatus(course.id, "extracting");
+  if (!prepareCourseRetry(course.id)) {
+    return NextResponse.json(
+      { error: "This course is already being generated." },
+      { status: 409 }
+    );
+  }
 
   try {
     const { chapters } = await extractDocument(uploadPath, course.source_filename);

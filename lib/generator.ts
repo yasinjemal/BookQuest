@@ -10,7 +10,9 @@ import {
 import type { Chapter } from "./extract";
 import { Card, CourseOutline, ModuleLessons, PracticeQuiz } from "./schemas";
 
-const MODEL = "claude-opus-4-8";
+export const GENERATOR_MODEL = "claude-opus-4-8";
+export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v1";
+export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v1";
 
 const client = new Anthropic();
 
@@ -36,7 +38,7 @@ export async function generateCourse(courseId: number, chapters: Chapter[]) {
       .join("\n");
 
     const outlineResp = await client.messages.parse({
-      model: MODEL,
+      model: GENERATOR_MODEL,
       max_tokens: 8000,
       thinking: { type: "adaptive" },
       system: SYSTEM,
@@ -106,7 +108,7 @@ export async function generatePracticeQuiz(
   sourceText: string
 ): Promise<Card[]> {
   const resp = await client.messages.parse({
-    model: MODEL,
+    model: GENERATOR_MODEL,
     max_tokens: 6000,
     thinking: { type: "adaptive" },
     system: SYSTEM,
@@ -131,7 +133,7 @@ async function generateModuleLessons(
   sourceText: string
 ) {
   const resp = await client.messages.parse({
-    model: MODEL,
+    model: GENERATOR_MODEL,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: SYSTEM,
@@ -151,7 +153,10 @@ async function generateModuleLessons(
     // Validate each card defensively; drop malformed ones rather than fail the module
     const cards = lesson.cards.filter((c) => Card.safeParse(c).success);
     if (cards.length >= 4) {
-      createLesson(moduleId, lesson.title, idx, JSON.stringify(cards));
+      createLesson(moduleId, lesson.title, idx, JSON.stringify(cards), {
+        generatorModel: GENERATOR_MODEL,
+        promptVersion: COURSE_LESSON_PROMPT_VERSION,
+      });
     }
   });
 }

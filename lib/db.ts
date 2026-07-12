@@ -1,9 +1,21 @@
 import Database from "better-sqlite3";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import type { CourseRow, CourseStatus, LessonRow, ModuleRow } from "./schemas";
+import type { Card, CourseRow, CourseStatus, LessonRow, ModuleRow } from "./schemas";
+import type { PracticeSessionItem, QuizAnswerValue, QuizCard } from "./learning-types";
+import {
+  answerEvidence,
+  describeQuestionVersion,
+  EVIDENCE_SCHEMA_VERSION,
+  gradeQuizCard,
+  isQuizAnswerCompatible,
+  makeConceptId,
+  MASTERY_ALGORITHM_VERSION,
+  normalizeConcept,
+} from "./learning";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.BOOKQUEST_DATA_DIR ?? path.join(process.cwd(), "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, "uploads"), { recursive: true });
 
@@ -140,6 +152,15 @@ function createDb(): Database.Database {
     // 0 = free. Paid courses arrive with the marketplace phase.
     db.exec(`ALTER TABLE courses ADD COLUMN price_cents INTEGER NOT NULL DEFAULT 0`);
   }
+  if (!columnExists(db, "courses", "content_version")) {
+    db.exec(`ALTER TABLE courses ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!columnExists(db, "lessons", "generator_model")) {
+    db.exec(`ALTER TABLE lessons ADD COLUMN generator_model TEXT`);
+  }
+  if (!columnExists(db, "lessons", "prompt_version")) {
+    db.exec(`ALTER TABLE lessons ADD COLUMN prompt_version TEXT`);
+  }
 
   // progress: single-user v1 shape → per-user
   if (tableExists(db, "progress") && !columnExists(db, "progress", "user_id")) {
@@ -223,6 +244,154 @@ function createDb(): Database.Database {
       );
     `);
   }
+
+  // ---------- Learning evidence ledger (v3) ----------
+  // Identity is deliberately separated from events. Erasing the mapping can
+  // anonymize a learner without destroying aggregate calibration evidence.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS learning_identities (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      learner_key TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS concepts (
+      id TEXT PRIMARY KEY,
+      course_id INTEGER,
+      label TEXT NOT NULL,
+      normalized_label TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'course',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_concepts_course_label
+      ON concepts(course_id, normalized_label);
+
+    CREATE TABLE IF NOT EXISTS question_versions (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+      course_version INTEGER NOT NULL DEFAULT 1,
+      lesson_id INTEGER,
+      card_index INTEGER,
+      concept_id TEXT NOT NULL REFERENCES concepts(id),
+      concept_label TEXT NOT NULL,
+      question_type TEXT NOT NULL,
+      content_json TEXT NOT NULL,
+      generator_model TEXT,
+      prompt_version TEXT,
+      privacy_scope TEXT NOT NULL DEFAULT 'private_course',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(question_id, content_hash)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_versions_question
+      ON question_versions(question_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_question_versions_course
+      ON question_versions(course_id, concept_id);
+
+    CREATE TABLE IF NOT EXISTS practice_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+      fresh INTEGER NOT NULL DEFAULT 0 CHECK (fresh IN (0, 1)),
+      items_json TEXT NOT NULL,
+      generator_model TEXT,
+      prompt_version TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_practice_sessions_user
+      ON practice_sessions(user_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS answer_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('lesson', 'review')),
+      items_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_answer_sessions_user
+      ON answer_sessions(user_id, kind, created_at);
+
+    CREATE TABLE IF NOT EXISTS learning_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      event_type TEXT NOT NULL DEFAULT 'answer_submitted',
+      learner_key TEXT NOT NULL,
+      organization_id TEXT,
+      enrollment_id TEXT,
+      assignment_id TEXT,
+      course_id INTEGER,
+      course_version INTEGER NOT NULL DEFAULT 1,
+      lesson_id INTEGER,
+      card_index INTEGER,
+      question_version_id TEXT NOT NULL REFERENCES question_versions(id),
+      concept_id TEXT NOT NULL REFERENCES concepts(id),
+      concept_label TEXT NOT NULL,
+      session_id TEXT,
+      session_kind TEXT NOT NULL,
+      delivery_channel TEXT NOT NULL DEFAULT 'web',
+      response_data TEXT NOT NULL,
+      is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
+      was_skipped INTEGER NOT NULL DEFAULT 0 CHECK (was_skipped IN (0, 1)),
+      response_time_ms INTEGER NOT NULL CHECK (response_time_ms >= 0),
+      attempt_number INTEGER NOT NULL DEFAULT 1 CHECK (attempt_number >= 1),
+      hint_count INTEGER NOT NULL DEFAULT 0 CHECK (hint_count >= 0),
+      mastery_before REAL NOT NULL,
+      mastery_after REAL NOT NULL,
+      mastery_algorithm_version TEXT NOT NULL,
+      consent_version TEXT NOT NULL DEFAULT 'service-v1',
+      retention_class TEXT NOT NULL DEFAULT 'learning-evidence',
+      privacy_scope TEXT NOT NULL DEFAULT 'private_course',
+      occurred_at TEXT NOT NULL,
+      recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      schema_version INTEGER NOT NULL DEFAULT 1,
+      metadata_json TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE TABLE IF NOT EXISTS lesson_completion_events (
+      answer_session_id TEXT PRIMARY KEY,
+      learner_key TEXT NOT NULL,
+      course_id INTEGER NOT NULL,
+      lesson_id INTEGER NOT NULL,
+      score INTEGER NOT NULL,
+      total INTEGER NOT NULL,
+      xp_awarded INTEGER NOT NULL,
+      completed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_lesson_completion_learner
+      ON lesson_completion_events(learner_key, completed_at);
+    CREATE INDEX IF NOT EXISTS idx_learning_events_learner_time
+      ON learning_events(learner_key, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_learning_events_question_time
+      ON learning_events(question_version_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_learning_events_course_concept
+      ON learning_events(course_id, concept_id, recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_learning_events_org_time
+      ON learning_events(organization_id, recorded_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_events_semantic_attempt
+      ON learning_events(
+        learner_key, session_kind, session_id, question_version_id, attempt_number
+      )
+      WHERE session_id IS NOT NULL;
+
+    CREATE TRIGGER IF NOT EXISTS learning_events_no_update
+      BEFORE UPDATE ON learning_events
+      BEGIN SELECT RAISE(ABORT, 'learning_events are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS learning_events_no_delete
+      BEFORE DELETE ON learning_events
+      BEGIN SELECT RAISE(ABORT, 'learning_events are append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS question_versions_no_content_update
+      BEFORE UPDATE OF
+        question_id, content_hash, course_version, lesson_id, card_index,
+        concept_id, concept_label, question_type, content_json,
+        generator_model, prompt_version, privacy_scope, created_at
+      ON question_versions
+      BEGIN SELECT RAISE(ABORT, 'question version content is immutable'); END;
+    CREATE TRIGGER IF NOT EXISTS question_versions_no_delete
+      BEFORE DELETE ON question_versions
+      BEGIN SELECT RAISE(ABORT, 'question versions are immutable'); END;
+  `);
 
   return db;
 }
@@ -378,6 +547,7 @@ export interface PlatformCourseCols {
   published: number;
   category: string;
   price_cents: number;
+  content_version: number;
 }
 
 export function listOwnedCourses(userId: number): (CourseRow & PlatformCourseCols)[] {
@@ -419,6 +589,23 @@ export function listPublishedCourses(q?: string, category?: string) {
 
 export function deleteCourse(id: number) {
   db.prepare("DELETE FROM courses WHERE id = ?").run(id);
+}
+
+/** Claim a failed course for one retry and clear old generated content atomically. */
+export function prepareCourseRetry(id: number): boolean {
+  return db.transaction(() => {
+    const claimed = db
+      .prepare(
+        `UPDATE courses
+         SET content_version = content_version + 1,
+             status = 'extracting', error = NULL
+         WHERE id = ? AND status = 'error'`
+      )
+      .run(id);
+    if (claimed.changes !== 1) return false;
+    db.prepare("DELETE FROM modules WHERE course_id = ?").run(id);
+    return true;
+  })();
 }
 
 // ---------- Enrollment & access ----------
@@ -480,13 +667,23 @@ export function createLesson(
   moduleId: number,
   title: string,
   position: number,
-  cardsJson: string
+  cardsJson: string,
+  provenance?: { generatorModel?: string; promptVersion?: string }
 ): number {
   const r = db
     .prepare(
-      "INSERT INTO lessons (module_id, title, position, cards) VALUES (?, ?, ?, ?)"
+      `INSERT INTO lessons
+        (module_id, title, position, cards, generator_model, prompt_version)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(moduleId, title, position, cardsJson);
+    .run(
+      moduleId,
+      title,
+      position,
+      cardsJson,
+      provenance?.generatorModel ?? null,
+      provenance?.promptVersion ?? null
+    );
   return Number(r.lastInsertRowid);
 }
 
@@ -512,13 +709,18 @@ export function completeLesson(
   score: number,
   total: number,
   xp: number
-) {
+): number {
+  const previous = db
+    .prepare("SELECT xp_earned FROM progress WHERE user_id = ? AND lesson_id = ?")
+    .get(userId, lessonId) as { xp_earned: number } | undefined;
+  const awardedXp = Math.max(0, xp - (previous?.xp_earned ?? 0));
   db.prepare(
     `INSERT INTO progress (user_id, lesson_id, score, total, xp_earned, completed_at)
      VALUES (?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT (user_id, lesson_id) DO UPDATE SET
        score = MAX(score, excluded.score),
        total = excluded.total,
+       xp_earned = MAX(xp_earned, excluded.xp_earned),
        completed_at = excluded.completed_at`
   ).run(userId, lessonId, score, total, xp);
 
@@ -531,7 +733,8 @@ export function completeLesson(
   }
   db.prepare(
     "UPDATE user_stats SET total_xp = total_xp + ?, streak = ?, last_active_date = ? WHERE user_id = ?"
-  ).run(xp, streak, today, userId);
+  ).run(awardedXp, streak, today, userId);
+  return awardedXp;
 }
 
 export function getCompletedLessonIds(userId: number): Set<number> {
@@ -587,12 +790,17 @@ export function addReviewItem(userId: number, lessonId: number, cardIndex: numbe
 export function getDueReviewItems(
   userId: number,
   limit = 20
-): { id: number; lesson_id: number; card_index: number }[] {
+): { id: number; lesson_id: number; card_index: number; next_due: string }[] {
   return db
     .prepare(
-      "SELECT id, lesson_id, card_index FROM review_items WHERE user_id = ? AND next_due <= datetime('now') ORDER BY next_due LIMIT ?"
+      "SELECT id, lesson_id, card_index, next_due FROM review_items WHERE user_id = ? AND next_due <= datetime('now') ORDER BY next_due LIMIT ?"
     )
-    .all(userId, limit) as { id: number; lesson_id: number; card_index: number }[];
+    .all(userId, limit) as {
+    id: number;
+    lesson_id: number;
+    card_index: number;
+    next_due: string;
+  }[];
 }
 
 export function answerReviewItem(userId: number, id: number, correct: boolean) {
@@ -686,6 +894,622 @@ export function classWeakConcepts(
     concept: string;
     avg_mastery: number;
     learners: number;
+  }[];
+}
+
+// ---------- Immutable learning evidence ----------
+
+export class EvidenceConflictError extends Error {
+  constructor(message = "This event ID is already attached to different evidence") {
+    super(message);
+    this.name = "EvidenceConflictError";
+  }
+}
+
+export class InvalidAnswerError extends Error {
+  constructor(message = "Answer type does not match this question") {
+    super(message);
+    this.name = "InvalidAnswerError";
+  }
+}
+
+export function getLearnerKey(userId: number): string {
+  const existing = db
+    .prepare("SELECT learner_key FROM learning_identities WHERE user_id = ?")
+    .get(userId) as { learner_key: string } | undefined;
+  if (existing) return existing.learner_key;
+
+  const learnerKey = `learner_${crypto.randomUUID()}`;
+  db.prepare(
+    "INSERT OR IGNORE INTO learning_identities (user_id, learner_key) VALUES (?, ?)"
+  ).run(userId, learnerKey);
+  return (
+    db
+      .prepare("SELECT learner_key FROM learning_identities WHERE user_id = ?")
+      .get(userId) as { learner_key: string }
+  ).learner_key;
+}
+
+interface QuestionContext {
+  courseId: number;
+  lessonId?: number;
+  cardIndex?: number;
+  questionId: string;
+  concept: string;
+  card: QuizCard;
+  generatorModel?: string | null;
+  promptVersion?: string | null;
+}
+
+function ensureQuestionVersion(context: QuestionContext) {
+  const conceptLabel = normalizeConcept(context.concept);
+  if (!conceptLabel) throw new Error("Question has no concept");
+  const conceptId = makeConceptId(context.courseId, conceptLabel);
+  const version = describeQuestionVersion(context.questionId, context.card);
+  const persisted = db
+    .prepare(
+      `SELECT concept_id, concept_label, course_version, privacy_scope
+       FROM question_versions WHERE id = ?`
+    )
+    .get(version.id) as
+    | {
+        concept_id: string;
+        concept_label: string;
+        course_version: number;
+        privacy_scope: string;
+      }
+    | undefined;
+  if (persisted) {
+    return {
+      questionVersionId: version.id,
+      conceptId: persisted.concept_id,
+      conceptLabel: persisted.concept_label,
+      courseVersion: persisted.course_version,
+      privacyScope: persisted.privacy_scope,
+    };
+  }
+
+  const course = getCourse(context.courseId);
+  if (!course) throw new Error("Course not found");
+  const privacyScope = course.published ? "public_course" : "private_course";
+
+  db.prepare(
+    `INSERT OR IGNORE INTO concepts
+      (id, course_id, label, normalized_label, scope)
+     VALUES (?, ?, ?, ?, 'course')`
+  ).run(conceptId, context.courseId, conceptLabel, conceptLabel);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO question_versions
+      (id, question_id, content_hash, course_id, course_version, lesson_id,
+       card_index, concept_id, concept_label, question_type, content_json,
+       generator_model, prompt_version, privacy_scope)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    version.id,
+    version.questionId,
+    version.contentHash,
+    context.courseId,
+    course.content_version,
+    context.lessonId ?? null,
+    context.cardIndex ?? null,
+    conceptId,
+    conceptLabel,
+    context.card.type,
+    version.contentJson,
+    context.generatorModel ?? null,
+    context.promptVersion ?? null,
+    privacyScope
+  );
+
+  return {
+    questionVersionId: version.id,
+    conceptId,
+    conceptLabel,
+    courseVersion: course.content_version,
+    privacyScope,
+  };
+}
+
+export interface AnswerEvidenceInput extends QuestionContext {
+  eventId: string;
+  userId: number;
+  answer: QuizAnswerValue;
+  responseTimeMs: number;
+  occurredAt: string;
+  sessionKind: "lesson" | "practice" | "review";
+  sessionId?: string;
+  attemptNumber?: number;
+  hintCount?: number;
+  deliveryChannel?: string;
+  organizationId?: string;
+  enrollmentId?: string;
+  assignmentId?: string;
+}
+
+export interface AnswerEvidenceResult {
+  eventId: string;
+  inserted: boolean;
+  correct: boolean;
+  masteryBefore: number;
+  masteryAfter: number;
+  questionVersionId: string;
+}
+
+/** Append one answer and update the current mastery projection atomically. */
+export function recordAnswerEvidence(
+  input: AnswerEvidenceInput
+): AnswerEvidenceResult {
+  return db.transaction(() => {
+    if (!isQuizAnswerCompatible(input.card, input.answer)) {
+      throw new InvalidAnswerError();
+    }
+    const learnerKey = getLearnerKey(input.userId);
+    const question = ensureQuestionVersion(input);
+    const canProjectMastery = !!getCourse(input.courseId);
+    const correct = gradeQuizCard(input.card, input.answer);
+    const responseData = answerEvidence(input.card, input.answer);
+    const attemptNumber = Math.max(1, Math.trunc(input.attemptNumber ?? 1));
+    type ExistingEvidence = {
+      event_id: string;
+      learner_key: string;
+      question_version_id: string;
+      response_data: string;
+      session_kind: string;
+      session_id: string | null;
+      attempt_number: number;
+      is_correct: number;
+      mastery_before: number;
+      mastery_after: number;
+    };
+    const byEventId = db
+      .prepare(
+        `SELECT event_id, learner_key, question_version_id, response_data,
+                session_kind, session_id, attempt_number, is_correct,
+                mastery_before, mastery_after
+         FROM learning_events WHERE event_id = ?`
+      )
+      .get(input.eventId) as ExistingEvidence | undefined;
+    const bySemanticAttempt = input.sessionId
+      ? (db
+          .prepare(
+            `SELECT event_id, learner_key, question_version_id, response_data,
+                    session_kind, session_id, attempt_number, is_correct,
+                    mastery_before, mastery_after
+             FROM learning_events
+             WHERE learner_key = ? AND session_kind = ? AND session_id = ?
+               AND question_version_id = ? AND attempt_number = ?`
+          )
+          .get(
+            learnerKey,
+            input.sessionKind,
+            input.sessionId,
+            question.questionVersionId,
+            attemptNumber
+          ) as ExistingEvidence | undefined)
+      : undefined;
+    if (
+      byEventId &&
+      bySemanticAttempt &&
+      byEventId.event_id !== bySemanticAttempt.event_id
+    ) {
+      throw new EvidenceConflictError();
+    }
+    const existing = byEventId ?? bySemanticAttempt;
+
+    if (existing) {
+      if (
+        existing.learner_key !== learnerKey ||
+        existing.question_version_id !== question.questionVersionId ||
+        existing.response_data !== responseData ||
+        existing.session_kind !== input.sessionKind ||
+        existing.session_id !== (input.sessionId ?? null) ||
+        existing.attempt_number !== attemptNumber
+      ) {
+        throw new EvidenceConflictError();
+      }
+      return {
+        eventId: existing.event_id,
+        inserted: false,
+        correct: !!existing.is_correct,
+        masteryBefore: existing.mastery_before,
+        masteryAfter: existing.mastery_after,
+        questionVersionId: existing.question_version_id,
+      };
+    }
+
+    const current = canProjectMastery
+      ? (db
+          .prepare(
+            `SELECT mastery FROM concept_mastery
+             WHERE user_id = ? AND course_id = ? AND concept = ?`
+          )
+          .get(input.userId, input.courseId, question.conceptLabel) as
+          | { mastery: number }
+          | undefined)
+      : undefined;
+    const masteryBefore = current?.mastery ?? 0.5;
+    const masteryAfter =
+      input.answer === null
+        ? masteryBefore
+        : 0.7 * masteryBefore + 0.3 * (correct ? 1 : 0);
+    const responseTimeMs = Math.max(
+      0,
+      Math.min(86_400_000, Math.trunc(input.responseTimeMs))
+    );
+
+    db.prepare(
+      `INSERT INTO learning_events
+        (event_id, learner_key, organization_id, enrollment_id, assignment_id,
+         course_id, course_version, lesson_id, card_index, question_version_id,
+         concept_id, concept_label, session_id, session_kind, delivery_channel,
+         response_data, is_correct, was_skipped, response_time_ms,
+         attempt_number, hint_count, mastery_before, mastery_after,
+         mastery_algorithm_version, privacy_scope, occurred_at, schema_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      input.eventId,
+      learnerKey,
+      input.organizationId ?? null,
+      input.enrollmentId ?? null,
+      input.assignmentId ?? null,
+      input.courseId,
+      question.courseVersion,
+      input.lessonId ?? null,
+      input.cardIndex ?? null,
+      question.questionVersionId,
+      question.conceptId,
+      question.conceptLabel,
+      input.sessionId ?? null,
+      input.sessionKind,
+      input.deliveryChannel ?? "web",
+      responseData,
+      correct ? 1 : 0,
+      input.answer === null ? 1 : 0,
+      responseTimeMs,
+      attemptNumber,
+      Math.max(0, Math.trunc(input.hintCount ?? 0)),
+      masteryBefore,
+      masteryAfter,
+      MASTERY_ALGORITHM_VERSION,
+      question.privacyScope,
+      input.occurredAt,
+      EVIDENCE_SCHEMA_VERSION
+    );
+
+    if (canProjectMastery) {
+      db.prepare(
+        `INSERT INTO concept_mastery
+          (user_id, course_id, concept, correct, wrong, mastery, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT (user_id, course_id, concept) DO UPDATE SET
+           correct = correct + excluded.correct,
+           wrong = wrong + excluded.wrong,
+           mastery = excluded.mastery,
+           updated_at = datetime('now')`
+      ).run(
+        input.userId,
+        input.courseId,
+        question.conceptLabel,
+        input.answer === null ? 0 : correct ? 1 : 0,
+        input.answer === null ? 0 : correct ? 0 : 1,
+        masteryAfter
+      );
+    }
+
+    return {
+      eventId: input.eventId,
+      inserted: true,
+      correct,
+      masteryBefore,
+      masteryAfter,
+      questionVersionId: question.questionVersionId,
+    };
+  })();
+}
+
+export interface AnswerSessionItem extends PracticeSessionItem {
+  courseId: number;
+  reviewId?: number;
+  reviewDueAt?: string;
+}
+
+export interface AnswerSessionRow {
+  id: string;
+  user_id: number;
+  kind: "lesson" | "review";
+  items: AnswerSessionItem[];
+  created_at: string;
+  expires_at: string;
+}
+
+function createAnswerSession(
+  userId: number,
+  kind: AnswerSessionRow["kind"],
+  items: AnswerSessionItem[]
+): AnswerSessionRow {
+  const id = `${kind}_${crypto.randomUUID()}`;
+  const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
+  db.transaction(() => {
+    for (const item of items) {
+      ensureQuestionVersion({
+        courseId: item.courseId,
+        lessonId: item.lessonId,
+        cardIndex: item.cardIndex,
+        questionId: item.questionId,
+        concept: item.concept,
+        card: item.card,
+        generatorModel: item.generatorModel,
+        promptVersion: item.promptVersion,
+      });
+    }
+    db.prepare(
+      `INSERT INTO answer_sessions
+        (id, user_id, kind, items_json, expires_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, userId, kind, JSON.stringify(items), expiresAt);
+  })();
+  return {
+    id,
+    user_id: userId,
+    kind,
+    items,
+    created_at: new Date().toISOString(),
+    expires_at: expiresAt,
+  };
+}
+
+export function createLessonAnswerSession(
+  userId: number,
+  lessonId: number
+): AnswerSessionRow | undefined {
+  const lesson = getLesson(lessonId);
+  if (!lesson) return undefined;
+  const cards = JSON.parse(lesson.cards) as Card[];
+  const items: AnswerSessionItem[] = [];
+  for (let cardIndex = 0; cardIndex < cards.length; cardIndex++) {
+    const card = cards[cardIndex];
+    if (!card.type.startsWith("quiz_")) continue;
+    const quizCard = card as QuizCard;
+    items.push({
+      courseId: lesson.course_id,
+      lessonId: lesson.id,
+      cardIndex,
+      questionId: `lesson:${lesson.id}:card:${cardIndex}`,
+      concept: quizCard.concept || lesson.title,
+      card: quizCard,
+      generatorModel: lesson.generator_model,
+      promptVersion: lesson.prompt_version,
+    });
+  }
+  return createAnswerSession(userId, "lesson", items);
+}
+
+export function createReviewAnswerSession(
+  userId: number,
+  items: AnswerSessionItem[]
+): AnswerSessionRow {
+  return createAnswerSession(userId, "review", items);
+}
+
+export function getAnswerSession(
+  userId: number,
+  sessionId: string,
+  kind: AnswerSessionRow["kind"]
+): AnswerSessionRow | undefined {
+  const row = db
+    .prepare(
+      `SELECT * FROM answer_sessions
+       WHERE id = ? AND user_id = ? AND kind = ?`
+    )
+    .get(sessionId, userId, kind) as
+    | (Omit<AnswerSessionRow, "items"> & { items_json: string })
+    | undefined;
+  return row
+    ? { ...row, items: JSON.parse(row.items_json) as AnswerSessionItem[] }
+    : undefined;
+}
+
+export interface PracticeSessionRow {
+  id: string;
+  user_id: number;
+  course_id: number | null;
+  fresh: number;
+  items: PracticeSessionItem[];
+  generator_model: string | null;
+  prompt_version: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export function createPracticeSession(
+  userId: number,
+  courseId: number,
+  items: (Omit<PracticeSessionItem, "questionId"> & { questionId?: string })[],
+  fresh: boolean,
+  provenance?: { generatorModel?: string; promptVersion?: string }
+): PracticeSessionRow {
+  const id = `practice_${crypto.randomUUID()}`;
+  const sessionItems: PracticeSessionItem[] = items.map((item, index) => ({
+    ...item,
+    courseId,
+    questionId: item.questionId ?? `${id}:question:${index}`,
+  }));
+  const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO practice_sessions
+        (id, user_id, course_id, fresh, items_json, generator_model,
+         prompt_version, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      userId,
+      courseId,
+      fresh ? 1 : 0,
+      JSON.stringify(sessionItems),
+      provenance?.generatorModel ?? null,
+      provenance?.promptVersion ?? null,
+      expiresAt
+    );
+    for (const item of sessionItems) {
+      ensureQuestionVersion({
+        courseId,
+        lessonId: item.lessonId,
+        cardIndex: item.cardIndex,
+        questionId: item.questionId,
+        concept: item.concept,
+        card: item.card,
+        generatorModel: item.generatorModel ?? provenance?.generatorModel,
+        promptVersion: item.promptVersion ?? provenance?.promptVersion,
+      });
+    }
+  })();
+
+  return {
+    id,
+    user_id: userId,
+    course_id: courseId,
+    fresh: fresh ? 1 : 0,
+    items: sessionItems,
+    generator_model: provenance?.generatorModel ?? null,
+    prompt_version: provenance?.promptVersion ?? null,
+    created_at: new Date().toISOString(),
+    expires_at: expiresAt,
+  };
+}
+
+export function getPracticeSession(
+  userId: number,
+  sessionId: string
+): PracticeSessionRow | undefined {
+  const row = db
+    .prepare(
+      `SELECT * FROM practice_sessions
+       WHERE id = ? AND user_id = ?`
+    )
+    .get(sessionId, userId) as
+    | (Omit<PracticeSessionRow, "items"> & { items_json: string })
+    | undefined;
+  if (!row) return undefined;
+  return { ...row, items: JSON.parse(row.items_json) as PracticeSessionItem[] };
+}
+
+export function getReviewItemForUser(
+  userId: number,
+  reviewId: number
+): { id: number; lesson_id: number; card_index: number; next_due: string } | undefined {
+  return db
+    .prepare(
+      `SELECT id, lesson_id, card_index, next_due FROM review_items
+       WHERE id = ? AND user_id = ?`
+    )
+    .get(reviewId, userId) as
+    | { id: number; lesson_id: number; card_index: number; next_due: string }
+    | undefined;
+}
+
+export function getLessonEvidenceSummary(
+  userId: number,
+  lessonId: number,
+  answerSessionId: string
+): { score: number; total: number; wrongCardIndexes: number[] } | undefined {
+  const session = getAnswerSession(userId, answerSessionId, "lesson");
+  if (!session) return undefined;
+  const expected = session.items.filter((item) => item.lessonId === lessonId);
+  if (expected.length === 0) return undefined;
+  const learnerKey = getLearnerKey(userId);
+  const rows = db
+    .prepare(
+      `SELECT question_version_id, is_correct, card_index FROM learning_events
+       WHERE learner_key = ? AND lesson_id = ?
+         AND session_kind = 'lesson' AND session_id = ?`
+    )
+    .all(learnerKey, lessonId, answerSessionId) as {
+    question_version_id: string;
+    is_correct: number;
+    card_index: number;
+  }[];
+  if (rows.length !== expected.length) return undefined;
+  const expectedKeys = new Set(
+    expected.map(
+      (item) =>
+        `${item.cardIndex}:${describeQuestionVersion(item.questionId, item.card).id}`
+    )
+  );
+  const actualKeys = new Set(
+    rows.map((row) => `${row.card_index}:${row.question_version_id}`)
+  );
+  if (
+    expectedKeys.size !== expected.length ||
+    actualKeys.size !== rows.length ||
+    [...expectedKeys].some((key) => !actualKeys.has(key))
+  ) {
+    return undefined;
+  }
+  return {
+    score: rows.filter((row) => row.is_correct).length,
+    total: rows.length,
+    wrongCardIndexes: rows
+      .filter((row) => !row.is_correct)
+      .map((row) => row.card_index),
+  };
+}
+
+export function learningLedgerHealth(): {
+  events: number;
+  events_24h: number;
+  learners: number;
+  question_versions: number;
+  malformed: number;
+} {
+  return db
+    .prepare(
+      `SELECT
+        COUNT(*) AS events,
+        COALESCE(SUM(CASE WHEN recorded_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END), 0) AS events_24h,
+        COUNT(DISTINCT learner_key) AS learners,
+        COUNT(DISTINCT question_version_id) AS question_versions,
+        COALESCE(SUM(CASE WHEN concept_id = '' OR question_version_id = '' THEN 1 ELSE 0 END), 0) AS malformed
+       FROM learning_events`
+    )
+    .get() as {
+    events: number;
+    events_24h: number;
+    learners: number;
+    question_versions: number;
+    malformed: number;
+  };
+}
+
+export function questionCalibration(limit = 100): {
+  question_version_id: string;
+  attempts: number;
+  unique_learners: number;
+  correct_rate: number;
+  avg_response_time_ms: number;
+}[] {
+  return db
+    .prepare(
+      `SELECT question_version_id,
+              COUNT(*) AS attempts,
+              COUNT(DISTINCT learner_key) AS unique_learners,
+              AVG(is_correct) AS correct_rate,
+              AVG(response_time_ms) AS avg_response_time_ms
+       FROM learning_events
+       WHERE was_skipped = 0
+       GROUP BY question_version_id
+       ORDER BY attempts DESC
+       LIMIT ?`
+    )
+    .all(limit) as {
+    question_version_id: string;
+    attempts: number;
+    unique_learners: number;
+    correct_rate: number;
+    avg_response_time_ms: number;
   }[];
 }
 

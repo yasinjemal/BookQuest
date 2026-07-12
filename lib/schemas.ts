@@ -166,4 +166,6 @@ export interface LessonRow {
   title: string;
   position: number;
   cards: string; // JSON Card[]
+  generator_model: string | null;
+  prompt_version: string | null;
 }

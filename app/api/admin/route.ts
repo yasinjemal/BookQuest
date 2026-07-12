@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adjustCredits, listUsers, platformCounts } from "@/lib/db";
+import {
+  adjustCredits,
+  learningLedgerHealth,
+  listUsers,
+  platformCounts,
+} from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -13,6 +18,7 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({
     counts: platformCounts(),
+    learningLedger: learningLedgerHealth(),
     users: listUsers().map((u) => ({
       id: u.id,
       email: u.email,

@@ -3,6 +3,12 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { Card } from "@/lib/schemas";
+import type { QuizAnswerResult } from "@/lib/learning-types";
+import {
+  setAnswerOutboxAccount,
+  startAnswerOutboxSync,
+  submitAnswer,
+} from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
 
 type QuizCardType = Extract<
@@ -11,6 +17,7 @@ type QuizCardType = Extract<
 >;
 
 interface PracticeItem {
+  questionId: string;
   concept: string;
   card: QuizCardType;
 }
@@ -19,6 +26,7 @@ export default function PracticeSessionPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const router = useRouter();
   const [items, setItems] = useState<PracticeItem[] | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isFresh, setIsFresh] = useState(false);
   const [loadingFresh, setLoadingFresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +55,8 @@ export default function PracticeSessionPage() {
           return;
         }
         setItems(data.cards);
+        if (data.viewerId) setAnswerOutboxAccount(data.viewerId);
+        setSessionId(data.sessionId);
         setIsFresh(!!data.fresh);
         setIndex(0);
         setCorrectCount(0);
@@ -65,23 +75,23 @@ export default function PracticeSessionPage() {
     loadSession(false);
   }, [loadSession]);
 
-  async function onAnswered(correct: boolean) {
-    if (!items) return;
+  useEffect(() => startAnswerOutboxSync(), []);
+
+  async function onAnswered(result: QuizAnswerResult) {
+    if (!items || !sessionId) return;
     setAnswered(true);
-    if (correct) setCorrectCount((n) => n + 1);
-    try {
-      await fetch("/api/practice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          courseId: Number(courseId),
-          concept: items[index].concept,
-          correct,
-        }),
-      });
-    } catch {
-      /* offline: mastery update lost, not critical */
-    }
+    if (result.correct) setCorrectCount((n) => n + 1);
+    await submitAnswer({
+      source: "practice",
+      sessionId,
+      itemIndex: index,
+      eventId: result.eventId,
+      answer: result.answer,
+      responseTimeMs: result.responseTimeMs,
+      occurredAt: result.occurredAt,
+      attemptNumber: result.attemptNumber,
+      hintCount: result.hintCount,
+    });
   }
 
   function next() {

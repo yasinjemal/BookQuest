@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { setAnswerOutboxAccount } from "@/lib/answer-outbox";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         setError(data.error ?? "Something went wrong");
         return;
       }
+      if (data.user?.id) setAnswerOutboxAccount(data.user.id);
       router.push("/");
       router.refresh();
     } catch {

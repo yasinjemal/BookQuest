@@ -3,6 +3,13 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { Card } from "@/lib/schemas";
+import type { QuizAnswerResult } from "@/lib/learning-types";
+import {
+  flushAnswerOutbox,
+  setAnswerOutboxAccount,
+  startAnswerOutboxSync,
+  submitAnswer,
+} from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
 
 interface LessonData {
@@ -10,6 +17,8 @@ interface LessonData {
   module_id: number;
   title: string;
   cards: Card[];
+  answerSessionId: string;
+  viewerId: number;
 }
 
 export default function LessonPage() {
@@ -17,13 +26,14 @@ export default function LessonPage() {
   const router = useRouter();
   const [lesson, setLesson] = useState<LessonData | null>(null);
   const [index, setIndex] = useState(0);
-  const [results, setResults] = useState<Record<number, boolean>>({});
+  const [results, setResults] = useState<Record<number, QuizAnswerResult>>({});
   const [finished, setFinished] = useState<{
     xp: number;
     streak: number;
     certificateId?: string;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/lessons/${id}`)
@@ -34,9 +44,14 @@ export default function LessonPage() {
         }
         return r.json();
       })
-      .then(setLesson)
+      .then((data) => {
+        if (data?.viewerId) setAnswerOutboxAccount(data.viewerId);
+        setLesson(data);
+      })
       .catch(() => setLesson(null));
   }, [id]);
+
+  useEffect(() => startAnswerOutboxSync(), []);
 
   const quizIndexes = useMemo(
     () =>
@@ -48,39 +63,40 @@ export default function LessonPage() {
     [lesson]
   );
 
-  async function finish(finalResults: Record<number, boolean>) {
+  async function finish() {
     if (!lesson || saving) return;
     setSaving(true);
-    const score = quizIndexes.filter((i) => finalResults[i]).length;
-    const wrong = quizIndexes.filter((i) => finalResults[i] === false);
+    setFinishError(null);
+    await flushAnswerOutbox();
     try {
       const res = await fetch(`/api/lessons/${lesson.id}/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          score,
-          total: quizIndexes.length,
-          wrongCardIndexes: wrong,
-          results: finalResults, // per-card answers feed the mastery engine
+          answerSessionId: lesson.answerSessionId,
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setFinishError(data.error ?? "Could not save this lesson yet.");
+        return;
+      }
       setFinished({
         xp: data.xp ?? 0,
         streak: data.stats?.streak ?? 0,
         certificateId: data.certificate?.id,
       });
     } catch {
-      setFinished({ xp: 0, streak: 0 });
+      setFinishError("You appear to be offline. Reconnect, then finish again.");
     } finally {
       setSaving(false);
     }
   }
 
-  function advance(nextResults: Record<number, boolean>) {
+  function advance() {
     if (!lesson) return;
     if (index + 1 >= lesson.cards.length) {
-      finish(nextResults);
+      finish();
     } else {
       setIndex(index + 1);
     }
@@ -91,7 +107,7 @@ export default function LessonPage() {
 
   // ----- Celebration screen -----
   if (finished) {
-    const score = quizIndexes.filter((i) => results[i]).length;
+    const score = quizIndexes.filter((i) => results[i]?.correct).length;
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center px-8 text-center">
         <div className="text-6xl pop-in">🎉</div>
@@ -196,16 +212,28 @@ export default function LessonPage() {
         ) : (
           <QuizCard
             card={card}
-            onAnswered={(correct) =>
-              setResults((r) => ({ ...r, [index]: correct }))
-            }
+            onAnswered={(result) => {
+              setResults((current) => ({ ...current, [index]: result }));
+              void submitAnswer({
+                source: "lesson",
+                sessionId: lesson.answerSessionId,
+                lessonId: lesson.id,
+                cardIndex: index,
+                eventId: result.eventId,
+                answer: result.answer,
+                responseTimeMs: result.responseTimeMs,
+                occurredAt: result.occurredAt,
+                attemptNumber: result.attemptNumber,
+                hintCount: result.hintCount,
+              });
+            }}
           />
         )}
       </div>
 
       {/* Continue button */}
       <button
-        onClick={() => advance(results)}
+        onClick={advance}
         disabled={
           saving || (card.type.startsWith("quiz_") && results[index] === undefined)
         }
@@ -217,6 +245,11 @@ export default function LessonPage() {
             : "Finish lesson"
           : "Continue"}
       </button>
+      {finishError && (
+        <p className="mt-2 text-center text-sm font-semibold text-no">
+          {finishError}
+        </p>
+      )}
     </div>
   );
 }
