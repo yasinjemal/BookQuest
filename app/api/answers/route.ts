@@ -13,6 +13,16 @@ import {
 } from "@/lib/db";
 import { AnswerSubmission } from "@/lib/learning";
 import type { QuizCard } from "@/lib/learning-types";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  tooManyRequests,
+} from "@/lib/rate-limit";
+import {
+  operationalSubject,
+  recordOperationalError,
+} from "@/lib/observability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +30,12 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
+
+  const limit = await consumeRateLimit(
+    RATE_LIMITS.answerUser,
+    rateLimitSubject("user", user.id)
+  );
+  if (!limit.allowed) return tooManyRequests(limit);
 
   let raw: unknown;
   try {
@@ -174,6 +190,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 409 });
     }
     console.error("Could not record answer evidence", error);
+    await recordOperationalError({
+      eventType: "learning.answer_failed",
+      area: "learning.answers",
+      error,
+      subjectKey: operationalSubject("user", user.id),
+      metadata: { answer_source: body.source },
+    });
     return NextResponse.json({ error: "Could not record answer" }, { status: 500 });
   }
 }

@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import { withCourseGenerationLock } from "./pg";
 import { runGenerationUntilBudget } from "./generator";
+import {
+  operationalSubject,
+  recordOperationalError,
+} from "./observability";
 
 /**
  * Durable course generation driver.
@@ -50,6 +54,12 @@ export async function kickGeneration(courseId: number, baseUrl: string): Promise
     });
   } catch (err) {
     console.error(`Failed to kick generation for course ${courseId}:`, err);
+    await recordOperationalError({
+      eventType: "generation.trigger_failed",
+      area: "course.generation",
+      error: err,
+      subjectKey: operationalSubject("course", courseId),
+    });
   }
 }
 
@@ -67,6 +77,12 @@ export async function runAndChain(courseId: number, baseUrl: string): Promise<vo
       );
     } catch (err) {
       console.error(`Generation chain error for course ${courseId}:`, err);
+      await recordOperationalError({
+        eventType: "generation.chain_failed",
+        area: "course.generation",
+        error: err,
+        subjectKey: operationalSubject("course", courseId),
+      });
       return false;
     }
   });

@@ -12,6 +12,21 @@ interface AdminData {
     question_versions: number;
     malformed: number;
   };
+  operations: {
+    total_24h: number;
+    errors_24h: number;
+    warnings_24h: number;
+    rate_limited_24h: number;
+    ai_requests_24h: number;
+    ai_failures_24h: number;
+    alerts: string[];
+    recent: {
+      event_type: string;
+      severity: "info" | "warning" | "error";
+      area: string;
+      occurred_at: string;
+    }[];
+  };
   users: {
     id: number;
     email: string;
@@ -96,6 +111,48 @@ export default function AdminPage() {
         <p className="mt-2 text-sm text-no font-semibold">
           {data.learningLedger.malformed} malformed evidence events need attention.
         </p>
+      )}
+
+      <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
+        Operations · last 24 hours
+      </h2>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          ["AI requests", data.operations.ai_requests_24h],
+          ["AI failures", data.operations.ai_failures_24h],
+          ["Rate limited", data.operations.rate_limited_24h],
+          ["Server errors", data.operations.errors_24h],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+          >
+            <div className="text-xl font-extrabold">{value ?? 0}</div>
+            <div className="text-xs text-ink-soft">{label}</div>
+          </div>
+        ))}
+      </div>
+      {data.operations.alerts.map((alert) => (
+        <p key={alert} className="mt-2 text-sm text-no font-semibold">
+          {alert}
+        </p>
+      ))}
+      {data.operations.recent.length > 0 && (
+        <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line mt-3">
+          {data.operations.recent.map((event, index) => (
+            <div key={`${event.occurred_at}-${index}`} className="px-4 py-3">
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="font-semibold">{event.area}</span>
+                <span className={event.severity === "error" ? "text-no" : "text-ink-soft"}>
+                  {event.severity}
+                </span>
+              </div>
+              <div className="text-xs text-ink-soft mt-0.5">
+                {event.event_type} · {new Date(event.occurred_at).toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">

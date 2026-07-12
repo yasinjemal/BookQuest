@@ -1,13 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { login, publicUser, startSession } from "@/lib/auth";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  requestIp,
+  tooManyRequests,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const { email, password } = (await req.json()) as {
-    email: string;
-    password: string;
-  };
+  const ipLimit = await consumeRateLimit(
+    RATE_LIMITS.loginIp,
+    rateLimitSubject("ip", requestIp(req))
+  );
+  if (!ipLimit.allowed) return tooManyRequests(ipLimit);
+
+  let email = "";
+  let password = "";
+  try {
+    const body = (await req.json()) as { email?: string; password?: string };
+    email = body.email ?? "";
+    password = body.password ?? "";
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+
+  const accountLimit = await consumeRateLimit(
+    RATE_LIMITS.loginAccount,
+    rateLimitSubject("email", email || "missing")
+  );
+  if (!accountLimit.allowed) return tooManyRequests(accountLimit);
+
   const result = await login(email ?? "", password ?? "");
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 401 });

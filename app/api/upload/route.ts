@@ -4,6 +4,17 @@ import { adjustCredits, createCourse, setCourseSource, setCourseStatus } from "@
 import { requireUser } from "@/lib/auth";
 import { extractDocument } from "@/lib/extract";
 import { resolveBaseUrl, runAndChain } from "@/lib/generation";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  requestIp,
+  tooManyRequests,
+} from "@/lib/rate-limit";
+import {
+  operationalSubject,
+  recordOperationalError,
+} from "@/lib/observability";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,6 +24,17 @@ const ALLOWED = new Set(["pdf", "docx", "md", "txt", "markdown"]);
 export async function POST(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
+
+  const userLimit = await consumeRateLimit(
+    RATE_LIMITS.uploadUser,
+    rateLimitSubject("user", user.id)
+  );
+  if (!userLimit.allowed) return tooManyRequests(userLimit);
+  const ipLimit = await consumeRateLimit(
+    RATE_LIMITS.uploadIp,
+    rateLimitSubject("ip", requestIp(req))
+  );
+  if (!ipLimit.allowed) return tooManyRequests(ipLimit);
 
   const isAdmin = user.role === "admin";
   if (!isAdmin && user.credits < 1) {
@@ -59,6 +81,13 @@ export async function POST(req: NextRequest) {
     after(() => runAndChain(courseId, baseUrl));
     return NextResponse.json({ courseId, chapters: chapters.length });
   } catch (err) {
+    await recordOperationalError({
+      eventType: "document.extraction_failed",
+      area: "course.upload",
+      error: err,
+      subjectKey: operationalSubject("course", courseId),
+      metadata: { file_extension: ext, file_size_bytes: file.size },
+    });
     await setCourseStatus(
       courseId,
       "error",

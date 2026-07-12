@@ -152,6 +152,16 @@ module is marked and the rest still complete).
    - `GENERATION_SECRET` — any random string; guards the internal generation
      worker so only the app can trigger it (see "Durable course generation").
      Recommended in production.
+   - `RATE_LIMIT_SALT` — a separate random secret used to hash account and
+     network identifiers in distributed rate-limit buckets. Recommended in
+     production; rotate only when intentionally resetting all active limits.
+   - `OBSERVABILITY_SALT` — a separate random secret for one-way subject keys in
+     operational monitoring. Optional if `RATE_LIMIT_SALT` is set, but a
+     separate production value is preferred.
+   - *(optional)* `AI_REQUEST_ALERT_24H` and `RATE_LIMIT_ALERT_24H` — admin alert
+     thresholds, defaulting to 100 AI requests and 50 denials in 24 hours.
+   - *(optional)* `OPERATIONAL_EVENT_RETENTION_DAYS` — monitoring retention,
+     clamped to 7–3650 days and defaulting to 90.
    - *(optional)* `FLW_SECRET_KEY` — enables live Flutterwave billing
 3. **Redeploy.** The schema auto-creates on the first request; no migration step
    is required.

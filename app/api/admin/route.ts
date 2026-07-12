@@ -6,6 +6,7 @@ import {
   platformCounts,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { operationalHealth } from "@/lib/observability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,14 +17,16 @@ export async function GET(req: NextRequest) {
   if (user.role !== "admin") {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
-  const [counts, learningLedger, users] = await Promise.all([
+  const [counts, learningLedger, operations, users] = await Promise.all([
     platformCounts(),
     learningLedgerHealth(),
+    operationalHealth(),
     listUsers(),
   ]);
   return NextResponse.json({
     counts,
     learningLedger,
+    operations,
     users: users.map((u) => ({
       id: u.id,
       email: u.email,

@@ -16,6 +16,11 @@ import {
 } from "./db";
 import type { Chapter } from "./extract";
 import { Card, CourseOutline, ModuleLessons, PracticeQuiz } from "./schemas";
+import {
+  operationalSubject,
+  recordOperationalError,
+  recordOperationalEvent,
+} from "./observability";
 
 export const GENERATOR_MODEL = "claude-opus-4-8";
 export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v1";
@@ -97,6 +102,13 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
   if ((await countModules(courseId)) === 0) {
     try {
       await setCourseStatus(courseId, "outlining");
+      await recordOperationalEvent({
+        eventType: "ai.request",
+        severity: "info",
+        area: "course.outline",
+        subjectKey: operationalSubject("course", courseId),
+        metadata: { model: GENERATOR_MODEL, prompt_version: "course-outline-v1" },
+      });
       const outline = await generateOutline(chapters);
       await setCourseMeta(courseId, outline.title, outline.description);
       for (let i = 0; i < outline.modules.length; i++) {
@@ -107,6 +119,13 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
       return "continue";
     } catch (err) {
       console.error(`Course ${courseId} outline failed:`, err);
+      await recordOperationalError({
+        eventType: "ai.failure",
+        area: "course.outline",
+        error: err,
+        subjectKey: operationalSubject("course", courseId),
+        metadata: { model: GENERATOR_MODEL },
+      });
       const attempts = await bumpCourseGenerationAttempts(courseId);
       if (attempts >= MAX_OUTLINE_ATTEMPTS) {
         await setCourseStatus(
@@ -125,10 +144,27 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
   if (claimed) {
     try {
       const sourceText = moduleSourceText(chapters, claimed.chapter_indexes);
+      await recordOperationalEvent({
+        eventType: "ai.request",
+        severity: "info",
+        area: "course.module",
+        subjectKey: operationalSubject("course", courseId),
+        metadata: {
+          model: GENERATOR_MODEL,
+          prompt_version: COURSE_LESSON_PROMPT_VERSION,
+        },
+      });
       await generateModuleLessons(claimed.id, claimed.title, sourceText);
       await setModuleStatus(claimed.id, "ready");
     } catch (err) {
       console.error(`Module ${claimed.id} generation failed:`, err);
+      await recordOperationalError({
+        eventType: "ai.failure",
+        area: "course.module",
+        error: err,
+        subjectKey: operationalSubject("course", courseId),
+        metadata: { model: GENERATOR_MODEL },
+      });
       // Give up on this module after its final attempt; otherwise release it.
       await setModuleStatus(
         claimed.id,

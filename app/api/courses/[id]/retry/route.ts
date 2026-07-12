@@ -3,6 +3,12 @@ import { after } from "next/server";
 import { getCourse, getCourseSource, prepareCourseRetry } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { resolveBaseUrl, runAndChain } from "@/lib/generation";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  tooManyRequests,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,6 +19,11 @@ export async function POST(
 ) {
   const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
+  const limit = await consumeRateLimit(
+    RATE_LIMITS.courseRetryUser,
+    rateLimitSubject("user", user.id)
+  );
+  if (!limit.allowed) return tooManyRequests(limit);
   const { id } = await params;
   const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -229,6 +229,32 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  bucket_key TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  window_id BIGINT NOT NULL,
+  request_count INTEGER NOT NULL DEFAULT 1 CHECK (request_count > 0),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (bucket_key, window_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_expiry
+  ON rate_limit_buckets(expires_at);
+
+CREATE TABLE IF NOT EXISTS operational_events (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'error')),
+  area TEXT NOT NULL,
+  subject_key TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX IF NOT EXISTS idx_operational_events_time
+  ON operational_events(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_operational_events_type_time
+  ON operational_events(event_type, occurred_at);
+
 CREATE TABLE IF NOT EXISTS enrollments (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,

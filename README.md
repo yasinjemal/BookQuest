@@ -33,6 +33,8 @@ design baseline.
    ANTHROPIC_API_KEY=sk-ant-...     # required for course generation
    FLW_SECRET_KEY=FLWSECK-...       # optional; omit for test-mode billing
    BILLING_CURRENCY=USD             # optional, default USD
+   RATE_LIMIT_SALT=random-secret    # recommended; hashes limiter identities
+   OBSERVABILITY_SALT=random-secret # recommended; hashes monitoring subjects
    ```
 3. `npm run dev` → http://localhost:3000
 4. Register — your first account is the admin.
@@ -51,6 +53,10 @@ design baseline.
 - Postgres (`pg`) — Neon in production; schema created idempotently in `lib/pg.ts`
 - `@anthropic-ai/sdk` structured outputs (`zodOutputFormat` + `messages.parse`)
 - Cookie sessions + bcryptjs password hashing (`lib/auth.ts`)
+- Distributed Postgres-backed rate limits on authentication, uploads, AI work,
+  retries, and answer submission; identifiers are stored only as keyed hashes
+- Privacy-safe operational monitoring for AI volume, failures, abuse signals,
+  and server errors, summarized in the admin dashboard
 - Service worker: cached app shell; authenticated APIs stay network-only to
   prevent cross-account data leaks; answers queue safely during interruptions
 
@@ -71,6 +77,9 @@ design baseline.
 
 ## Product and architecture plans
 
+- [`docs/PLATFORM_PHASE_TRACKER.md`](docs/PLATFORM_PHASE_TRACKER.md) — the living
+  phase-by-phase execution tracker, release gates, metrics, and idea preservation
+  register.
 - [`docs/PRODUCT_BLUEPRINT.md`](docs/PRODUCT_BLUEPRINT.md) — Learning Genome,
   Skill Passport, compliance engine, WhatsApp delivery, sequencing, safeguards,
   and success metrics.

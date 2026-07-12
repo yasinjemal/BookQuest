@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { resolveBaseUrl, runAndChain, verifyGenerationSecret } from "@/lib/generation";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  tooManyRequests,
+} from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -25,6 +31,11 @@ export async function POST(req: NextRequest) {
   if (!Number.isInteger(courseId) || courseId <= 0) {
     return NextResponse.json({ error: "Invalid courseId" }, { status: 400 });
   }
+  const limit = await consumeRateLimit(
+    RATE_LIMITS.internalGenerationCourse,
+    rateLimitSubject("course", courseId)
+  );
+  if (!limit.allowed) return tooManyRequests(limit);
 
   const baseUrl = resolveBaseUrl(req);
   after(() => runAndChain(courseId, baseUrl));

@@ -3,6 +3,11 @@
 **Status:** living product and delivery plan  
 **Last updated:** 12 July 2026
 
+Implementation is tracked phase by phase in
+[`PLATFORM_PHASE_TRACKER.md`](PLATFORM_PHASE_TRACKER.md). That tracker is the
+operational source for checklists, release gates, metrics and deferred ideas;
+this blueprint remains the strategic product rationale.
+
 ## Executive decision
 
 BookQuest will build two reinforcing assets:

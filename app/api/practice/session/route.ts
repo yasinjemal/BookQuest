@@ -16,6 +16,17 @@ import {
 } from "@/lib/generator";
 import type { Card } from "@/lib/schemas";
 import type { QuizCard } from "@/lib/learning-types";
+import {
+  consumeRateLimit,
+  RATE_LIMITS,
+  rateLimitSubject,
+  tooManyRequests,
+} from "@/lib/rate-limit";
+import {
+  operationalSubject,
+  recordOperationalError,
+  recordOperationalEvent,
+} from "@/lib/observability";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -89,9 +100,21 @@ export async function POST(req: NextRequest) {
         { status: 402 }
       );
     }
+    const limit = await consumeRateLimit(
+      RATE_LIMITS.freshPracticeUser,
+      rateLimitSubject("user", user.id)
+    );
+    if (!limit.allowed) return tooManyRequests(limit);
     const concepts =
       weakest.length > 0 ? weakest : allQuiz.slice(0, 4).map((q) => q.concept);
     try {
+      await recordOperationalEvent({
+        eventType: "ai.request",
+        severity: "info",
+        area: "practice.fresh",
+        subjectKey: operationalSubject("user", user.id),
+        metadata: { model: GENERATOR_MODEL, prompt_version: PRACTICE_PROMPT_VERSION },
+      });
       const cards = await generatePracticeQuiz(
         course.title,
         concepts,
@@ -122,6 +145,13 @@ export async function POST(req: NextRequest) {
         cards: session.items,
       });
     } catch (err) {
+      await recordOperationalError({
+        eventType: "ai.failure",
+        area: "practice.fresh",
+        error: err,
+        subjectKey: operationalSubject("user", user.id),
+        metadata: { model: GENERATOR_MODEL },
+      });
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Generation failed" },
         { status: 502 }
