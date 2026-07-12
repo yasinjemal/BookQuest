@@ -13,14 +13,14 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { id } = await params;
-  const lesson = getLesson(Number(id));
-  if (!lesson || !canAccessCourse(user.id, lesson.course_id)) {
+  const lesson = await getLesson(Number(id));
+  if (!lesson || !(await canAccessCourse(user.id, lesson.course_id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const answerSession = createLessonAnswerSession(user.id, lesson.id);
+  const answerSession = await createLessonAnswerSession(user.id, lesson.id);
   return NextResponse.json({
     id: lesson.id,
     module_id: lesson.module_id,

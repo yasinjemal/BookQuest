@@ -20,32 +20,32 @@ export function verifyPassword(password: string, hash: string): boolean {
   return bcrypt.compareSync(password, hash);
 }
 
-export function register(
+export async function register(
   email: string,
   name: string,
   password: string
-): { user?: UserRow; error?: string } {
+): Promise<{ user?: UserRow; error?: string }> {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
   if (name.trim().length < 2) return { error: "Enter your name." };
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
-  if (getUserByEmail(email)) return { error: "An account with this email already exists." };
-  return { user: createUser(email, name, hashPassword(password)) };
+  if (await getUserByEmail(email)) return { error: "An account with this email already exists." };
+  return { user: await createUser(email, name, hashPassword(password)) };
 }
 
-export function login(
+export async function login(
   email: string,
   password: string
-): { user?: UserRow; error?: string } {
-  const user = getUserByEmail(email);
+): Promise<{ user?: UserRow; error?: string }> {
+  const user = await getUserByEmail(email);
   if (!user || !verifyPassword(password, user.password_hash)) {
     return { error: "Wrong email or password." };
   }
   return { user };
 }
 
-export function startSession(res: NextResponse, userId: number) {
+export async function startSession(res: NextResponse, userId: number) {
   const token = crypto.randomBytes(32).toString("hex");
-  createSession(userId, token);
+  await createSession(userId, token);
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
@@ -54,23 +54,23 @@ export function startSession(res: NextResponse, userId: number) {
   });
 }
 
-export function endSession(req: NextRequest, res: NextResponse) {
+export async function endSession(req: NextRequest, res: NextResponse) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  if (token) deleteSession(token);
+  if (token) await deleteSession(token);
   res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
 }
 
 /** Returns the logged-in user for a route handler request, or undefined. */
-export function getUser(req: NextRequest): UserRow | undefined {
+export async function getUser(req: NextRequest): Promise<UserRow | undefined> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   return token ? getSessionUser(token) : undefined;
 }
 
 /** 401 helper: returns [user, undefined] or [undefined, response]. */
-export function requireUser(
+export async function requireUser(
   req: NextRequest
-): [UserRow, undefined] | [undefined, NextResponse] {
-  const user = getUser(req);
+): Promise<[UserRow, undefined] | [undefined, NextResponse]> {
+  const user = await getUser(req);
   if (!user) {
     return [undefined, NextResponse.json({ error: "Not signed in" }, { status: 401 })];
   }

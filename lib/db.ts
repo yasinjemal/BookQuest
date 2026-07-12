@@ -1,7 +1,4 @@
-import Database from "better-sqlite3";
 import crypto from "crypto";
-import fs from "fs";
-import path from "path";
 import type { Card, CourseRow, CourseStatus, LessonRow, ModuleRow } from "./schemas";
 import type { PracticeSessionItem, QuizAnswerValue, QuizCard } from "./learning-types";
 import {
@@ -14,397 +11,19 @@ import {
   MASTERY_ALGORITHM_VERSION,
   normalizeConcept,
 } from "./learning";
+import type { PoolClient } from "pg";
+import { many, one, q, tx, type Queryable } from "./pg";
 
-const DATA_DIR = process.env.BOOKQUEST_DATA_DIR ?? path.join(process.cwd(), "data");
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(path.join(DATA_DIR, "uploads"), { recursive: true });
+/**
+ * Data layer, backed by Neon Postgres (see ./pg for the connection + schema).
+ *
+ * The whole module is async: unlike better-sqlite3, `pg` has no synchronous API,
+ * so every function returns a Promise and callers must await. Timestamps are
+ * stored as ISO-8601 text (matching `Date.toISOString()`), and comparisons
+ * against "now" cast the column to timestamptz in SQL.
+ */
 
-const globalForDb = globalThis as unknown as { __db?: Database.Database };
-
-function columnExists(db: Database.Database, table: string, col: string) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-  return cols.some((c) => c.name === col);
-}
-function tableExists(db: Database.Database, table: string) {
-  return !!db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-    .get(table);
-}
-
-function createDb(): Database.Database {
-  const db = new Database(path.join(DATA_DIR, "app.db"), { timeout: 30_000 });
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON"); // required for ON DELETE CASCADE to work
-
-  // Next/Vercel may import route modules in many worker processes at once.
-  // BEGIN IMMEDIATE makes the entire inspect-and-migrate sequence one exclusive
-  // writer operation, so a waiting worker re-checks the finished schema instead
-  // of racing the first worker's ALTER TABLE statements.
-  const migrate = db.transaction(() => {
-
-  // ---------- Base tables (v1) ----------
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS courses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      source_filename TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'extracting',
-      error TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS modules (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      position INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending'
-    );
-    CREATE TABLE IF NOT EXISTS lessons (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      module_id INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      position INTEGER NOT NULL,
-      cards TEXT NOT NULL
-    );
-  `);
-
-  // ---------- Platform tables (v2) ----------
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-      name TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user',
-      credits INTEGER NOT NULL DEFAULT 3,
-      premium_until TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      token TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      expires_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS enrollments (
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (user_id, course_id)
-    );
-    CREATE TABLE IF NOT EXISTS concept_mastery (
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-      concept TEXT NOT NULL,
-      correct INTEGER NOT NULL DEFAULT 0,
-      wrong INTEGER NOT NULL DEFAULT 0,
-      mastery REAL NOT NULL DEFAULT 0.5,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (user_id, course_id, concept)
-    );
-    CREATE TABLE IF NOT EXISTS classrooms (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      code TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS classroom_members (
-      classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      joined_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (classroom_id, user_id)
-    );
-    CREATE TABLE IF NOT EXISTS classroom_assignments (
-      classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
-      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-      assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (classroom_id, course_id)
-    );
-    CREATE TABLE IF NOT EXISTS certificates (
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-      score_pct INTEGER NOT NULL,
-      issued_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (user_id, course_id)
-    );
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      tx_ref TEXT NOT NULL UNIQUE,
-      product TEXT NOT NULL,
-      amount_cents INTEGER NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'USD',
-      provider TEXT NOT NULL DEFAULT 'flutterwave',
-      provider_ref TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
-  // Course columns for platform + future marketplace
-  if (!columnExists(db, "courses", "owner_id")) {
-    db.exec(`ALTER TABLE courses ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!columnExists(db, "courses", "published")) {
-    db.exec(`ALTER TABLE courses ADD COLUMN published INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!columnExists(db, "courses", "category")) {
-    db.exec(`ALTER TABLE courses ADD COLUMN category TEXT NOT NULL DEFAULT 'General'`);
-  }
-  if (!columnExists(db, "courses", "price_cents")) {
-    // 0 = free. Paid courses arrive with the marketplace phase.
-    db.exec(`ALTER TABLE courses ADD COLUMN price_cents INTEGER NOT NULL DEFAULT 0`);
-  }
-  if (!columnExists(db, "courses", "content_version")) {
-    db.exec(`ALTER TABLE courses ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1`);
-  }
-  if (!columnExists(db, "lessons", "generator_model")) {
-    db.exec(`ALTER TABLE lessons ADD COLUMN generator_model TEXT`);
-  }
-  if (!columnExists(db, "lessons", "prompt_version")) {
-    db.exec(`ALTER TABLE lessons ADD COLUMN prompt_version TEXT`);
-  }
-
-  // progress: single-user v1 shape → per-user
-  if (tableExists(db, "progress") && !columnExists(db, "progress", "user_id")) {
-    db.exec(`
-      CREATE TABLE progress_v2 (
-        user_id INTEGER NOT NULL DEFAULT 0,
-        lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-        completed_at TEXT NOT NULL DEFAULT (datetime('now')),
-        score INTEGER NOT NULL,
-        total INTEGER NOT NULL,
-        xp_earned INTEGER NOT NULL,
-        PRIMARY KEY (user_id, lesson_id)
-      );
-      INSERT INTO progress_v2 (user_id, lesson_id, completed_at, score, total, xp_earned)
-        SELECT 0, lesson_id, completed_at, score, total, xp_earned FROM progress;
-      DROP TABLE progress;
-      ALTER TABLE progress_v2 RENAME TO progress;
-    `);
-  } else if (!tableExists(db, "progress")) {
-    db.exec(`
-      CREATE TABLE progress (
-        user_id INTEGER NOT NULL DEFAULT 0,
-        lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-        completed_at TEXT NOT NULL DEFAULT (datetime('now')),
-        score INTEGER NOT NULL,
-        total INTEGER NOT NULL,
-        xp_earned INTEGER NOT NULL,
-        PRIMARY KEY (user_id, lesson_id)
-      );
-    `);
-  }
-
-  // stats (single row) → user_stats
-  if (!tableExists(db, "user_stats")) {
-    db.exec(`
-      CREATE TABLE user_stats (
-        user_id INTEGER PRIMARY KEY,
-        total_xp INTEGER NOT NULL DEFAULT 0,
-        streak INTEGER NOT NULL DEFAULT 0,
-        last_active_date TEXT
-      );
-    `);
-    if (tableExists(db, "stats")) {
-      db.exec(`
-        INSERT OR IGNORE INTO user_stats (user_id, total_xp, streak, last_active_date)
-          SELECT 0, total_xp, streak, last_active_date FROM stats WHERE id = 1;
-        DROP TABLE stats;
-      `);
-    }
-  }
-
-  // review_items → per-user
-  if (tableExists(db, "review_items") && !columnExists(db, "review_items", "user_id")) {
-    db.exec(`
-      CREATE TABLE review_items_v2 (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL DEFAULT 0,
-        lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-        card_index INTEGER NOT NULL,
-        next_due TEXT NOT NULL,
-        interval_days REAL NOT NULL DEFAULT 1,
-        lapses INTEGER NOT NULL DEFAULT 0,
-        UNIQUE (user_id, lesson_id, card_index)
-      );
-      INSERT INTO review_items_v2 (user_id, lesson_id, card_index, next_due, interval_days, lapses)
-        SELECT 0, lesson_id, card_index, next_due, interval_days, lapses FROM review_items;
-      DROP TABLE review_items;
-      ALTER TABLE review_items_v2 RENAME TO review_items;
-    `);
-  } else if (!tableExists(db, "review_items")) {
-    db.exec(`
-      CREATE TABLE review_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL DEFAULT 0,
-        lesson_id INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
-        card_index INTEGER NOT NULL,
-        next_due TEXT NOT NULL,
-        interval_days REAL NOT NULL DEFAULT 1,
-        lapses INTEGER NOT NULL DEFAULT 0,
-        UNIQUE (user_id, lesson_id, card_index)
-      );
-    `);
-  }
-
-  // ---------- Learning evidence ledger (v3) ----------
-  // Identity is deliberately separated from events. Erasing the mapping can
-  // anonymize a learner without destroying aggregate calibration evidence.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS learning_identities (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      learner_key TEXT NOT NULL UNIQUE,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS concepts (
-      id TEXT PRIMARY KEY,
-      course_id INTEGER,
-      label TEXT NOT NULL,
-      normalized_label TEXT NOT NULL,
-      scope TEXT NOT NULL DEFAULT 'course',
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_concepts_course_label
-      ON concepts(course_id, normalized_label);
-
-    CREATE TABLE IF NOT EXISTS question_versions (
-      id TEXT PRIMARY KEY,
-      question_id TEXT NOT NULL,
-      content_hash TEXT NOT NULL,
-      course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
-      course_version INTEGER NOT NULL DEFAULT 1,
-      lesson_id INTEGER,
-      card_index INTEGER,
-      concept_id TEXT NOT NULL REFERENCES concepts(id),
-      concept_label TEXT NOT NULL,
-      question_type TEXT NOT NULL,
-      content_json TEXT NOT NULL,
-      generator_model TEXT,
-      prompt_version TEXT,
-      privacy_scope TEXT NOT NULL DEFAULT 'private_course',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(question_id, content_hash)
-    );
-    CREATE INDEX IF NOT EXISTS idx_question_versions_question
-      ON question_versions(question_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_question_versions_course
-      ON question_versions(course_id, concept_id);
-
-    CREATE TABLE IF NOT EXISTS practice_sessions (
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
-      fresh INTEGER NOT NULL DEFAULT 0 CHECK (fresh IN (0, 1)),
-      items_json TEXT NOT NULL,
-      generator_model TEXT,
-      prompt_version TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      expires_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_practice_sessions_user
-      ON practice_sessions(user_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS answer_sessions (
-      id TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      kind TEXT NOT NULL CHECK (kind IN ('lesson', 'review')),
-      items_json TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      expires_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_answer_sessions_user
-      ON answer_sessions(user_id, kind, created_at);
-
-    CREATE TABLE IF NOT EXISTS learning_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_id TEXT NOT NULL UNIQUE,
-      event_type TEXT NOT NULL DEFAULT 'answer_submitted',
-      learner_key TEXT NOT NULL,
-      organization_id TEXT,
-      enrollment_id TEXT,
-      assignment_id TEXT,
-      course_id INTEGER,
-      course_version INTEGER NOT NULL DEFAULT 1,
-      lesson_id INTEGER,
-      card_index INTEGER,
-      question_version_id TEXT NOT NULL REFERENCES question_versions(id),
-      concept_id TEXT NOT NULL REFERENCES concepts(id),
-      concept_label TEXT NOT NULL,
-      session_id TEXT,
-      session_kind TEXT NOT NULL,
-      delivery_channel TEXT NOT NULL DEFAULT 'web',
-      response_data TEXT NOT NULL,
-      is_correct INTEGER NOT NULL CHECK (is_correct IN (0, 1)),
-      was_skipped INTEGER NOT NULL DEFAULT 0 CHECK (was_skipped IN (0, 1)),
-      response_time_ms INTEGER NOT NULL CHECK (response_time_ms >= 0),
-      attempt_number INTEGER NOT NULL DEFAULT 1 CHECK (attempt_number >= 1),
-      hint_count INTEGER NOT NULL DEFAULT 0 CHECK (hint_count >= 0),
-      mastery_before REAL NOT NULL,
-      mastery_after REAL NOT NULL,
-      mastery_algorithm_version TEXT NOT NULL,
-      consent_version TEXT NOT NULL DEFAULT 'service-v1',
-      retention_class TEXT NOT NULL DEFAULT 'learning-evidence',
-      privacy_scope TEXT NOT NULL DEFAULT 'private_course',
-      occurred_at TEXT NOT NULL,
-      recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
-      schema_version INTEGER NOT NULL DEFAULT 1,
-      metadata_json TEXT NOT NULL DEFAULT '{}'
-    );
-    CREATE TABLE IF NOT EXISTS lesson_completion_events (
-      answer_session_id TEXT PRIMARY KEY,
-      learner_key TEXT NOT NULL,
-      course_id INTEGER NOT NULL,
-      lesson_id INTEGER NOT NULL,
-      score INTEGER NOT NULL,
-      total INTEGER NOT NULL,
-      xp_awarded INTEGER NOT NULL,
-      completed_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_lesson_completion_learner
-      ON lesson_completion_events(learner_key, completed_at);
-    CREATE INDEX IF NOT EXISTS idx_learning_events_learner_time
-      ON learning_events(learner_key, recorded_at);
-    CREATE INDEX IF NOT EXISTS idx_learning_events_question_time
-      ON learning_events(question_version_id, recorded_at);
-    CREATE INDEX IF NOT EXISTS idx_learning_events_course_concept
-      ON learning_events(course_id, concept_id, recorded_at);
-    CREATE INDEX IF NOT EXISTS idx_learning_events_org_time
-      ON learning_events(organization_id, recorded_at);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_events_semantic_attempt
-      ON learning_events(
-        learner_key, session_kind, session_id, question_version_id, attempt_number
-      )
-      WHERE session_id IS NOT NULL;
-
-    CREATE TRIGGER IF NOT EXISTS learning_events_no_update
-      BEFORE UPDATE ON learning_events
-      BEGIN SELECT RAISE(ABORT, 'learning_events are append-only'); END;
-    CREATE TRIGGER IF NOT EXISTS learning_events_no_delete
-      BEFORE DELETE ON learning_events
-      BEGIN SELECT RAISE(ABORT, 'learning_events are append-only'); END;
-    CREATE TRIGGER IF NOT EXISTS question_versions_no_content_update
-      BEFORE UPDATE OF
-        question_id, content_hash, course_version, lesson_id, card_index,
-        concept_id, concept_label, question_type, content_json,
-        generator_model, prompt_version, privacy_scope, created_at
-      ON question_versions
-      BEGIN SELECT RAISE(ABORT, 'question version content is immutable'); END;
-    CREATE TRIGGER IF NOT EXISTS question_versions_no_delete
-      BEFORE DELETE ON question_versions
-      BEGIN SELECT RAISE(ABORT, 'question versions are immutable'); END;
-  `);
-  });
-  migrate.immediate();
-
-  return db;
-}
-
-export const db = globalForDb.__db ?? (globalForDb.__db = createDb());
+const nowIso = () => new Date().toISOString();
 
 // ---------- Users ----------
 
@@ -419,38 +38,50 @@ export interface UserRow {
   created_at: string;
 }
 
-export function createUser(
+export async function createUser(
   email: string,
   name: string,
   passwordHash: string
-): UserRow {
-  const isFirst =
-    (db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n === 0;
-  const r = db
-    .prepare(
-      "INSERT INTO users (email, name, password_hash, role, credits) VALUES (?, ?, ?, ?, ?)"
-    )
-    .run(email.trim(), name.trim(), passwordHash, isFirst ? "admin" : "user", 3);
-  const id = Number(r.lastInsertRowid);
-  if (isFirst) {
-    // The first account (the platform owner) adopts all pre-platform data
-    db.prepare("UPDATE courses SET owner_id = ? WHERE owner_id = 0").run(id);
-    db.prepare("UPDATE progress SET user_id = ? WHERE user_id = 0").run(id);
-    db.prepare("UPDATE review_items SET user_id = ? WHERE user_id = 0").run(id);
-    db.prepare("UPDATE OR IGNORE user_stats SET user_id = ? WHERE user_id = 0").run(id);
-  }
-  db.prepare("INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)").run(id);
-  return getUserById(id)!;
+): Promise<UserRow> {
+  return tx(async (c) => {
+    const count = (await c.query("SELECT COUNT(*)::int AS n FROM users")).rows[0] as {
+      n: number;
+    };
+    const isFirst = count.n === 0;
+    const ins = await c.query(
+      "INSERT INTO users (email, name, password_hash, role, credits) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+      [email.trim(), name.trim(), passwordHash, isFirst ? "admin" : "user", 3]
+    );
+    const id = Number(ins.rows[0].id);
+    if (isFirst) {
+      // The first account (the platform owner) adopts all pre-platform data.
+      await c.query("UPDATE courses SET owner_id = $1 WHERE owner_id = 0", [id]);
+      await c.query("UPDATE progress SET user_id = $1 WHERE user_id = 0", [id]);
+      await c.query("UPDATE review_items SET user_id = $1 WHERE user_id = 0", [id]);
+      await c.query(
+        "UPDATE user_stats SET user_id = $1 WHERE user_id = 0 AND NOT EXISTS (SELECT 1 FROM user_stats WHERE user_id = $1)",
+        [id]
+      );
+    }
+    await c.query(
+      "INSERT INTO user_stats (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+      [id]
+    );
+    return (await c.query("SELECT * FROM users WHERE id = $1", [id])).rows[0] as UserRow;
+  });
 }
 
-export function getUserByEmail(email: string): UserRow | undefined {
-  return db.prepare("SELECT * FROM users WHERE email = ?").get(email.trim()) as
+export async function getUserByEmail(email: string): Promise<UserRow | undefined> {
+  return (await one("SELECT * FROM users WHERE email = $1", [email.trim()])) as
     | UserRow
     | undefined;
 }
 
-export function getUserById(id: number): UserRow | undefined {
-  return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as
+export async function getUserById(
+  id: number,
+  exec?: Queryable
+): Promise<UserRow | undefined> {
+  return (await one("SELECT * FROM users WHERE id = $1", [id], exec)) as
     | UserRow
     | undefined;
 }
@@ -459,93 +90,115 @@ export function isPremium(user: UserRow): boolean {
   return !!user.premium_until && user.premium_until > new Date().toISOString();
 }
 
-export function adjustCredits(userId: number, delta: number) {
-  db.prepare("UPDATE users SET credits = MAX(0, credits + ?) WHERE id = ?").run(
+export async function adjustCredits(userId: number, delta: number) {
+  await q("UPDATE users SET credits = GREATEST(0, credits + $1) WHERE id = $2", [
     delta,
-    userId
-  );
+    userId,
+  ]);
 }
 
-export function grantPremium(userId: number, days: number) {
-  const user = getUserById(userId);
+export async function grantPremium(userId: number, days: number) {
+  const user = await getUserById(userId);
   if (!user) return;
   const base =
     user.premium_until && user.premium_until > new Date().toISOString()
       ? new Date(user.premium_until)
       : new Date();
   base.setDate(base.getDate() + days);
-  db.prepare("UPDATE users SET premium_until = ? WHERE id = ?").run(
+  await q("UPDATE users SET premium_until = $1 WHERE id = $2", [
     base.toISOString(),
-    userId
-  );
+    userId,
+  ]);
 }
 
-export function listUsers(): UserRow[] {
-  return db.prepare("SELECT * FROM users ORDER BY created_at DESC").all() as UserRow[];
+export async function listUsers(): Promise<UserRow[]> {
+  return (await many("SELECT * FROM users ORDER BY created_at DESC")) as UserRow[];
 }
 
 // ---------- Sessions ----------
 
-export function createSession(userId: number, token: string, days = 30) {
-  db.prepare(
-    "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', ?))"
-  ).run(token, userId, `+${days} days`);
+export async function createSession(userId: number, token: string, days = 30) {
+  const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
+  await q(
+    "INSERT INTO sessions (token, user_id, expires_at) VALUES ($1, $2, $3)",
+    [token, userId, expiresAt]
+  );
 }
 
-export function getSessionUser(token: string): UserRow | undefined {
-  const row = db
-    .prepare(
-      "SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')"
-    )
-    .get(token) as { user_id: number } | undefined;
+export async function getSessionUser(token: string): Promise<UserRow | undefined> {
+  const row = (await one(
+    "SELECT user_id FROM sessions WHERE token = $1 AND expires_at::timestamptz > now()",
+    [token]
+  )) as { user_id: number } | undefined;
   return row ? getUserById(row.user_id) : undefined;
 }
 
-export function deleteSession(token: string) {
-  db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+export async function deleteSession(token: string) {
+  await q("DELETE FROM sessions WHERE token = $1", [token]);
 }
 
 // ---------- Courses ----------
 
-export function createCourse(ownerId: number, sourceFilename: string): number {
-  const r = db
-    .prepare(
-      "INSERT INTO courses (owner_id, title, source_filename, status) VALUES (?, ?, ?, 'extracting')"
-    )
-    .run(ownerId, sourceFilename, sourceFilename);
-  return Number(r.lastInsertRowid);
+export async function createCourse(
+  ownerId: number,
+  sourceFilename: string
+): Promise<number> {
+  const row = (await one(
+    "INSERT INTO courses (owner_id, title, source_filename, status) VALUES ($1, $2, $3, 'extracting') RETURNING id",
+    [ownerId, sourceFilename, sourceFilename]
+  )) as { id: number };
+  return Number(row.id);
 }
 
-export function setCourseStatus(id: number, status: CourseStatus, error?: string) {
-  db.prepare("UPDATE courses SET status = ?, error = ? WHERE id = ?").run(
+/** Persist the extracted chapters so retries regenerate without the original file. */
+export async function setCourseSource(id: number, sourceJson: string) {
+  await q("UPDATE courses SET source_json = $1 WHERE id = $2", [sourceJson, id]);
+}
+
+export async function getCourseSource(id: number): Promise<string | null> {
+  const row = (await one("SELECT source_json FROM courses WHERE id = $1", [id])) as
+    | { source_json: string | null }
+    | undefined;
+  return row?.source_json ?? null;
+}
+
+export async function setCourseStatus(
+  id: number,
+  status: CourseStatus,
+  error?: string
+) {
+  await q("UPDATE courses SET status = $1, error = $2 WHERE id = $3", [
     status,
     error ?? null,
-    id
-  );
+    id,
+  ]);
 }
 
-export function setCourseMeta(id: number, title: string, description: string) {
-  db.prepare("UPDATE courses SET title = ?, description = ? WHERE id = ?").run(
+export async function setCourseMeta(id: number, title: string, description: string) {
+  await q("UPDATE courses SET title = $1, description = $2 WHERE id = $3", [
     title,
     description,
-    id
-  );
+    id,
+  ]);
 }
 
-export function setCoursePublished(
+export async function setCoursePublished(
   id: number,
   published: boolean,
   category: string
 ) {
-  db.prepare("UPDATE courses SET published = ?, category = ? WHERE id = ?").run(
+  await q("UPDATE courses SET published = $1, category = $2 WHERE id = $3", [
     published ? 1 : 0,
     category,
-    id
-  );
+    id,
+  ]);
 }
 
-export function getCourse(id: number): (CourseRow & PlatformCourseCols) | undefined {
-  return db.prepare("SELECT * FROM courses WHERE id = ?").get(id) as
+export async function getCourse(
+  id: number,
+  exec?: Queryable
+): Promise<(CourseRow & PlatformCourseCols) | undefined> {
+  return (await one("SELECT * FROM courses WHERE id = $1", [id], exec)) as
     | (CourseRow & PlatformCourseCols)
     | undefined;
 }
@@ -558,88 +211,99 @@ export interface PlatformCourseCols {
   content_version: number;
 }
 
-export function listOwnedCourses(userId: number): (CourseRow & PlatformCourseCols)[] {
-  return db
-    .prepare("SELECT * FROM courses WHERE owner_id = ? ORDER BY created_at DESC")
-    .all(userId) as (CourseRow & PlatformCourseCols)[];
+export async function listOwnedCourses(
+  userId: number
+): Promise<(CourseRow & PlatformCourseCols)[]> {
+  return (await many(
+    "SELECT * FROM courses WHERE owner_id = $1 ORDER BY created_at DESC",
+    [userId]
+  )) as (CourseRow & PlatformCourseCols)[];
 }
 
-export function listEnrolledCourses(userId: number): (CourseRow & PlatformCourseCols)[] {
-  return db
-    .prepare(
-      `SELECT c.* FROM courses c
-       JOIN enrollments e ON e.course_id = c.id
-       WHERE e.user_id = ? AND c.owner_id != ?
-       ORDER BY e.created_at DESC`
-    )
-    .all(userId, userId) as (CourseRow & PlatformCourseCols)[];
+export async function listEnrolledCourses(
+  userId: number
+): Promise<(CourseRow & PlatformCourseCols)[]> {
+  return (await many(
+    `SELECT c.* FROM courses c
+     JOIN enrollments e ON e.course_id = c.id
+     WHERE e.user_id = $1 AND c.owner_id != $1
+     ORDER BY e.created_at DESC`,
+    [userId]
+  )) as (CourseRow & PlatformCourseCols)[];
 }
 
-export function listPublishedCourses(q?: string, category?: string) {
+export async function listPublishedCourses(qStr?: string, category?: string) {
+  const args: unknown[] = [];
   let sql = `
     SELECT c.*, u.name AS owner_name,
-      (SELECT COUNT(*) FROM enrollments e WHERE e.course_id = c.id) AS enroll_count
+      (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id = c.id) AS enroll_count
     FROM courses c JOIN users u ON u.id = c.owner_id
     WHERE c.published = 1 AND c.status = 'ready'`;
-  const args: string[] = [];
-  if (q) {
-    sql += " AND (c.title LIKE ? OR c.description LIKE ?)";
-    args.push(`%${q}%`, `%${q}%`);
+  if (qStr) {
+    args.push(`%${qStr}%`);
+    const a = `$${args.length}`;
+    args.push(`%${qStr}%`);
+    const b = `$${args.length}`;
+    sql += ` AND (c.title ILIKE ${a} OR c.description ILIKE ${b})`;
   }
   if (category && category !== "All") {
-    sql += " AND c.category = ?";
     args.push(category);
+    sql += ` AND c.category = $${args.length}`;
   }
   sql += " ORDER BY enroll_count DESC, c.created_at DESC LIMIT 100";
-  return db.prepare(sql).all(...args) as (CourseRow &
+  return (await many(sql, args)) as (CourseRow &
     PlatformCourseCols & { owner_name: string; enroll_count: number })[];
 }
 
-export function deleteCourse(id: number) {
-  db.prepare("DELETE FROM courses WHERE id = ?").run(id);
+export async function deleteCourse(id: number) {
+  await q("DELETE FROM courses WHERE id = $1", [id]);
 }
 
 /** Claim a failed course for one retry and clear old generated content atomically. */
-export function prepareCourseRetry(id: number): boolean {
-  return db.transaction(() => {
-    const claimed = db
-      .prepare(
-        `UPDATE courses
-         SET content_version = content_version + 1,
-             status = 'extracting', error = NULL
-         WHERE id = ? AND status = 'error'`
-      )
-      .run(id);
-    if (claimed.changes !== 1) return false;
-    db.prepare("DELETE FROM modules WHERE course_id = ?").run(id);
+export async function prepareCourseRetry(id: number): Promise<boolean> {
+  return tx(async (c) => {
+    const claimed = await c.query(
+      `UPDATE courses
+       SET content_version = content_version + 1,
+           status = 'extracting', error = NULL
+       WHERE id = $1 AND status = 'error'`,
+      [id]
+    );
+    if (claimed.rowCount !== 1) return false;
+    await c.query("DELETE FROM modules WHERE course_id = $1", [id]);
     return true;
-  })();
+  });
 }
 
 // ---------- Enrollment & access ----------
 
-export function enroll(userId: number, courseId: number) {
-  db.prepare(
-    "INSERT OR IGNORE INTO enrollments (user_id, course_id) VALUES (?, ?)"
-  ).run(userId, courseId);
+export async function enroll(userId: number, courseId: number) {
+  await q(
+    "INSERT INTO enrollments (user_id, course_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, courseId]
+  );
 }
 
-export function isEnrolled(userId: number, courseId: number): boolean {
-  return !!db
-    .prepare("SELECT 1 FROM enrollments WHERE user_id = ? AND course_id = ?")
-    .get(userId, courseId);
+export async function isEnrolled(userId: number, courseId: number): Promise<boolean> {
+  return !!(await one(
+    "SELECT 1 AS x FROM enrollments WHERE user_id = $1 AND course_id = $2",
+    [userId, courseId]
+  ));
 }
 
 /** Owner, enrolled, or classroom-assigned → full access.
     Published → auto-enroll on first use. */
-export function canAccessCourse(userId: number, courseId: number): boolean {
-  const course = getCourse(courseId);
+export async function canAccessCourse(
+  userId: number,
+  courseId: number
+): Promise<boolean> {
+  const course = await getCourse(courseId);
   if (!course) return false;
   if (course.owner_id === userId) return true;
-  if (isEnrolled(userId, courseId)) return true;
-  if (hasAssignmentAccess(userId, courseId)) return true;
+  if (await isEnrolled(userId, courseId)) return true;
+  if (await hasAssignmentAccess(userId, courseId)) return true;
   if (course.published) {
-    enroll(userId, courseId);
+    await enroll(userId, courseId);
     return true;
   }
   return false;
@@ -647,163 +311,186 @@ export function canAccessCourse(userId: number, courseId: number): boolean {
 
 // ---------- Modules / lessons ----------
 
-export function createModule(
+export async function createModule(
   courseId: number,
   title: string,
   summary: string,
   position: number
-): number {
-  const r = db
-    .prepare(
-      "INSERT INTO modules (course_id, title, summary, position) VALUES (?, ?, ?, ?)"
-    )
-    .run(courseId, title, summary, position);
-  return Number(r.lastInsertRowid);
+): Promise<number> {
+  const row = (await one(
+    "INSERT INTO modules (course_id, title, summary, position) VALUES ($1, $2, $3, $4) RETURNING id",
+    [courseId, title, summary, position]
+  )) as { id: number };
+  return Number(row.id);
 }
 
-export function setModuleStatus(id: number, status: ModuleRow["status"]) {
-  db.prepare("UPDATE modules SET status = ? WHERE id = ?").run(status, id);
+export async function setModuleStatus(id: number, status: ModuleRow["status"]) {
+  await q("UPDATE modules SET status = $1 WHERE id = $2", [status, id]);
 }
 
-export function listModules(courseId: number): ModuleRow[] {
-  return db
-    .prepare("SELECT * FROM modules WHERE course_id = ? ORDER BY position")
-    .all(courseId) as ModuleRow[];
+export async function listModules(courseId: number): Promise<ModuleRow[]> {
+  return (await many(
+    "SELECT * FROM modules WHERE course_id = $1 ORDER BY position",
+    [courseId]
+  )) as ModuleRow[];
 }
 
-export function createLesson(
+export async function createLesson(
   moduleId: number,
   title: string,
   position: number,
   cardsJson: string,
   provenance?: { generatorModel?: string; promptVersion?: string }
-): number {
-  const r = db
-    .prepare(
-      `INSERT INTO lessons
-        (module_id, title, position, cards, generator_model, prompt_version)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+): Promise<number> {
+  const row = (await one(
+    `INSERT INTO lessons
+      (module_id, title, position, cards, generator_model, prompt_version)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [
       moduleId,
       title,
       position,
       cardsJson,
       provenance?.generatorModel ?? null,
-      provenance?.promptVersion ?? null
-    );
-  return Number(r.lastInsertRowid);
+      provenance?.promptVersion ?? null,
+    ]
+  )) as { id: number };
+  return Number(row.id);
 }
 
-export function listLessons(moduleId: number): LessonRow[] {
-  return db
-    .prepare("SELECT * FROM lessons WHERE module_id = ? ORDER BY position")
-    .all(moduleId) as LessonRow[];
+export async function listLessons(moduleId: number): Promise<LessonRow[]> {
+  return (await many(
+    "SELECT * FROM lessons WHERE module_id = $1 ORDER BY position",
+    [moduleId]
+  )) as LessonRow[];
 }
 
-export function getLesson(id: number): (LessonRow & { course_id: number }) | undefined {
-  return db
-    .prepare(
-      `SELECT l.*, m.course_id FROM lessons l JOIN modules m ON m.id = l.module_id WHERE l.id = ?`
-    )
-    .get(id) as (LessonRow & { course_id: number }) | undefined;
+export async function getLesson(
+  id: number
+): Promise<(LessonRow & { course_id: number }) | undefined> {
+  return (await one(
+    `SELECT l.*, m.course_id FROM lessons l JOIN modules m ON m.id = l.module_id WHERE l.id = $1`,
+    [id]
+  )) as (LessonRow & { course_id: number }) | undefined;
 }
 
 // ---------- Progress / stats ----------
 
-export function completeLesson(
+export async function completeLesson(
   userId: number,
   lessonId: number,
   score: number,
   total: number,
   xp: number
-): number {
-  const previous = db
-    .prepare("SELECT xp_earned FROM progress WHERE user_id = ? AND lesson_id = ?")
-    .get(userId, lessonId) as { xp_earned: number } | undefined;
-  const awardedXp = Math.max(0, xp - (previous?.xp_earned ?? 0));
-  db.prepare(
-    `INSERT INTO progress (user_id, lesson_id, score, total, xp_earned, completed_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))
-     ON CONFLICT (user_id, lesson_id) DO UPDATE SET
-       score = MAX(score, excluded.score),
-       total = excluded.total,
-       xp_earned = MAX(xp_earned, excluded.xp_earned),
-       completed_at = excluded.completed_at`
-  ).run(userId, lessonId, score, total, xp);
+): Promise<number> {
+  return tx(async (c) => {
+    const previous = (
+      await c.query(
+        "SELECT xp_earned FROM progress WHERE user_id = $1 AND lesson_id = $2",
+        [userId, lessonId]
+      )
+    ).rows[0] as { xp_earned: number } | undefined;
+    const awardedXp = Math.max(0, xp - (previous?.xp_earned ?? 0));
+    await c.query(
+      `INSERT INTO progress (user_id, lesson_id, score, total, xp_earned, completed_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id, lesson_id) DO UPDATE SET
+         score = GREATEST(progress.score, excluded.score),
+         total = excluded.total,
+         xp_earned = GREATEST(progress.xp_earned, excluded.xp_earned),
+         completed_at = excluded.completed_at`,
+      [userId, lessonId, score, total, xp, nowIso()]
+    );
 
-  const today = new Date().toISOString().slice(0, 10);
-  const stats = getStats(userId);
-  let streak = stats.streak;
-  if (stats.last_active_date !== today) {
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    streak = stats.last_active_date === yesterday ? streak + 1 : 1;
-  }
-  db.prepare(
-    "UPDATE user_stats SET total_xp = total_xp + ?, streak = ?, last_active_date = ? WHERE user_id = ?"
-  ).run(awardedXp, streak, today, userId);
-  return awardedXp;
+    const today = new Date().toISOString().slice(0, 10);
+    await c.query(
+      "INSERT INTO user_stats (user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+      [userId]
+    );
+    const stats = (
+      await c.query(
+        "SELECT total_xp, streak, last_active_date FROM user_stats WHERE user_id = $1",
+        [userId]
+      )
+    ).rows[0] as { total_xp: number; streak: number; last_active_date: string | null };
+    let streak = stats.streak;
+    if (stats.last_active_date !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      streak = stats.last_active_date === yesterday ? streak + 1 : 1;
+    }
+    await c.query(
+      "UPDATE user_stats SET total_xp = total_xp + $1, streak = $2, last_active_date = $3 WHERE user_id = $4",
+      [awardedXp, streak, today, userId]
+    );
+    return awardedXp;
+  });
 }
 
-export function getCompletedLessonIds(userId: number): Set<number> {
-  const rows = db
-    .prepare("SELECT lesson_id FROM progress WHERE user_id = ?")
-    .all(userId) as { lesson_id: number }[];
+export async function getCompletedLessonIds(userId: number): Promise<Set<number>> {
+  const rows = (await many(
+    "SELECT lesson_id FROM progress WHERE user_id = $1",
+    [userId]
+  )) as { lesson_id: number }[];
   return new Set(rows.map((r) => r.lesson_id));
 }
 
-export function getStats(userId: number): {
+export async function getStats(userId: number): Promise<{
   total_xp: number;
   streak: number;
   last_active_date: string | null;
-} {
-  db.prepare("INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)").run(userId);
-  return db
-    .prepare("SELECT total_xp, streak, last_active_date FROM user_stats WHERE user_id = ?")
-    .get(userId) as {
-    total_xp: number;
-    streak: number;
-    last_active_date: string | null;
-  };
+}> {
+  await q("INSERT INTO user_stats (user_id) VALUES ($1) ON CONFLICT DO NOTHING", [
+    userId,
+  ]);
+  return (await one(
+    "SELECT total_xp, streak, last_active_date FROM user_stats WHERE user_id = $1",
+    [userId]
+  )) as { total_xp: number; streak: number; last_active_date: string | null };
 }
 
-export function weeklyLeaderboard(limit = 20): {
-  name: string;
-  xp: number;
-  user_id: number;
-}[] {
-  return db
-    .prepare(
-      `SELECT u.id AS user_id, u.name, SUM(p.xp_earned) AS xp
-       FROM progress p JOIN users u ON u.id = p.user_id
-       WHERE p.completed_at >= datetime('now', '-7 days')
-       GROUP BY u.id ORDER BY xp DESC LIMIT ?`
-    )
-    .all(limit) as { name: string; xp: number; user_id: number }[];
+export async function weeklyLeaderboard(limit = 20): Promise<
+  {
+    name: string;
+    xp: number;
+    user_id: number;
+  }[]
+> {
+  return (await many(
+    `SELECT u.id AS user_id, u.name, SUM(p.xp_earned)::int AS xp
+     FROM progress p JOIN users u ON u.id = p.user_id
+     WHERE p.completed_at::timestamptz >= now() - interval '7 days'
+     GROUP BY u.id, u.name ORDER BY xp DESC LIMIT $1`,
+    [limit]
+  )) as { name: string; xp: number; user_id: number }[];
 }
 
 // ---------- Review (SM-2 lite) ----------
 
-export function addReviewItem(userId: number, lessonId: number, cardIndex: number) {
-  db.prepare(
+export async function addReviewItem(
+  userId: number,
+  lessonId: number,
+  cardIndex: number
+) {
+  const nextDue = new Date(Date.now() + 86_400_000).toISOString();
+  await q(
     `INSERT INTO review_items (user_id, lesson_id, card_index, next_due, interval_days, lapses)
-     VALUES (?, ?, ?, datetime('now', '+1 day'), 1, 0)
+     VALUES ($1, $2, $3, $4, 1, 0)
      ON CONFLICT (user_id, lesson_id, card_index) DO UPDATE SET
-       next_due = datetime('now', '+1 day'),
+       next_due = $4,
        interval_days = 1,
-       lapses = lapses + 1`
-  ).run(userId, lessonId, cardIndex);
+       lapses = review_items.lapses + 1`,
+    [userId, lessonId, cardIndex, nextDue]
+  );
 }
 
-export function getDueReviewItems(
+export async function getDueReviewItems(
   userId: number,
   limit = 20
-): { id: number; lesson_id: number; card_index: number; next_due: string }[] {
-  return db
-    .prepare(
-      "SELECT id, lesson_id, card_index, next_due FROM review_items WHERE user_id = ? AND next_due <= datetime('now') ORDER BY next_due LIMIT ?"
-    )
-    .all(userId, limit) as {
+): Promise<{ id: number; lesson_id: number; card_index: number; next_due: string }[]> {
+  return (await many(
+    "SELECT id, lesson_id, card_index, next_due FROM review_items WHERE user_id = $1 AND next_due::timestamptz <= now() ORDER BY next_due LIMIT $2",
+    [userId, limit]
+  )) as {
     id: number;
     lesson_id: number;
     card_index: number;
@@ -811,36 +498,58 @@ export function getDueReviewItems(
   }[];
 }
 
-export function answerReviewItem(userId: number, id: number, correct: boolean) {
+export async function answerReviewItem(
+  userId: number,
+  id: number,
+  correct: boolean,
+  exec?: Queryable
+) {
   if (correct) {
-    const row = db
-      .prepare("SELECT interval_days FROM review_items WHERE id = ? AND user_id = ?")
-      .get(id, userId) as { interval_days: number } | undefined;
+    const row = (await one(
+      "SELECT interval_days FROM review_items WHERE id = $1 AND user_id = $2",
+      [id, userId],
+      exec
+    )) as { interval_days: number } | undefined;
     if (!row) return;
     const next = Math.min(row.interval_days * 2.2, 60);
-    db.prepare(
-      "UPDATE review_items SET interval_days = ?, next_due = datetime('now', ?) WHERE id = ? AND user_id = ?"
-    ).run(next, `+${Math.round(next * 24)} hours`, id, userId);
+    const nextDue = new Date(
+      Date.now() + Math.round(next * 24) * 3_600_000
+    ).toISOString();
+    await q(
+      "UPDATE review_items SET interval_days = $1, next_due = $2 WHERE id = $3 AND user_id = $4",
+      [next, nextDue, id, userId],
+      exec
+    );
   } else {
-    db.prepare(
-      "UPDATE review_items SET interval_days = 1, lapses = lapses + 1, next_due = datetime('now', '+4 hours') WHERE id = ? AND user_id = ?"
-    ).run(id, userId);
+    const nextDue = new Date(Date.now() + 4 * 3_600_000).toISOString();
+    await q(
+      "UPDATE review_items SET interval_days = 1, lapses = lapses + 1, next_due = $1 WHERE id = $2 AND user_id = $3",
+      [nextDue, id, userId],
+      exec
+    );
   }
 }
 
-export function countDueReviews(userId: number): number {
-  const r = db
-    .prepare(
-      "SELECT COUNT(*) AS n FROM review_items WHERE user_id = ? AND next_due <= datetime('now')"
-    )
-    .get(userId) as { n: number };
+/** Add XP to a user's running total. Accepts a tx client to stay in one commit. */
+export async function addStatsXp(userId: number, delta: number, exec?: Queryable) {
+  await q("UPDATE user_stats SET total_xp = total_xp + $1 WHERE user_id = $2", [
+    delta,
+    userId,
+  ], exec);
+}
+
+export async function countDueReviews(userId: number): Promise<number> {
+  const r = (await one(
+    "SELECT COUNT(*)::int AS n FROM review_items WHERE user_id = $1 AND next_due::timestamptz <= now()",
+    [userId]
+  )) as { n: number };
   return r.n;
 }
 
 // ---------- Concept mastery (the adaptive engine) ----------
 
 /** EWMA mastery update: recent answers weigh more, old knowledge decays. */
-export function recordConceptAnswer(
+export async function recordConceptAnswer(
   userId: number,
   courseId: number,
   concept: string,
@@ -848,22 +557,22 @@ export function recordConceptAnswer(
 ) {
   const key = concept.trim().toLowerCase().slice(0, 60);
   if (!key) return;
-  const row = db
-    .prepare(
-      "SELECT mastery FROM concept_mastery WHERE user_id = ? AND course_id = ? AND concept = ?"
-    )
-    .get(userId, courseId, key) as { mastery: number } | undefined;
+  const row = (await one(
+    "SELECT mastery FROM concept_mastery WHERE user_id = $1 AND course_id = $2 AND concept = $3",
+    [userId, courseId, key]
+  )) as { mastery: number } | undefined;
   const prev = row?.mastery ?? 0.5;
   const next = 0.7 * prev + 0.3 * (correct ? 1 : 0);
-  db.prepare(
+  await q(
     `INSERT INTO concept_mastery (user_id, course_id, concept, correct, wrong, mastery, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (user_id, course_id, concept) DO UPDATE SET
-       correct = correct + excluded.correct,
-       wrong = wrong + excluded.wrong,
-       mastery = ?,
-       updated_at = datetime('now')`
-  ).run(userId, courseId, key, correct ? 1 : 0, correct ? 0 : 1, next, next);
+       correct = concept_mastery.correct + excluded.correct,
+       wrong = concept_mastery.wrong + excluded.wrong,
+       mastery = $6,
+       updated_at = $7`,
+    [userId, courseId, key, correct ? 1 : 0, correct ? 0 : 1, next, nowIso()]
+  );
 }
 
 export interface MasteryRow {
@@ -873,36 +582,47 @@ export interface MasteryRow {
   mastery: number;
 }
 
-export function getCourseMastery(userId: number, courseId: number): MasteryRow[] {
-  return db
-    .prepare(
-      "SELECT concept, correct, wrong, mastery FROM concept_mastery WHERE user_id = ? AND course_id = ? ORDER BY mastery ASC"
-    )
-    .all(userId, courseId) as MasteryRow[];
+export async function getCourseMastery(
+  userId: number,
+  courseId: number
+): Promise<MasteryRow[]> {
+  return (await many(
+    "SELECT concept, correct, wrong, mastery FROM concept_mastery WHERE user_id = $1 AND course_id = $2 ORDER BY mastery ASC",
+    [userId, courseId]
+  )) as MasteryRow[];
 }
 
 /** Class-level weak spots: average mastery per concept across members. */
-export function classWeakConcepts(
+export async function classWeakConcepts(
   memberIds: number[],
   courseIds: number[],
   limit = 6
-): { concept: string; avg_mastery: number; learners: number }[] {
+): Promise<{ concept: string; avg_mastery: number; learners: number }[]> {
   if (memberIds.length === 0 || courseIds.length === 0) return [];
-  const mPh = memberIds.map(() => "?").join(",");
-  const cPh = courseIds.map(() => "?").join(",");
-  return db
-    .prepare(
-      `SELECT concept, AVG(mastery) AS avg_mastery, COUNT(DISTINCT user_id) AS learners
-       FROM concept_mastery
-       WHERE user_id IN (${mPh}) AND course_id IN (${cPh})
-       GROUP BY concept HAVING learners >= 1
-       ORDER BY avg_mastery ASC LIMIT ?`
-    )
-    .all(...memberIds, ...courseIds, limit) as {
-    concept: string;
-    avg_mastery: number;
-    learners: number;
-  }[];
+  const args: unknown[] = [];
+  const mPh = memberIds
+    .map((v) => {
+      args.push(v);
+      return `$${args.length}`;
+    })
+    .join(",");
+  const cPh = courseIds
+    .map((v) => {
+      args.push(v);
+      return `$${args.length}`;
+    })
+    .join(",");
+  args.push(limit);
+  const limPh = `$${args.length}`;
+  return (await many(
+    `SELECT concept, AVG(mastery)::float8 AS avg_mastery,
+            COUNT(DISTINCT user_id)::int AS learners
+     FROM concept_mastery
+     WHERE user_id IN (${mPh}) AND course_id IN (${cPh})
+     GROUP BY concept HAVING COUNT(DISTINCT user_id) >= 1
+     ORDER BY avg_mastery ASC LIMIT ${limPh}`,
+    args
+  )) as { concept: string; avg_mastery: number; learners: number }[];
 }
 
 // ---------- Immutable learning evidence ----------
@@ -921,20 +641,29 @@ export class InvalidAnswerError extends Error {
   }
 }
 
-export function getLearnerKey(userId: number): string {
-  const existing = db
-    .prepare("SELECT learner_key FROM learning_identities WHERE user_id = ?")
-    .get(userId) as { learner_key: string } | undefined;
+export async function getLearnerKey(
+  userId: number,
+  exec?: Queryable
+): Promise<string> {
+  const existing = (await one(
+    "SELECT learner_key FROM learning_identities WHERE user_id = $1",
+    [userId],
+    exec
+  )) as { learner_key: string } | undefined;
   if (existing) return existing.learner_key;
 
   const learnerKey = `learner_${crypto.randomUUID()}`;
-  db.prepare(
-    "INSERT OR IGNORE INTO learning_identities (user_id, learner_key) VALUES (?, ?)"
-  ).run(userId, learnerKey);
+  await q(
+    "INSERT INTO learning_identities (user_id, learner_key) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [userId, learnerKey],
+    exec
+  );
   return (
-    db
-      .prepare("SELECT learner_key FROM learning_identities WHERE user_id = ?")
-      .get(userId) as { learner_key: string }
+    (await one(
+      "SELECT learner_key FROM learning_identities WHERE user_id = $1",
+      [userId],
+      exec
+    )) as { learner_key: string }
   ).learner_key;
 }
 
@@ -949,17 +678,17 @@ interface QuestionContext {
   promptVersion?: string | null;
 }
 
-function ensureQuestionVersion(context: QuestionContext) {
+async function ensureQuestionVersion(context: QuestionContext, exec?: Queryable) {
   const conceptLabel = normalizeConcept(context.concept);
   if (!conceptLabel) throw new Error("Question has no concept");
   const conceptId = makeConceptId(context.courseId, conceptLabel);
   const version = describeQuestionVersion(context.questionId, context.card);
-  const persisted = db
-    .prepare(
-      `SELECT concept_id, concept_label, course_version, privacy_scope
-       FROM question_versions WHERE id = ?`
-    )
-    .get(version.id) as
+  const persisted = (await one(
+    `SELECT concept_id, concept_label, course_version, privacy_scope
+     FROM question_versions WHERE id = $1`,
+    [version.id],
+    exec
+  )) as
     | {
         concept_id: string;
         concept_label: string;
@@ -977,37 +706,42 @@ function ensureQuestionVersion(context: QuestionContext) {
     };
   }
 
-  const course = getCourse(context.courseId);
+  const course = await getCourse(context.courseId, exec);
   if (!course) throw new Error("Course not found");
   const privacyScope = course.published ? "public_course" : "private_course";
 
-  db.prepare(
-    `INSERT OR IGNORE INTO concepts
+  await q(
+    `INSERT INTO concepts
       (id, course_id, label, normalized_label, scope)
-     VALUES (?, ?, ?, ?, 'course')`
-  ).run(conceptId, context.courseId, conceptLabel, conceptLabel);
+     VALUES ($1, $2, $3, $4, 'course') ON CONFLICT DO NOTHING`,
+    [conceptId, context.courseId, conceptLabel, conceptLabel],
+    exec
+  );
 
-  db.prepare(
-    `INSERT OR IGNORE INTO question_versions
+  await q(
+    `INSERT INTO question_versions
       (id, question_id, content_hash, course_id, course_version, lesson_id,
        card_index, concept_id, concept_label, question_type, content_json,
        generator_model, prompt_version, privacy_scope)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    version.id,
-    version.questionId,
-    version.contentHash,
-    context.courseId,
-    course.content_version,
-    context.lessonId ?? null,
-    context.cardIndex ?? null,
-    conceptId,
-    conceptLabel,
-    context.card.type,
-    version.contentJson,
-    context.generatorModel ?? null,
-    context.promptVersion ?? null,
-    privacyScope
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     ON CONFLICT DO NOTHING`,
+    [
+      version.id,
+      version.questionId,
+      version.contentHash,
+      context.courseId,
+      course.content_version,
+      context.lessonId ?? null,
+      context.cardIndex ?? null,
+      conceptId,
+      conceptLabel,
+      context.card.type,
+      version.contentJson,
+      context.generatorModel ?? null,
+      context.promptVersion ?? null,
+      privacyScope,
+    ],
+    exec
   );
 
   return {
@@ -1044,17 +778,20 @@ export interface AnswerEvidenceResult {
   questionVersionId: string;
 }
 
-/** Append one answer and update the current mastery projection atomically. */
-export function recordAnswerEvidence(
-  input: AnswerEvidenceInput
-): AnswerEvidenceResult {
-  return db.transaction(() => {
+/** Append one answer and update the current mastery projection atomically.
+ *  `project` runs inside the same transaction only when a new event is
+ *  inserted, so source-specific side effects commit together with the event. */
+export async function recordAnswerEvidence(
+  input: AnswerEvidenceInput,
+  project?: (client: PoolClient, recorded: AnswerEvidenceResult) => Promise<void>
+): Promise<AnswerEvidenceResult> {
+  return tx(async (c) => {
     if (!isQuizAnswerCompatible(input.card, input.answer)) {
       throw new InvalidAnswerError();
     }
-    const learnerKey = getLearnerKey(input.userId);
-    const question = ensureQuestionVersion(input);
-    const canProjectMastery = !!getCourse(input.courseId);
+    const learnerKey = await getLearnerKey(input.userId, c);
+    const question = await ensureQuestionVersion(input, c);
+    const canProjectMastery = !!(await getCourse(input.courseId, c));
     const correct = gradeQuizCard(input.card, input.answer);
     const responseData = answerEvidence(input.card, input.answer);
     const attemptNumber = Math.max(1, Math.trunc(input.attemptNumber ?? 1));
@@ -1070,31 +807,33 @@ export function recordAnswerEvidence(
       mastery_before: number;
       mastery_after: number;
     };
-    const byEventId = db
-      .prepare(
+    const byEventId = (
+      await c.query(
         `SELECT event_id, learner_key, question_version_id, response_data,
                 session_kind, session_id, attempt_number, is_correct,
                 mastery_before, mastery_after
-         FROM learning_events WHERE event_id = ?`
+         FROM learning_events WHERE event_id = $1`,
+        [input.eventId]
       )
-      .get(input.eventId) as ExistingEvidence | undefined;
+    ).rows[0] as ExistingEvidence | undefined;
     const bySemanticAttempt = input.sessionId
-      ? (db
-          .prepare(
+      ? ((
+          await c.query(
             `SELECT event_id, learner_key, question_version_id, response_data,
                     session_kind, session_id, attempt_number, is_correct,
                     mastery_before, mastery_after
              FROM learning_events
-             WHERE learner_key = ? AND session_kind = ? AND session_id = ?
-               AND question_version_id = ? AND attempt_number = ?`
+             WHERE learner_key = $1 AND session_kind = $2 AND session_id = $3
+               AND question_version_id = $4 AND attempt_number = $5`,
+            [
+              learnerKey,
+              input.sessionKind,
+              input.sessionId,
+              question.questionVersionId,
+              attemptNumber,
+            ]
           )
-          .get(
-            learnerKey,
-            input.sessionKind,
-            input.sessionId,
-            question.questionVersionId,
-            attemptNumber
-          ) as ExistingEvidence | undefined)
+        ).rows[0] as ExistingEvidence | undefined)
       : undefined;
     if (
       byEventId &&
@@ -1127,14 +866,13 @@ export function recordAnswerEvidence(
     }
 
     const current = canProjectMastery
-      ? (db
-          .prepare(
+      ? ((
+          await c.query(
             `SELECT mastery FROM concept_mastery
-             WHERE user_id = ? AND course_id = ? AND concept = ?`
+             WHERE user_id = $1 AND course_id = $2 AND concept = $3`,
+            [input.userId, input.courseId, question.conceptLabel]
           )
-          .get(input.userId, input.courseId, question.conceptLabel) as
-          | { mastery: number }
-          | undefined)
+        ).rows[0] as { mastery: number } | undefined)
       : undefined;
     const masteryBefore = current?.mastery ?? 0.5;
     const masteryAfter =
@@ -1146,7 +884,7 @@ export function recordAnswerEvidence(
       Math.min(86_400_000, Math.trunc(input.responseTimeMs))
     );
 
-    db.prepare(
+    await c.query(
       `INSERT INTO learning_events
         (event_id, learner_key, organization_id, enrollment_id, assignment_id,
          course_id, course_version, lesson_id, card_index, question_version_id,
@@ -1154,59 +892,62 @@ export function recordAnswerEvidence(
          response_data, is_correct, was_skipped, response_time_ms,
          attempt_number, hint_count, mastery_before, mastery_after,
          mastery_algorithm_version, privacy_scope, occurred_at, schema_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-               ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      input.eventId,
-      learnerKey,
-      input.organizationId ?? null,
-      input.enrollmentId ?? null,
-      input.assignmentId ?? null,
-      input.courseId,
-      question.courseVersion,
-      input.lessonId ?? null,
-      input.cardIndex ?? null,
-      question.questionVersionId,
-      question.conceptId,
-      question.conceptLabel,
-      input.sessionId ?? null,
-      input.sessionKind,
-      input.deliveryChannel ?? "web",
-      responseData,
-      correct ? 1 : 0,
-      input.answer === null ? 1 : 0,
-      responseTimeMs,
-      attemptNumber,
-      Math.max(0, Math.trunc(input.hintCount ?? 0)),
-      masteryBefore,
-      masteryAfter,
-      MASTERY_ALGORITHM_VERSION,
-      question.privacyScope,
-      input.occurredAt,
-      EVIDENCE_SCHEMA_VERSION
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+               $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+      [
+        input.eventId,
+        learnerKey,
+        input.organizationId ?? null,
+        input.enrollmentId ?? null,
+        input.assignmentId ?? null,
+        input.courseId,
+        question.courseVersion,
+        input.lessonId ?? null,
+        input.cardIndex ?? null,
+        question.questionVersionId,
+        question.conceptId,
+        question.conceptLabel,
+        input.sessionId ?? null,
+        input.sessionKind,
+        input.deliveryChannel ?? "web",
+        responseData,
+        correct ? 1 : 0,
+        input.answer === null ? 1 : 0,
+        responseTimeMs,
+        attemptNumber,
+        Math.max(0, Math.trunc(input.hintCount ?? 0)),
+        masteryBefore,
+        masteryAfter,
+        MASTERY_ALGORITHM_VERSION,
+        question.privacyScope,
+        input.occurredAt,
+        EVIDENCE_SCHEMA_VERSION,
+      ]
     );
 
     if (canProjectMastery) {
-      db.prepare(
+      await c.query(
         `INSERT INTO concept_mastery
           (user_id, course_id, concept, correct, wrong, mastery, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (user_id, course_id, concept) DO UPDATE SET
-           correct = correct + excluded.correct,
-           wrong = wrong + excluded.wrong,
+           correct = concept_mastery.correct + excluded.correct,
+           wrong = concept_mastery.wrong + excluded.wrong,
            mastery = excluded.mastery,
-           updated_at = datetime('now')`
-      ).run(
-        input.userId,
-        input.courseId,
-        question.conceptLabel,
-        input.answer === null ? 0 : correct ? 1 : 0,
-        input.answer === null ? 0 : correct ? 0 : 1,
-        masteryAfter
+           updated_at = excluded.updated_at`,
+        [
+          input.userId,
+          input.courseId,
+          question.conceptLabel,
+          input.answer === null ? 0 : correct ? 1 : 0,
+          input.answer === null ? 0 : correct ? 0 : 1,
+          masteryAfter,
+          nowIso(),
+        ]
       );
     }
 
-    return {
+    const result: AnswerEvidenceResult = {
       eventId: input.eventId,
       inserted: true,
       correct,
@@ -1214,7 +955,21 @@ export function recordAnswerEvidence(
       masteryAfter,
       questionVersionId: question.questionVersionId,
     };
-  })();
+    if (project) await project(c, result);
+    return result;
+  });
+}
+
+/** Has this exact learning event already been recorded for the user? */
+export async function isEventRecordedForUser(
+  userId: number,
+  eventId: string
+): Promise<boolean> {
+  const learnerKey = await getLearnerKey(userId);
+  return !!(await one(
+    "SELECT 1 AS x FROM learning_events WHERE event_id = $1 AND learner_key = $2",
+    [eventId, learnerKey]
+  ));
 }
 
 export interface AnswerSessionItem extends PracticeSessionItem {
@@ -1232,47 +987,51 @@ export interface AnswerSessionRow {
   expires_at: string;
 }
 
-function createAnswerSession(
+async function createAnswerSession(
   userId: number,
   kind: AnswerSessionRow["kind"],
   items: AnswerSessionItem[]
-): AnswerSessionRow {
+): Promise<AnswerSessionRow> {
   const id = `${kind}_${crypto.randomUUID()}`;
   const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
-  db.transaction(() => {
+  await tx(async (c) => {
     for (const item of items) {
-      ensureQuestionVersion({
-        courseId: item.courseId,
-        lessonId: item.lessonId,
-        cardIndex: item.cardIndex,
-        questionId: item.questionId,
-        concept: item.concept,
-        card: item.card,
-        generatorModel: item.generatorModel,
-        promptVersion: item.promptVersion,
-      });
+      await ensureQuestionVersion(
+        {
+          courseId: item.courseId,
+          lessonId: item.lessonId,
+          cardIndex: item.cardIndex,
+          questionId: item.questionId,
+          concept: item.concept,
+          card: item.card,
+          generatorModel: item.generatorModel,
+          promptVersion: item.promptVersion,
+        },
+        c
+      );
     }
-    db.prepare(
+    await c.query(
       `INSERT INTO answer_sessions
         (id, user_id, kind, items_json, expires_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(id, userId, kind, JSON.stringify(items), expiresAt);
-  })();
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, userId, kind, JSON.stringify(items), expiresAt]
+    );
+  });
   return {
     id,
     user_id: userId,
     kind,
     items,
-    created_at: new Date().toISOString(),
+    created_at: nowIso(),
     expires_at: expiresAt,
   };
 }
 
-export function createLessonAnswerSession(
+export async function createLessonAnswerSession(
   userId: number,
   lessonId: number
-): AnswerSessionRow | undefined {
-  const lesson = getLesson(lessonId);
+): Promise<AnswerSessionRow | undefined> {
+  const lesson = await getLesson(lessonId);
   if (!lesson) return undefined;
   const cards = JSON.parse(lesson.cards) as Card[];
   const items: AnswerSessionItem[] = [];
@@ -1294,26 +1053,23 @@ export function createLessonAnswerSession(
   return createAnswerSession(userId, "lesson", items);
 }
 
-export function createReviewAnswerSession(
+export async function createReviewAnswerSession(
   userId: number,
   items: AnswerSessionItem[]
-): AnswerSessionRow {
+): Promise<AnswerSessionRow> {
   return createAnswerSession(userId, "review", items);
 }
 
-export function getAnswerSession(
+export async function getAnswerSession(
   userId: number,
   sessionId: string,
   kind: AnswerSessionRow["kind"]
-): AnswerSessionRow | undefined {
-  const row = db
-    .prepare(
-      `SELECT * FROM answer_sessions
-       WHERE id = ? AND user_id = ? AND kind = ?`
-    )
-    .get(sessionId, userId, kind) as
-    | (Omit<AnswerSessionRow, "items"> & { items_json: string })
-    | undefined;
+): Promise<AnswerSessionRow | undefined> {
+  const row = (await one(
+    `SELECT * FROM answer_sessions
+     WHERE id = $1 AND user_id = $2 AND kind = $3`,
+    [sessionId, userId, kind]
+  )) as (Omit<AnswerSessionRow, "items"> & { items_json: string }) | undefined;
   return row
     ? { ...row, items: JSON.parse(row.items_json) as AnswerSessionItem[] }
     : undefined;
@@ -1331,13 +1087,13 @@ export interface PracticeSessionRow {
   expires_at: string;
 }
 
-export function createPracticeSession(
+export async function createPracticeSession(
   userId: number,
   courseId: number,
   items: (Omit<PracticeSessionItem, "questionId"> & { questionId?: string })[],
   fresh: boolean,
   provenance?: { generatorModel?: string; promptVersion?: string }
-): PracticeSessionRow {
+): Promise<PracticeSessionRow> {
   const id = `practice_${crypto.randomUUID()}`;
   const sessionItems: PracticeSessionItem[] = items.map((item, index) => ({
     ...item,
@@ -1346,35 +1102,39 @@ export function createPracticeSession(
   }));
   const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
 
-  db.transaction(() => {
-    db.prepare(
+  await tx(async (c) => {
+    await c.query(
       `INSERT INTO practice_sessions
         (id, user_id, course_id, fresh, items_json, generator_model,
          prompt_version, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      userId,
-      courseId,
-      fresh ? 1 : 0,
-      JSON.stringify(sessionItems),
-      provenance?.generatorModel ?? null,
-      provenance?.promptVersion ?? null,
-      expiresAt
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        id,
+        userId,
+        courseId,
+        fresh ? 1 : 0,
+        JSON.stringify(sessionItems),
+        provenance?.generatorModel ?? null,
+        provenance?.promptVersion ?? null,
+        expiresAt,
+      ]
     );
     for (const item of sessionItems) {
-      ensureQuestionVersion({
-        courseId,
-        lessonId: item.lessonId,
-        cardIndex: item.cardIndex,
-        questionId: item.questionId,
-        concept: item.concept,
-        card: item.card,
-        generatorModel: item.generatorModel ?? provenance?.generatorModel,
-        promptVersion: item.promptVersion ?? provenance?.promptVersion,
-      });
+      await ensureQuestionVersion(
+        {
+          courseId,
+          lessonId: item.lessonId,
+          cardIndex: item.cardIndex,
+          questionId: item.questionId,
+          concept: item.concept,
+          card: item.card,
+          generatorModel: item.generatorModel ?? provenance?.generatorModel,
+          promptVersion: item.promptVersion ?? provenance?.promptVersion,
+        },
+        c
+      );
     }
-  })();
+  });
 
   return {
     id,
@@ -1384,58 +1144,55 @@ export function createPracticeSession(
     items: sessionItems,
     generator_model: provenance?.generatorModel ?? null,
     prompt_version: provenance?.promptVersion ?? null,
-    created_at: new Date().toISOString(),
+    created_at: nowIso(),
     expires_at: expiresAt,
   };
 }
 
-export function getPracticeSession(
+export async function getPracticeSession(
   userId: number,
   sessionId: string
-): PracticeSessionRow | undefined {
-  const row = db
-    .prepare(
-      `SELECT * FROM practice_sessions
-       WHERE id = ? AND user_id = ?`
-    )
-    .get(sessionId, userId) as
-    | (Omit<PracticeSessionRow, "items"> & { items_json: string })
-    | undefined;
+): Promise<PracticeSessionRow | undefined> {
+  const row = (await one(
+    `SELECT * FROM practice_sessions
+     WHERE id = $1 AND user_id = $2`,
+    [sessionId, userId]
+  )) as (Omit<PracticeSessionRow, "items"> & { items_json: string }) | undefined;
   if (!row) return undefined;
   return { ...row, items: JSON.parse(row.items_json) as PracticeSessionItem[] };
 }
 
-export function getReviewItemForUser(
+export async function getReviewItemForUser(
   userId: number,
   reviewId: number
-): { id: number; lesson_id: number; card_index: number; next_due: string } | undefined {
-  return db
-    .prepare(
-      `SELECT id, lesson_id, card_index, next_due FROM review_items
-       WHERE id = ? AND user_id = ?`
-    )
-    .get(reviewId, userId) as
+): Promise<
+  { id: number; lesson_id: number; card_index: number; next_due: string } | undefined
+> {
+  return (await one(
+    `SELECT id, lesson_id, card_index, next_due FROM review_items
+     WHERE id = $1 AND user_id = $2`,
+    [reviewId, userId]
+  )) as
     | { id: number; lesson_id: number; card_index: number; next_due: string }
     | undefined;
 }
 
-export function getLessonEvidenceSummary(
+export async function getLessonEvidenceSummary(
   userId: number,
   lessonId: number,
   answerSessionId: string
-): { score: number; total: number; wrongCardIndexes: number[] } | undefined {
-  const session = getAnswerSession(userId, answerSessionId, "lesson");
+): Promise<{ score: number; total: number; wrongCardIndexes: number[] } | undefined> {
+  const session = await getAnswerSession(userId, answerSessionId, "lesson");
   if (!session) return undefined;
   const expected = session.items.filter((item) => item.lessonId === lessonId);
   if (expected.length === 0) return undefined;
-  const learnerKey = getLearnerKey(userId);
-  const rows = db
-    .prepare(
-      `SELECT question_version_id, is_correct, card_index FROM learning_events
-       WHERE learner_key = ? AND lesson_id = ?
-         AND session_kind = 'lesson' AND session_id = ?`
-    )
-    .all(learnerKey, lessonId, answerSessionId) as {
+  const learnerKey = await getLearnerKey(userId);
+  const rows = (await many(
+    `SELECT question_version_id, is_correct, card_index FROM learning_events
+     WHERE learner_key = $1 AND lesson_id = $2
+       AND session_kind = 'lesson' AND session_id = $3`,
+    [learnerKey, lessonId, answerSessionId]
+  )) as {
     question_version_id: string;
     is_correct: number;
     card_index: number;
@@ -1466,24 +1223,59 @@ export function getLessonEvidenceSummary(
   };
 }
 
-export function learningLedgerHealth(): {
+/** Idempotency guard for lesson completion (PK on answer_session_id). */
+export async function lessonCompletionExists(
+  answerSessionId: string
+): Promise<boolean> {
+  return !!(await one(
+    "SELECT 1 AS x FROM lesson_completion_events WHERE answer_session_id = $1",
+    [answerSessionId]
+  ));
+}
+
+/** Record a lesson completion. Returns false if this session already completed. */
+export async function recordLessonCompletion(input: {
+  answerSessionId: string;
+  learnerKey: string;
+  courseId: number;
+  lessonId: number;
+  score: number;
+  total: number;
+  xpAwarded: number;
+}): Promise<boolean> {
+  const r = await q(
+    `INSERT INTO lesson_completion_events
+      (answer_session_id, learner_key, course_id, lesson_id, score, total, xp_awarded)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
+    [
+      input.answerSessionId,
+      input.learnerKey,
+      input.courseId,
+      input.lessonId,
+      input.score,
+      input.total,
+      input.xpAwarded,
+    ]
+  );
+  return r.rowCount === 1;
+}
+
+export async function learningLedgerHealth(): Promise<{
   events: number;
   events_24h: number;
   learners: number;
   question_versions: number;
   malformed: number;
-} {
-  return db
-    .prepare(
-      `SELECT
-        COUNT(*) AS events,
-        COALESCE(SUM(CASE WHEN recorded_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END), 0) AS events_24h,
-        COUNT(DISTINCT learner_key) AS learners,
-        COUNT(DISTINCT question_version_id) AS question_versions,
-        COALESCE(SUM(CASE WHEN concept_id = '' OR question_version_id = '' THEN 1 ELSE 0 END), 0) AS malformed
-       FROM learning_events`
-    )
-    .get() as {
+}> {
+  return (await one(
+    `SELECT
+      COUNT(*)::int AS events,
+      COALESCE(SUM(CASE WHEN recorded_at::timestamptz >= now() - interval '1 day' THEN 1 ELSE 0 END), 0)::int AS events_24h,
+      COUNT(DISTINCT learner_key)::int AS learners,
+      COUNT(DISTINCT question_version_id)::int AS question_versions,
+      COALESCE(SUM(CASE WHEN concept_id = '' OR question_version_id = '' THEN 1 ELSE 0 END), 0)::int AS malformed
+     FROM learning_events`
+  )) as {
     events: number;
     events_24h: number;
     learners: number;
@@ -1492,27 +1284,28 @@ export function learningLedgerHealth(): {
   };
 }
 
-export function questionCalibration(limit = 100): {
-  question_version_id: string;
-  attempts: number;
-  unique_learners: number;
-  correct_rate: number;
-  avg_response_time_ms: number;
-}[] {
-  return db
-    .prepare(
-      `SELECT question_version_id,
-              COUNT(*) AS attempts,
-              COUNT(DISTINCT learner_key) AS unique_learners,
-              AVG(is_correct) AS correct_rate,
-              AVG(response_time_ms) AS avg_response_time_ms
-       FROM learning_events
-       WHERE was_skipped = 0
-       GROUP BY question_version_id
-       ORDER BY attempts DESC
-       LIMIT ?`
-    )
-    .all(limit) as {
+export async function questionCalibration(limit = 100): Promise<
+  {
+    question_version_id: string;
+    attempts: number;
+    unique_learners: number;
+    correct_rate: number;
+    avg_response_time_ms: number;
+  }[]
+> {
+  return (await many(
+    `SELECT question_version_id,
+            COUNT(*)::int AS attempts,
+            COUNT(DISTINCT learner_key)::int AS unique_learners,
+            AVG(is_correct)::float8 AS correct_rate,
+            AVG(response_time_ms)::float8 AS avg_response_time_ms
+     FROM learning_events
+     WHERE was_skipped = 0
+     GROUP BY question_version_id
+     ORDER BY attempts DESC
+     LIMIT $1`,
+    [limit]
+  )) as {
     question_version_id: string;
     attempts: number;
     unique_learners: number;
@@ -1538,14 +1331,18 @@ function makeClassCode(): string {
   return code;
 }
 
-export function createClassroom(ownerId: number, name: string): ClassroomRow {
+export async function createClassroom(
+  ownerId: number,
+  name: string
+): Promise<ClassroomRow> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = makeClassCode();
     try {
-      const r = db
-        .prepare("INSERT INTO classrooms (owner_id, name, code) VALUES (?, ?, ?)")
-        .run(ownerId, name.trim().slice(0, 80), code);
-      return getClassroom(Number(r.lastInsertRowid))!;
+      const row = (await one(
+        "INSERT INTO classrooms (owner_id, name, code) VALUES ($1, $2, $3) RETURNING id",
+        [ownerId, name.trim().slice(0, 80), code]
+      )) as { id: number };
+      return (await getClassroom(Number(row.id)))!;
     } catch {
       /* code collision — retry */
     }
@@ -1553,115 +1350,125 @@ export function createClassroom(ownerId: number, name: string): ClassroomRow {
   throw new Error("Could not generate a class code");
 }
 
-export function getClassroom(id: number): ClassroomRow | undefined {
-  return db.prepare("SELECT * FROM classrooms WHERE id = ?").get(id) as
+export async function getClassroom(id: number): Promise<ClassroomRow | undefined> {
+  return (await one("SELECT * FROM classrooms WHERE id = $1", [id])) as
     | ClassroomRow
     | undefined;
 }
 
-export function getClassroomByCode(code: string): ClassroomRow | undefined {
-  return db
-    .prepare("SELECT * FROM classrooms WHERE code = ?")
-    .get(code.trim().toUpperCase()) as ClassroomRow | undefined;
+export async function getClassroomByCode(
+  code: string
+): Promise<ClassroomRow | undefined> {
+  return (await one("SELECT * FROM classrooms WHERE code = $1", [
+    code.trim().toUpperCase(),
+  ])) as ClassroomRow | undefined;
 }
 
-export function joinClassroom(classroomId: number, userId: number) {
-  db.prepare(
-    "INSERT OR IGNORE INTO classroom_members (classroom_id, user_id) VALUES (?, ?)"
-  ).run(classroomId, userId);
+export async function joinClassroom(classroomId: number, userId: number) {
+  await q(
+    "INSERT INTO classroom_members (classroom_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [classroomId, userId]
+  );
 }
 
-export function listMyClassrooms(userId: number): (ClassroomRow & {
-  member_count: number;
-  is_owner: number;
-})[] {
-  return db
-    .prepare(
-      `SELECT c.*,
-        (SELECT COUNT(*) FROM classroom_members m WHERE m.classroom_id = c.id) AS member_count,
-        (c.owner_id = ?) AS is_owner
-       FROM classrooms c
-       WHERE c.owner_id = ?
-          OR c.id IN (SELECT classroom_id FROM classroom_members WHERE user_id = ?)
-       ORDER BY c.created_at DESC`
-    )
-    .all(userId, userId, userId) as (ClassroomRow & {
+export async function listMyClassrooms(userId: number): Promise<
+  (ClassroomRow & {
     member_count: number;
     is_owner: number;
-  })[];
+  })[]
+> {
+  return (await many(
+    `SELECT c.*,
+      (SELECT COUNT(*)::int FROM classroom_members m WHERE m.classroom_id = c.id) AS member_count,
+      (c.owner_id = $1)::int AS is_owner
+     FROM classrooms c
+     WHERE c.owner_id = $2
+        OR c.id IN (SELECT classroom_id FROM classroom_members WHERE user_id = $3)
+     ORDER BY c.created_at DESC`,
+    [userId, userId, userId]
+  )) as (ClassroomRow & { member_count: number; is_owner: number })[];
 }
 
-export function classroomMembers(classroomId: number): {
-  user_id: number;
-  name: string;
-  joined_at: string;
-}[] {
-  return db
-    .prepare(
-      `SELECT m.user_id, u.name, m.joined_at
-       FROM classroom_members m JOIN users u ON u.id = m.user_id
-       WHERE m.classroom_id = ? ORDER BY m.joined_at`
-    )
-    .all(classroomId) as { user_id: number; name: string; joined_at: string }[];
+export async function classroomMembers(classroomId: number): Promise<
+  {
+    user_id: number;
+    name: string;
+    joined_at: string;
+  }[]
+> {
+  return (await many(
+    `SELECT m.user_id, u.name, m.joined_at
+     FROM classroom_members m JOIN users u ON u.id = m.user_id
+     WHERE m.classroom_id = $1 ORDER BY m.joined_at`,
+    [classroomId]
+  )) as { user_id: number; name: string; joined_at: string }[];
 }
 
-export function isClassroomMember(classroomId: number, userId: number): boolean {
-  return !!db
-    .prepare(
-      "SELECT 1 FROM classroom_members WHERE classroom_id = ? AND user_id = ?"
-    )
-    .get(classroomId, userId);
+export async function isClassroomMember(
+  classroomId: number,
+  userId: number
+): Promise<boolean> {
+  return !!(await one(
+    "SELECT 1 AS x FROM classroom_members WHERE classroom_id = $1 AND user_id = $2",
+    [classroomId, userId]
+  ));
 }
 
-export function assignCourse(classroomId: number, courseId: number) {
-  db.prepare(
-    "INSERT OR IGNORE INTO classroom_assignments (classroom_id, course_id) VALUES (?, ?)"
-  ).run(classroomId, courseId);
+export async function assignCourse(classroomId: number, courseId: number) {
+  await q(
+    "INSERT INTO classroom_assignments (classroom_id, course_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [classroomId, courseId]
+  );
 }
 
-export function unassignCourse(classroomId: number, courseId: number) {
-  db.prepare(
-    "DELETE FROM classroom_assignments WHERE classroom_id = ? AND course_id = ?"
-  ).run(classroomId, courseId);
+export async function unassignCourse(classroomId: number, courseId: number) {
+  await q(
+    "DELETE FROM classroom_assignments WHERE classroom_id = $1 AND course_id = $2",
+    [classroomId, courseId]
+  );
 }
 
-export function classroomAssignments(classroomId: number): (CourseRow &
-  PlatformCourseCols)[] {
-  return db
-    .prepare(
-      `SELECT c.* FROM courses c
-       JOIN classroom_assignments a ON a.course_id = c.id
-       WHERE a.classroom_id = ? ORDER BY a.assigned_at DESC`
-    )
-    .all(classroomId) as (CourseRow & PlatformCourseCols)[];
+export async function classroomAssignments(
+  classroomId: number
+): Promise<(CourseRow & PlatformCourseCols)[]> {
+  return (await many(
+    `SELECT c.* FROM courses c
+     JOIN classroom_assignments a ON a.course_id = c.id
+     WHERE a.classroom_id = $1 ORDER BY a.assigned_at DESC`,
+    [classroomId]
+  )) as (CourseRow & PlatformCourseCols)[];
 }
 
 /** Is this course assigned to any classroom the user belongs to? */
-export function hasAssignmentAccess(userId: number, courseId: number): boolean {
-  return !!db
-    .prepare(
-      `SELECT 1 FROM classroom_assignments a
-       JOIN classroom_members m ON m.classroom_id = a.classroom_id
-       WHERE a.course_id = ? AND m.user_id = ?
-       UNION
-       SELECT 1 FROM classroom_assignments a2
-       JOIN classrooms c2 ON c2.id = a2.classroom_id
-       WHERE a2.course_id = ? AND c2.owner_id = ?`
-    )
-    .get(courseId, userId, courseId, userId);
+export async function hasAssignmentAccess(
+  userId: number,
+  courseId: number
+): Promise<boolean> {
+  return !!(await one(
+    `SELECT 1 AS x FROM classroom_assignments a
+     JOIN classroom_members m ON m.classroom_id = a.classroom_id
+     WHERE a.course_id = $1 AND m.user_id = $2
+     UNION
+     SELECT 1 FROM classroom_assignments a2
+     JOIN classrooms c2 ON c2.id = a2.classroom_id
+     WHERE a2.course_id = $3 AND c2.owner_id = $4`,
+    [courseId, userId, courseId, userId]
+  ));
 }
 
 /** Average quiz score (0-100) across a learner's completed lessons in a course. */
-export function courseAverageScore(userId: number, courseId: number): number {
-  const r = db
-    .prepare(
-      `SELECT AVG(p.score * 100.0 / p.total) AS pct
-       FROM progress p
-       JOIN lessons l ON l.id = p.lesson_id
-       JOIN modules m ON m.id = l.module_id
-       WHERE p.user_id = ? AND m.course_id = ? AND p.total > 0`
-    )
-    .get(userId, courseId) as { pct: number | null };
+export async function courseAverageScore(
+  userId: number,
+  courseId: number
+): Promise<number> {
+  const r = (await one(
+    `SELECT AVG(p.score * 100.0 / p.total)::float8 AS pct
+     FROM progress p
+     JOIN lessons l ON l.id = p.lesson_id
+     JOIN modules m ON m.id = l.module_id
+     WHERE p.user_id = $1 AND m.course_id = $2 AND p.total > 0`,
+    [userId, courseId]
+  )) as { pct: number | null };
   return Math.round(r.pct ?? 0);
 }
 
@@ -1675,46 +1482,46 @@ export interface CertificateRow {
   issued_at: string;
 }
 
-export function issueCertificate(
+export async function issueCertificate(
   id: string,
   userId: number,
   courseId: number,
   scorePct: number
-): CertificateRow {
-  db.prepare(
-    "INSERT OR IGNORE INTO certificates (id, user_id, course_id, score_pct) VALUES (?, ?, ?, ?)"
-  ).run(id, userId, courseId, scorePct);
-  return db
-    .prepare("SELECT * FROM certificates WHERE user_id = ? AND course_id = ?")
-    .get(userId, courseId) as CertificateRow;
+): Promise<CertificateRow> {
+  await q(
+    "INSERT INTO certificates (id, user_id, course_id, score_pct) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+    [id, userId, courseId, scorePct]
+  );
+  return (await one(
+    "SELECT * FROM certificates WHERE user_id = $1 AND course_id = $2",
+    [userId, courseId]
+  )) as CertificateRow;
 }
 
-export function getCertificate(id: string):
-  | (CertificateRow & { user_name: string; course_title: string })
-  | undefined {
-  return db
-    .prepare(
-      `SELECT ct.*, u.name AS user_name, c.title AS course_title
-       FROM certificates ct
-       JOIN users u ON u.id = ct.user_id
-       JOIN courses c ON c.id = ct.course_id
-       WHERE ct.id = ?`
-    )
-    .get(id) as
-    | (CertificateRow & { user_name: string; course_title: string })
-    | undefined;
+export async function getCertificate(
+  id: string
+): Promise<(CertificateRow & { user_name: string; course_title: string }) | undefined> {
+  return (await one(
+    `SELECT ct.*, u.name AS user_name, c.title AS course_title
+     FROM certificates ct
+     JOIN users u ON u.id = ct.user_id
+     JOIN courses c ON c.id = ct.course_id
+     WHERE ct.id = $1`,
+    [id]
+  )) as (CertificateRow & { user_name: string; course_title: string }) | undefined;
 }
 
-export function listCertificates(userId: number): (CertificateRow & {
-  course_title: string;
-})[] {
-  return db
-    .prepare(
-      `SELECT ct.*, c.title AS course_title FROM certificates ct
-       JOIN courses c ON c.id = ct.course_id
-       WHERE ct.user_id = ? ORDER BY ct.issued_at DESC`
-    )
-    .all(userId) as (CertificateRow & { course_title: string })[];
+export async function listCertificates(userId: number): Promise<
+  (CertificateRow & {
+    course_title: string;
+  })[]
+> {
+  return (await many(
+    `SELECT ct.*, c.title AS course_title FROM certificates ct
+     JOIN courses c ON c.id = ct.course_id
+     WHERE ct.user_id = $1 ORDER BY ct.issued_at DESC`,
+    [userId]
+  )) as (CertificateRow & { course_title: string })[];
 }
 
 // ---------- Transactions (billing) ----------
@@ -1732,46 +1539,47 @@ export interface TxRow {
   created_at: string;
 }
 
-export function createTransaction(
+export async function createTransaction(
   userId: number,
   txRef: string,
   product: string,
   amountCents: number,
   currency: string
 ) {
-  db.prepare(
-    "INSERT INTO transactions (user_id, tx_ref, product, amount_cents, currency) VALUES (?, ?, ?, ?, ?)"
-  ).run(userId, txRef, product, amountCents, currency);
+  await q(
+    "INSERT INTO transactions (user_id, tx_ref, product, amount_cents, currency) VALUES ($1, $2, $3, $4, $5)",
+    [userId, txRef, product, amountCents, currency]
+  );
 }
 
-export function getTransaction(txRef: string): TxRow | undefined {
-  return db.prepare("SELECT * FROM transactions WHERE tx_ref = ?").get(txRef) as
+export async function getTransaction(txRef: string): Promise<TxRow | undefined> {
+  return (await one("SELECT * FROM transactions WHERE tx_ref = $1", [txRef])) as
     | TxRow
     | undefined;
 }
 
-export function markTransaction(
+export async function markTransaction(
   txRef: string,
   status: "successful" | "failed",
   providerRef?: string
 ) {
-  db.prepare(
-    "UPDATE transactions SET status = ?, provider_ref = ? WHERE tx_ref = ?"
-  ).run(status, providerRef ?? null, txRef);
+  await q("UPDATE transactions SET status = $1, provider_ref = $2 WHERE tx_ref = $3", [
+    status,
+    providerRef ?? null,
+    txRef,
+  ]);
 }
 
-export function platformCounts() {
-  const users = (db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n;
-  const courses = (db.prepare("SELECT COUNT(*) AS n FROM courses").get() as { n: number }).n;
-  const published = (
-    db.prepare("SELECT COUNT(*) AS n FROM courses WHERE published = 1").get() as { n: number }
-  ).n;
-  const revenue = (
-    db
-      .prepare(
-        "SELECT COALESCE(SUM(amount_cents),0) AS n FROM transactions WHERE status = 'successful'"
-      )
-      .get() as { n: number }
-  ).n;
+export async function platformCounts() {
+  const users = ((await one("SELECT COUNT(*)::int AS n FROM users")) as { n: number }).n;
+  const courses = ((await one("SELECT COUNT(*)::int AS n FROM courses")) as {
+    n: number;
+  }).n;
+  const published = ((await one(
+    "SELECT COUNT(*)::int AS n FROM courses WHERE published = 1"
+  )) as { n: number }).n;
+  const revenue = ((await one(
+    "SELECT COALESCE(SUM(amount_cents), 0)::float8 AS n FROM transactions WHERE status = 'successful'"
+  )) as { n: number }).n;
   return { users, courses, published, revenue_cents: revenue };
 }

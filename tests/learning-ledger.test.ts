@@ -1,11 +1,14 @@
-import { mkdtemp, rm } from "fs/promises";
-import os from "os";
-import path from "path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { QuizCard } from "../lib/learning-types";
 
-let tempDir: string;
+// This is a database integration test. It runs against a *dedicated* scratch
+// Postgres set via TEST_DATABASE_URL (it TRUNCATEs tables), so it is skipped by
+// default to avoid touching the real Neon database. To run it:
+//   TEST_DATABASE_URL=postgres://... npm test
+const TEST_DB = process.env.TEST_DATABASE_URL;
+
 let data: typeof import("../lib/db");
+let pg: typeof import("../lib/pg");
 let userId: number;
 let courseId: number;
 let lessonId: number;
@@ -21,31 +24,42 @@ const card: QuizCard = {
   explanation: "Compounding earns returns on earlier returns.",
 };
 
-beforeAll(async () => {
-  tempDir = await mkdtemp(path.join(os.tmpdir(), "bookquest-ledger-"));
-  process.env.BOOKQUEST_DATA_DIR = tempDir;
-  data = await import("../lib/db");
+describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
+  beforeAll(async () => {
+    process.env.DATABASE_URL = TEST_DB;
+    pg = await import("../lib/pg");
+    data = await import("../lib/db");
+    await pg.ready();
+    // Clean slate so the global count assertions below are deterministic.
+    await pg.q(`TRUNCATE
+      learning_events, lesson_completion_events, question_versions, concepts,
+      learning_identities, answer_sessions, practice_sessions, concept_mastery,
+      progress, user_stats, review_items, enrollments, certificates,
+      classroom_assignments, classroom_members, classrooms, transactions,
+      sessions, lessons, modules, courses, users
+      RESTART IDENTITY CASCADE`);
 
-  const user = data.createUser("ledger@example.com", "Ledger Learner", "hash");
-  userId = user.id;
-  courseId = data.createCourse(userId, "finance.pdf");
-  const moduleId = data.createModule(courseId, "Finance", "Core ideas", 0);
-  lessonId = data.createLesson(moduleId, "Interest", 0, JSON.stringify([card]), {
-    generatorModel: "test-model",
-    promptVersion: "test-prompt-v1",
+    const user = await data.createUser("ledger@example.com", "Ledger Learner", "hash");
+    userId = user.id;
+    courseId = await data.createCourse(userId, "finance.pdf");
+    const moduleId = await data.createModule(courseId, "Finance", "Core ideas", 0);
+    lessonId = await data.createLesson(
+      moduleId,
+      "Interest",
+      0,
+      JSON.stringify([card]),
+      { generatorModel: "test-model", promptVersion: "test-prompt-v1" }
+    );
+    answerSessionId = (await data.createLessonAnswerSession(userId, lessonId))!.id;
   });
-  answerSessionId = data.createLessonAnswerSession(userId, lessonId)!.id;
-});
 
-afterAll(async () => {
-  data.db.close();
-  delete process.env.BOOKQUEST_DATA_DIR;
-  await rm(tempDir, { recursive: true, force: true });
-});
+  afterAll(async () => {
+    await pg?.pool.end();
+    delete process.env.DATABASE_URL;
+  });
 
-describe("learning evidence ledger", () => {
-  it("appends one event and updates mastery in the same operation", () => {
-    const result = data.recordAnswerEvidence({
+  it("appends one event and updates mastery in the same operation", async () => {
+    const result = await data.recordAnswerEvidence({
       eventId: "event_exactly_once_1",
       userId,
       courseId,
@@ -66,9 +80,10 @@ describe("learning evidence ledger", () => {
     expect(result.masteryBefore).toBeCloseTo(0.5);
     expect(result.masteryAfter).toBeCloseTo(0.65);
 
-    const row = data.db
-      .prepare("SELECT * FROM learning_events WHERE event_id = ?")
-      .get("event_exactly_once_1") as Record<string, unknown>;
+    const row = (await pg.one(
+      "SELECT * FROM learning_events WHERE event_id = $1",
+      ["event_exactly_once_1"]
+    )) as Record<string, unknown>;
     expect(row).toMatchObject({
       is_correct: 1,
       session_kind: "lesson",
@@ -78,38 +93,33 @@ describe("learning evidence ledger", () => {
     expect(String(row.learner_key)).toMatch(/^learner_/);
   });
 
-  it("treats replay as a duplicate without inflating mastery", () => {
-    const duplicate = data.db.transaction(() =>
-      data.recordAnswerEvidence({
-        eventId: "event_exactly_once_1",
-        userId,
-        courseId,
-        lessonId,
-        cardIndex: 0,
-        questionId: `lesson:${lessonId}:card:0`,
-        concept: "compound interest",
-        card,
-        answer: 0,
-        responseTimeMs: 3200,
-        occurredAt: new Date().toISOString(),
-        sessionKind: "lesson",
-        sessionId: answerSessionId,
-      })
-    )();
+  it("treats replay as a duplicate without inflating mastery", async () => {
+    const duplicate = await data.recordAnswerEvidence({
+      eventId: "event_exactly_once_1",
+      userId,
+      courseId,
+      lessonId,
+      cardIndex: 0,
+      questionId: `lesson:${lessonId}:card:0`,
+      concept: "compound interest",
+      card,
+      answer: 0,
+      responseTimeMs: 3200,
+      occurredAt: new Date().toISOString(),
+      sessionKind: "lesson",
+      sessionId: answerSessionId,
+    });
 
     expect(duplicate.inserted).toBe(false);
-    const count = data.db
-      .prepare("SELECT COUNT(*) AS count FROM learning_events")
-      .get() as { count: number };
+    const count = (await pg.one(
+      "SELECT COUNT(*)::int AS count FROM learning_events"
+    )) as { count: number };
     expect(count.count).toBe(1);
-    const mastery = data.getCourseMastery(userId, courseId)[0];
-    expect(mastery).toMatchObject({
-      correct: 1,
-      wrong: 0,
-    });
+    const mastery = (await data.getCourseMastery(userId, courseId))[0];
+    expect(mastery).toMatchObject({ correct: 1, wrong: 0 });
     expect(mastery.mastery).toBeCloseTo(0.65);
 
-    const semanticReplay = data.recordAnswerEvidence({
+    const semanticReplay = await data.recordAnswerEvidence({
       eventId: "event_same_attempt_new_transport_id",
       userId,
       courseId,
@@ -127,7 +137,7 @@ describe("learning evidence ledger", () => {
     expect(semanticReplay.inserted).toBe(false);
     expect(semanticReplay.eventId).toBe("event_exactly_once_1");
 
-    expect(() =>
+    await expect(
       data.recordAnswerEvidence({
         eventId: "event_exactly_once_1",
         userId,
@@ -143,53 +153,50 @@ describe("learning evidence ledger", () => {
         sessionKind: "lesson",
         sessionId: answerSessionId,
       })
-    ).toThrow(data.EvidenceConflictError);
+    ).rejects.toThrow(data.EvidenceConflictError);
 
-    expect(data.getLessonEvidenceSummary(userId, lessonId, answerSessionId)).toEqual({
-      score: 1,
-      total: 1,
-      wrongCardIndexes: [],
-    });
+    expect(
+      await data.getLessonEvidenceSummary(userId, lessonId, answerSessionId)
+    ).toEqual({ score: 1, total: 1, wrongCardIndexes: [] });
   });
 
-  it("rejects mutation and deletion of historical events", () => {
-    expect(() =>
-      data.db
-        .prepare("UPDATE learning_events SET is_correct = 0 WHERE event_id = ?")
-        .run("event_exactly_once_1")
-    ).toThrow(/append-only/);
-    expect(() =>
-      data.db
-        .prepare("DELETE FROM learning_events WHERE event_id = ?")
-        .run("event_exactly_once_1")
-    ).toThrow(/append-only/);
-    expect(() =>
-      data.db
-        .prepare("UPDATE question_versions SET content_json = '{}' WHERE id = ?")
-        .run(
-          data.db.prepare("SELECT id FROM question_versions LIMIT 1").pluck().get()
-        )
-    ).toThrow(/immutable/);
+  it("rejects mutation and deletion of historical events", async () => {
+    await expect(
+      pg.q("UPDATE learning_events SET is_correct = 0 WHERE event_id = $1", [
+        "event_exactly_once_1",
+      ])
+    ).rejects.toThrow(/append-only/);
+    await expect(
+      pg.q("DELETE FROM learning_events WHERE event_id = $1", [
+        "event_exactly_once_1",
+      ])
+    ).rejects.toThrow(/append-only/);
+    const qv = (await pg.one("SELECT id FROM question_versions LIMIT 1")) as {
+      id: string;
+    };
+    await expect(
+      pg.q("UPDATE question_versions SET content_json = '{}' WHERE id = $1", [
+        qv.id,
+      ])
+    ).rejects.toThrow(/immutable/);
   });
 
-  it("reports calibration and database health", () => {
-    expect(data.questionCalibration(10)[0]).toMatchObject({
+  it("reports calibration and database health", async () => {
+    expect((await data.questionCalibration(10))[0]).toMatchObject({
       attempts: 1,
       unique_learners: 1,
       correct_rate: 1,
     });
-    expect(data.learningLedgerHealth()).toMatchObject({
+    expect(await data.learningLedgerHealth()).toMatchObject({
       events: 1,
       learners: 1,
       question_versions: 1,
       malformed: 0,
     });
-    expect(data.db.pragma("foreign_key_check")).toEqual([]);
-    expect(data.db.pragma("integrity_check")).toEqual([{ integrity_check: "ok" }]);
   });
 
-  it("persists fresh practice questions before they are answered", () => {
-    const session = data.createPracticeSession(
+  it("persists fresh practice questions before they are answered", async () => {
+    const session = await data.createPracticeSession(
       userId,
       courseId,
       [{ concept: "compound interest", card }],
@@ -197,52 +204,54 @@ describe("learning evidence ledger", () => {
       { generatorModel: "test-model", promptVersion: "practice-v1" }
     );
     practiceSessionId = session.id;
-    expect(data.getPracticeSession(userId, session.id)?.items[0]).toMatchObject({
-      questionId: `${session.id}:question:0`,
-      concept: "compound interest",
-    });
-    const registered = data.db
-      .prepare("SELECT COUNT(*) AS count FROM question_versions WHERE question_id = ?")
-      .get(`${session.id}:question:0`) as { count: number };
+    expect((await data.getPracticeSession(userId, session.id))?.items[0]).toMatchObject(
+      {
+        questionId: `${session.id}:question:0`,
+        concept: "compound interest",
+      }
+    );
+    const registered = (await pg.one(
+      "SELECT COUNT(*)::int AS count FROM question_versions WHERE question_id = $1",
+      [`${session.id}:question:0`]
+    )) as { count: number };
     expect(registered.count).toBe(1);
   });
 
-  it("does not award lesson XP twice when completion is replayed", () => {
-    expect(data.completeLesson(userId, lessonId, 1, 1, 15)).toBe(15);
-    expect(data.completeLesson(userId, lessonId, 1, 1, 15)).toBe(0);
-    expect(data.getStats(userId).total_xp).toBe(15);
+  it("does not award lesson XP twice when completion is replayed", async () => {
+    expect(await data.completeLesson(userId, lessonId, 1, 1, 15)).toBe(15);
+    expect(await data.completeLesson(userId, lessonId, 1, 1, 15)).toBe(0);
+    expect((await data.getStats(userId)).total_xp).toBe(15);
   });
 
-  it("preserves historical evidence when source content is deleted", () => {
-    expect(() => data.deleteCourse(courseId)).not.toThrow();
-    const event = data.db
-      .prepare("SELECT course_id, lesson_id FROM learning_events WHERE event_id = ?")
-      .get("event_exactly_once_1") as { course_id: number; lesson_id: number };
+  it("preserves historical evidence when source content is deleted", async () => {
+    await expect(data.deleteCourse(courseId)).resolves.not.toThrow();
+    const event = (await pg.one(
+      "SELECT course_id, lesson_id FROM learning_events WHERE event_id = $1",
+      ["event_exactly_once_1"]
+    )) as { course_id: number; lesson_id: number };
     expect(event).toEqual({ course_id: courseId, lesson_id: lessonId });
 
-    const question = data.db
-      .prepare("SELECT course_id, content_json FROM question_versions LIMIT 1")
-      .get() as { course_id: number | null; content_json: string };
+    const question = (await pg.one(
+      "SELECT course_id, content_json FROM question_versions LIMIT 1"
+    )) as { course_id: number | null; content_json: string };
     expect(question.course_id).toBeNull();
     expect(question.content_json).toContain("earned interest");
 
-    const delayedSession = data.getPracticeSession(userId, practiceSessionId)!;
+    const delayedSession = (await data.getPracticeSession(userId, practiceSessionId))!;
     const delayedItem = delayedSession.items[0];
-    expect(
-      data.recordAnswerEvidence({
-        eventId: "event_after_course_deletion",
-        userId,
-        courseId,
-        questionId: delayedItem.questionId,
-        concept: delayedItem.concept,
-        card: delayedItem.card,
-        answer: 0,
-        responseTimeMs: 4000,
-        occurredAt: new Date().toISOString(),
-        sessionKind: "practice",
-        sessionId: delayedSession.id,
-      }).inserted
-    ).toBe(true);
-    expect(data.db.pragma("foreign_key_check")).toEqual([]);
+    const recorded = await data.recordAnswerEvidence({
+      eventId: "event_after_course_deletion",
+      userId,
+      courseId,
+      questionId: delayedItem.questionId,
+      concept: delayedItem.concept,
+      card: delayedItem.card,
+      answer: 0,
+      responseTimeMs: 4000,
+      occurredAt: new Date().toISOString(),
+      sessionKind: "practice",
+      sessionId: delayedSession.id,
+    });
+    expect(recorded.inserted).toBe(true);
   });
 });

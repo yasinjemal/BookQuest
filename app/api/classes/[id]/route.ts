@@ -23,43 +23,51 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { id } = await params;
-  const classroom = getClassroom(Number(id));
+  const classroom = await getClassroom(Number(id));
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const isOwner = classroom.owner_id === user.id;
-  if (!isOwner && !isClassroomMember(classroom.id, user.id)) {
+  if (!isOwner && !(await isClassroomMember(classroom.id, user.id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const assignments = classroomAssignments(classroom.id);
+  const assignments = await classroomAssignments(classroom.id);
   const assignedLessonIds: number[] = [];
   for (const c of assignments) {
-    for (const m of listModules(c.id)) {
-      for (const l of listLessons(m.id)) assignedLessonIds.push(l.id);
+    for (const m of await listModules(c.id)) {
+      for (const l of await listLessons(m.id)) assignedLessonIds.push(l.id);
     }
   }
 
-  const members = classroomMembers(classroom.id).map((member) => {
-    const completed = getCompletedLessonIds(member.user_id);
-    const doneLessons = assignedLessonIds.filter((lid) => completed.has(lid)).length;
-    const stats = getStats(member.user_id);
-    return {
-      user_id: member.user_id,
-      name: member.name,
-      doneLessons,
-      totalLessons: assignedLessonIds.length,
-      streak: stats.streak,
-      total_xp: stats.total_xp,
-    };
-  });
+  const members = await Promise.all(
+    (await classroomMembers(classroom.id)).map(async (member) => {
+      const completed = await getCompletedLessonIds(member.user_id);
+      const doneLessons = assignedLessonIds.filter((lid) => completed.has(lid)).length;
+      const stats = await getStats(member.user_id);
+      return {
+        user_id: member.user_id,
+        name: member.name,
+        doneLessons,
+        totalLessons: assignedLessonIds.length,
+        streak: stats.streak,
+        total_xp: stats.total_xp,
+      };
+    })
+  );
 
   const weakConcepts = isOwner
-    ? classWeakConcepts(
+    ? await classWeakConcepts(
         members.map((m) => m.user_id),
         assignments.map((a) => a.id)
       )
+    : [];
+
+  const myCourses = isOwner
+    ? (await listOwnedCourses(user.id))
+        .filter((c) => c.status === "ready")
+        .map((c) => ({ id: c.id, title: c.title }))
     : [];
 
   return NextResponse.json({
@@ -72,11 +80,7 @@ export async function GET(
     members,
     weakConcepts,
     // Teacher's publishable courses, for the assign dropdown
-    myCourses: isOwner
-      ? listOwnedCourses(user.id)
-          .filter((c) => c.status === "ready")
-          .map((c) => ({ id: c.id, title: c.title }))
-      : [],
+    myCourses,
   });
 }
 
@@ -85,10 +89,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { id } = await params;
-  const classroom = getClassroom(Number(id));
+  const classroom = await getClassroom(Number(id));
   if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (classroom.owner_id !== user.id) {
     return NextResponse.json({ error: "Only the teacher can do this" }, { status: 403 });
@@ -97,7 +101,7 @@ export async function POST(
     courseId: number;
     action: "assign" | "unassign";
   };
-  const course = getCourse(Number(body.courseId));
+  const course = await getCourse(Number(body.courseId));
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
   if (body.action === "assign") {
     // Teachers can assign their own courses or any published course
@@ -107,9 +111,9 @@ export async function POST(
         { status: 403 }
       );
     }
-    assignCourse(classroom.id, course.id);
+    await assignCourse(classroom.id, course.id);
   } else {
-    unassignCourse(classroom.id, course.id);
+    await unassignCourse(classroom.id, course.id);
   }
   return NextResponse.json({ ok: true });
 }

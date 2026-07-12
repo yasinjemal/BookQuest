@@ -31,7 +31,7 @@ Rules for all content you write:
  */
 export async function generateCourse(courseId: number, chapters: Chapter[]) {
   try {
-    setCourseStatus(courseId, "outlining");
+    await setCourseStatus(courseId, "outlining");
 
     const chapterList = chapters
       .map((c, i) => `[${i}] ${c.title} — ${c.text.slice(0, 300).replace(/\n+/g, " ")}...`)
@@ -54,13 +54,13 @@ export async function generateCourse(courseId: number, chapters: Chapter[]) {
     const outline = outlineResp.parsed_output;
     if (!outline) throw new Error("Outline generation returned no parsable output.");
 
-    setCourseMeta(courseId, outline.title, outline.description);
-    setCourseStatus(courseId, "generating");
+    await setCourseMeta(courseId, outline.title, outline.description);
+    await setCourseStatus(courseId, "generating");
 
     const moduleIds: number[] = [];
     for (let i = 0; i < outline.modules.length; i++) {
       const m = outline.modules[i];
-      moduleIds.push(createModule(courseId, m.title, m.summary, i));
+      moduleIds.push(await createModule(courseId, m.title, m.summary, i));
     }
 
     // Generate lessons module by module, persisting as each completes
@@ -75,20 +75,20 @@ export async function generateCourse(courseId: number, chapters: Chapter[]) {
 
       try {
         await generateModuleLessons(moduleId, m.title, sourceText);
-        setModuleStatus(moduleId, "ready");
+        await setModuleStatus(moduleId, "ready");
       } catch (err) {
         // One retry, then mark the module failed but keep going
         try {
           await generateModuleLessons(moduleId, m.title, sourceText);
-          setModuleStatus(moduleId, "ready");
+          await setModuleStatus(moduleId, "ready");
         } catch {
           console.error(`Module ${moduleId} generation failed:`, err);
-          setModuleStatus(moduleId, "error");
+          await setModuleStatus(moduleId, "error");
         }
       }
     }
 
-    setCourseStatus(courseId, "ready");
+    await setCourseStatus(courseId, "ready");
   } catch (err) {
     console.error("Course generation failed:", err);
     let message = err instanceof Error ? err.message : String(err);
@@ -96,7 +96,7 @@ export async function generateCourse(courseId: number, chapters: Chapter[]) {
       message =
         "No API key found. Paste your Anthropic API key into .env.local, restart the app, then tap Retry.";
     }
-    setCourseStatus(courseId, "error", message);
+    await setCourseStatus(courseId, "error", message);
   }
 }
 
@@ -149,14 +149,15 @@ async function generateModuleLessons(
   const parsed = resp.parsed_output;
   if (!parsed) throw new Error("Lesson generation returned no parsable output.");
 
-  parsed.lessons.forEach((lesson, idx) => {
+  for (let idx = 0; idx < parsed.lessons.length; idx++) {
+    const lesson = parsed.lessons[idx];
     // Validate each card defensively; drop malformed ones rather than fail the module
     const cards = lesson.cards.filter((c) => Card.safeParse(c).success);
     if (cards.length >= 4) {
-      createLesson(moduleId, lesson.title, idx, JSON.stringify(cards), {
+      await createLesson(moduleId, lesson.title, idx, JSON.stringify(cards), {
         generatorModel: GENERATOR_MODEL,
         promptVersion: COURSE_LESSON_PROMPT_VERSION,
       });
     }
-  });
+  }
 }

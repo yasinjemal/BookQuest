@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import {
+  addStatsXp,
   answerReviewItem,
-  db,
   EvidenceConflictError,
   getAnswerSession,
-  getLearnerKey,
   getPracticeSession,
   getReviewItemForUser,
   InvalidAnswerError,
+  isEventRecordedForUser,
   recordAnswerEvidence,
 } from "@/lib/db";
 import { AnswerSubmission } from "@/lib/learning";
@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
 
   let raw: unknown;
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     | undefined;
 
   if (body.source === "lesson") {
-    const session = getAnswerSession(user.id, body.sessionId, "lesson");
+    const session = await getAnswerSession(user.id, body.sessionId, "lesson");
     const item = session?.items.find(
       (candidate) =>
         candidate.lessonId === body.lessonId &&
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       promptVersion: item.promptVersion,
     };
   } else if (body.source === "practice") {
-    const session = getPracticeSession(user.id, body.sessionId);
+    const session = await getPracticeSession(user.id, body.sessionId);
     const item = session?.items[body.itemIndex];
     const courseId = item?.courseId ?? session?.course_id;
     if (!session || !item || !courseId) {
@@ -99,19 +99,15 @@ export async function POST(req: NextRequest) {
       promptVersion: item.promptVersion ?? session.prompt_version,
     };
   } else {
-    const session = getAnswerSession(user.id, body.sessionId, "review");
+    const session = await getAnswerSession(user.id, body.sessionId, "review");
     const item = session?.items.find(
       (candidate) => candidate.reviewId === body.reviewId
     );
     if (!session || !item) {
       return NextResponse.json({ error: "Review attempt not found" }, { status: 404 });
     }
-    const review = getReviewItemForUser(user.id, body.reviewId);
-    const isRecordedReplay = !!db
-      .prepare(
-        "SELECT 1 FROM learning_events WHERE event_id = ? AND learner_key = ?"
-      )
-      .get(body.eventId, getLearnerKey(user.id));
+    const review = await getReviewItemForUser(user.id, body.reviewId);
+    const isRecordedReplay = await isEventRecordedForUser(user.id, body.eventId);
     if (review && review.next_due !== item.reviewDueAt && !isRecordedReplay) {
       return NextResponse.json(
         { error: "This review attempt is stale" },
@@ -132,9 +128,13 @@ export async function POST(req: NextRequest) {
     };
   }
 
+  const reviewId = body.source === "review" ? body.reviewId : undefined;
   try {
-    const result = db.transaction(() => {
-      const recorded = recordAnswerEvidence({
+    // The `project` callback runs inside recordAnswerEvidence's transaction and
+    // only when a new event is inserted, keeping source-specific projections in
+    // the same commit as the event.
+    const result = await recordAnswerEvidence(
+      {
         ...context,
         eventId: body.eventId,
         userId: user.id,
@@ -143,20 +143,16 @@ export async function POST(req: NextRequest) {
         occurredAt: body.occurredAt,
         attemptNumber: 1,
         hintCount: body.hintCount,
-      });
-
-      // Keep source-specific projections in the same commit as the event. If
-      // any projection fails, replay can safely insert the event again.
-      if (recorded.inserted && body.source === "practice" && recorded.correct) {
-        db.prepare(
-          "UPDATE user_stats SET total_xp = total_xp + 2 WHERE user_id = ?"
-        ).run(user.id);
+      },
+      async (client, recorded) => {
+        if (body.source === "practice" && recorded.correct) {
+          await addStatsXp(user.id, 2, client);
+        }
+        if (body.source === "review" && reviewId !== undefined) {
+          await answerReviewItem(user.id, reviewId, recorded.correct, client);
+        }
       }
-      if (recorded.inserted && body.source === "review") {
-        answerReviewItem(user.id, body.reviewId, recorded.correct);
-      }
-      return recorded;
-    })();
+    );
 
     return NextResponse.json({
       ok: true,

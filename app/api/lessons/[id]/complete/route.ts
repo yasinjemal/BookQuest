@@ -5,15 +5,16 @@ import {
   canAccessCourse,
   completeLesson,
   courseAverageScore,
-  db,
   getCompletedLessonIds,
   getLearnerKey,
   getLesson,
   getLessonEvidenceSummary,
   getStats,
   issueCertificate,
+  lessonCompletionExists,
   listLessons,
   listModules,
+  recordLessonCompletion,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 
@@ -23,12 +24,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { id } = await params;
   const lessonId = Number(id);
-  const lesson = getLesson(lessonId);
-  if (!lesson || !canAccessCourse(user.id, lesson.course_id)) {
+  const lesson = await getLesson(lessonId);
+  if (!lesson || !(await canAccessCourse(user.id, lesson.course_id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = (await req.json()) as {
@@ -40,11 +41,8 @@ export async function POST(
       { status: 400 }
     );
   }
-  const evidence = getLessonEvidenceSummary(
-    user.id,
-    lessonId,
-    body.answerSessionId
-  );
+  const answerSessionId = body.answerSessionId;
+  const evidence = await getLessonEvidenceSummary(user.id, lessonId, answerSessionId);
   if (!evidence) {
     return NextResponse.json(
       {
@@ -57,59 +55,60 @@ export async function POST(
   const { score, total, wrongCardIndexes } = evidence;
   const possibleXp = 10 + score * 5;
 
-  const completion = db.transaction(() => {
-    const duplicate = db
-      .prepare(
-        "SELECT 1 FROM lesson_completion_events WHERE answer_session_id = ?"
-      )
-      .get(body.answerSessionId);
-    if (duplicate) {
-      return { xp: 0, certificate: null as { id: string } | null, duplicate: true };
-    }
+  let completion: {
+    xp: number;
+    certificate: { id: string } | null;
+    duplicate: boolean;
+  };
 
-    const xp = completeLesson(user.id, lessonId, score, total, possibleXp);
-    for (const idx of wrongCardIndexes) addReviewItem(user.id, lessonId, idx);
+  if (await lessonCompletionExists(answerSessionId)) {
+    completion = { xp: 0, certificate: null, duplicate: true };
+  } else {
+    // completeLesson (progress upsert), addReviewItem and issueCertificate are
+    // each internally idempotent; recordLessonCompletion's PK is the final
+    // guard against double-crediting if two requests race.
+    const xp = await completeLesson(user.id, lessonId, score, total, possibleXp);
+    for (const idx of wrongCardIndexes) await addReviewItem(user.id, lessonId, idx);
 
     let certificate: { id: string } | null = null;
-    const completed = getCompletedLessonIds(user.id);
+    const completed = await getCompletedLessonIds(user.id);
     completed.add(lessonId);
     let allLessons = 0;
     let allDone = 0;
-    for (const module of listModules(lesson.course_id)) {
-      for (const courseLesson of listLessons(module.id)) {
+    for (const module of await listModules(lesson.course_id)) {
+      for (const courseLesson of await listLessons(module.id)) {
         allLessons++;
         if (completed.has(courseLesson.id)) allDone++;
       }
     }
     if (allLessons > 0 && allDone === allLessons) {
-      const cert = issueCertificate(
+      const cert = await issueCertificate(
         crypto.randomBytes(8).toString("hex"),
         user.id,
         lesson.course_id,
-        courseAverageScore(user.id, lesson.course_id)
+        await courseAverageScore(user.id, lesson.course_id)
       );
       certificate = { id: cert.id };
     }
 
-    db.prepare(
-      `INSERT INTO lesson_completion_events
-        (answer_session_id, learner_key, course_id, lesson_id, score, total, xp_awarded)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      body.answerSessionId,
-      getLearnerKey(user.id),
-      lesson.course_id,
+    const learnerKey = await getLearnerKey(user.id);
+    const inserted = await recordLessonCompletion({
+      answerSessionId,
+      learnerKey,
+      courseId: lesson.course_id,
       lessonId,
       score,
       total,
-      xp
-    );
-    return { xp, certificate, duplicate: false };
-  })();
+      xpAwarded: xp,
+    });
+    completion = inserted
+      ? { xp, certificate, duplicate: false }
+      : { xp: 0, certificate: null, duplicate: true };
+  }
 
   return NextResponse.json({
     xp: completion.xp,
-    stats: getStats(user.id),
+    stats: await getStats(user.id),
     certificate: completion.certificate,
     duplicate: completion.duplicate,
   });

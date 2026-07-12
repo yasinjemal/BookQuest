@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
-import { adjustCredits, createCourse, setCourseStatus } from "@/lib/db";
+import { after } from "next/server";
+import { adjustCredits, createCourse, setCourseSource, setCourseStatus } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { extractDocument } from "@/lib/extract";
 import { generateCourse } from "@/lib/generator";
@@ -12,7 +11,7 @@ export const maxDuration = 300;
 const ALLOWED = new Set(["pdf", "docx", "md", "txt", "markdown"]);
 
 export async function POST(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
 
   const isAdmin = user.role === "admin";
@@ -43,24 +42,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "File too large (max 50 MB)." }, { status: 400 });
   }
 
-  const courseId = createCourse(user.id, file.name);
-  const uploadPath = path.join(
-    process.cwd(),
-    "data",
-    "uploads",
-    `${courseId}-${file.name.replace(/[^\w.\-]+/g, "_")}`
-  );
-  await fs.writeFile(uploadPath, Buffer.from(await file.arrayBuffer()));
+  const courseId = await createCourse(user.id, file.name);
+  const buffer = Buffer.from(await file.arrayBuffer());
 
   try {
-    const { chapters } = await extractDocument(uploadPath, file.name);
+    const { chapters } = await extractDocument(buffer, file.name);
+    // Persist the extracted chapters so a retry can regenerate without the
+    // original file (there is no durable filesystem on serverless).
+    await setCourseSource(courseId, JSON.stringify(chapters));
     // Charge only after extraction succeeds; a failed generation can be
     // retried free of charge from the course card.
-    if (!isAdmin) adjustCredits(user.id, -1);
-    void generateCourse(courseId, chapters);
+    if (!isAdmin) await adjustCredits(user.id, -1);
+    // `after` runs post-response within the function's budget — unlike a bare
+    // fire-and-forget promise, which a serverless worker freezes immediately.
+    after(() => generateCourse(courseId, chapters));
     return NextResponse.json({ courseId, chapters: chapters.length });
   } catch (err) {
-    setCourseStatus(
+    await setCourseStatus(
       courseId,
       "error",
       err instanceof Error ? err.message : String(err)

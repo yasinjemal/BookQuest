@@ -8,11 +8,11 @@ export async function POST(req: NextRequest) {
     email: string;
     password: string;
   };
-  const result = login(email ?? "", password ?? "");
+  const result = await login(email ?? "", password ?? "");
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
   const res = NextResponse.json({ user: publicUser(result.user) });
-  startSession(res, result.user.id);
+  await startSession(res, result.user.id);
   return res;
 }

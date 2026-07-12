@@ -13,29 +13,36 @@ import type { CourseRow } from "@/lib/schemas";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function withProgress(
+async function withProgress(
   courses: (CourseRow & PlatformCourseCols)[],
   completed: Set<number>
 ) {
-  return courses.map((c) => {
-    const modules = listModules(c.id);
-    let totalLessons = 0;
-    let doneLessons = 0;
-    for (const m of modules) {
-      const lessons = listLessons(m.id);
-      totalLessons += lessons.length;
-      doneLessons += lessons.filter((l) => completed.has(l.id)).length;
-    }
-    return { ...c, totalLessons, doneLessons, moduleCount: modules.length };
-  });
+  return Promise.all(
+    courses.map(async (c) => {
+      const modules = await listModules(c.id);
+      let totalLessons = 0;
+      let doneLessons = 0;
+      for (const m of modules) {
+        const lessons = await listLessons(m.id);
+        totalLessons += lessons.length;
+        doneLessons += lessons.filter((l) => completed.has(l.id)).length;
+      }
+      return { ...c, totalLessons, doneLessons, moduleCount: modules.length };
+    })
+  );
 }
 
 export async function GET(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
-  const completed = getCompletedLessonIds(user.id);
-  return NextResponse.json({
-    owned: withProgress(listOwnedCourses(user.id), completed),
-    enrolled: withProgress(listEnrolledCourses(user.id), completed),
-  });
+  const completed = await getCompletedLessonIds(user.id);
+  const [ownedCourses, enrolledCourses] = await Promise.all([
+    listOwnedCourses(user.id),
+    listEnrolledCourses(user.id),
+  ]);
+  const [owned, enrolled] = await Promise.all([
+    withProgress(ownedCourses, completed),
+    withProgress(enrolledCourses, completed),
+  ]);
+  return NextResponse.json({ owned, enrolled });
 }

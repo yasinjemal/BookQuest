@@ -1,29 +1,37 @@
 // Seeds a small demo course so the learner UI can be tried without an API key.
-// Run: node scripts/seed-demo.mjs
-import Database from "better-sqlite3";
-import path from "path";
+// Run: node scripts/seed-demo.mjs   (reads DATABASE_URL from .env.local)
+import { readFileSync } from "fs";
+import { Pool } from "pg";
 
-const db = new Database(path.join(process.cwd(), "data", "app.db"));
+for (const line of readFileSync(".env.local", "utf8").split("\n")) {
+  const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+  if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+}
 
-const existing = db
-  .prepare("SELECT id FROM courses WHERE source_filename = 'demo'")
-  .get();
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const existing = (
+  await pool.query("SELECT id FROM courses WHERE source_filename = 'demo'")
+).rows[0];
 if (existing) {
-  console.log("Demo course already seeded (course", existing.id + ")");
+  console.log(`Demo course already seeded (course ${existing.id})`);
+  await pool.end();
   process.exit(0);
 }
 
-const courseId = db
-  .prepare(
-    "INSERT INTO courses (title, description, source_filename, status) VALUES (?, ?, 'demo', 'ready')"
+const courseId = (
+  await pool.query(
+    "INSERT INTO courses (title, description, source_filename, status) VALUES ($1, $2, 'demo', 'ready') RETURNING id",
+    ["Money Basics (Demo)", "Learn how money, banks and saving work."]
   )
-  .run("Money Basics (Demo)", "Learn how money, banks and saving work.").lastInsertRowid;
+).rows[0].id;
 
-const mod1 = db
-  .prepare(
-    "INSERT INTO modules (course_id, title, summary, position, status) VALUES (?, ?, ?, 0, 'ready')"
+const mod1 = (
+  await pool.query(
+    "INSERT INTO modules (course_id, title, summary, position, status) VALUES ($1, $2, $3, 0, 'ready') RETURNING id",
+    [courseId, "Understanding Money", "Why money exists and what it does."]
   )
-  .run(courseId, "Understanding Money", "Why money exists and what it does.").lastInsertRowid;
+).rows[0].id;
 
 const lesson1Cards = [
   { type: "concept", title: "Before money: barter", body: "Long ago, people traded goods directly for other goods. This is called barter. If you had fish and wanted shoes, you had to find a shoemaker who wanted fish." },
@@ -43,10 +51,14 @@ const lesson2Cards = [
   { type: "recap", title: "Key takeaways", points: ["Money = exchange + store of value + unit of account", "Each job makes trade and planning easier"] },
 ];
 
-const insertLesson = db.prepare(
-  "INSERT INTO lessons (module_id, title, position, cards) VALUES (?, ?, ?, ?)"
+await pool.query(
+  "INSERT INTO lessons (module_id, title, position, cards) VALUES ($1, $2, $3, $4)",
+  [mod1, "Why money exists", 0, JSON.stringify(lesson1Cards)]
 );
-insertLesson.run(mod1, "Why money exists", 0, JSON.stringify(lesson1Cards));
-insertLesson.run(mod1, "The three jobs of money", 1, JSON.stringify(lesson2Cards));
+await pool.query(
+  "INSERT INTO lessons (module_id, title, position, cards) VALUES ($1, $2, $3, $4)",
+  [mod1, "The three jobs of money", 1, JSON.stringify(lesson2Cards)]
+);
 
-console.log("Seeded demo course", courseId);
+console.log(`Seeded demo course ${courseId}`);
+await pool.end();

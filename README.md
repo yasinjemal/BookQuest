@@ -48,7 +48,7 @@ design baseline.
 ## Tech
 
 - Next.js 15 (App Router) + TypeScript + Tailwind CSS 4
-- SQLite (`better-sqlite3`) with in-place schema migrations in `lib/db.ts`
+- Postgres (`pg`) — Neon in production; schema created idempotently in `lib/pg.ts`
 - `@anthropic-ai/sdk` structured outputs (`zodOutputFormat` + `messages.parse`)
 - Cookie sessions + bcryptjs password hashing (`lib/auth.ts`)
 - Service worker: cached app shell; authenticated APIs stay network-only to
@@ -58,7 +58,8 @@ design baseline.
 
 | File | Purpose |
 |---|---|
-| `lib/db.ts` | Schema, migrations, all queries (users, courses, progress, billing) |
+| `lib/pg.ts` | Postgres pool + idempotent schema (Neon connection) |
+| `lib/db.ts` | All queries (users, courses, progress, billing) |
 | `lib/auth.ts` | Register/login, cookie sessions, route guards |
 | `lib/billing.ts` | Products, Flutterwave checkout + verification, test mode |
 | `lib/generator.ts` | Claude pipeline: outline call → per-module lesson calls |
@@ -78,6 +79,8 @@ design baseline.
 
 ## Going live (when ready)
 
-1. Create a Flutterwave merchant account → put `FLW_SECRET_KEY` in env
-2. Host on a VPS (keeps SQLite) or Vercel + Postgres migration
-3. Point a domain, enable HTTPS — the PWA becomes installable for everyone
+1. Create a Neon Postgres database → set `DATABASE_URL` (the `-pooler` host)
+   in the Vercel project's Environment Variables, plus `ANTHROPIC_API_KEY`
+2. Create a Flutterwave merchant account → put `FLW_SECRET_KEY` in env
+3. Deploy to Vercel — the schema is created automatically on first request
+4. Point a domain, enable HTTPS — the PWA becomes installable for everyone

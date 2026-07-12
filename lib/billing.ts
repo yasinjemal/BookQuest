@@ -48,12 +48,12 @@ export async function startCheckout(
 ): Promise<{ link?: string; simulated?: boolean; txRef: string }> {
   const p = PRODUCTS[product];
   const txRef = newTxRef(userId);
-  createTransaction(userId, txRef, product, p.amount_cents, CURRENCY);
+  await createTransaction(userId, txRef, product, p.amount_cents, CURRENCY);
 
   if (!isLiveBilling()) {
     // Test mode: no Flutterwave keys configured — fulfill immediately so the
     // whole flow can be exercised locally.
-    fulfill(txRef, "simulated");
+    await fulfill(txRef, "simulated");
     return { simulated: true, txRef };
   }
 
@@ -78,7 +78,7 @@ export async function startCheckout(
     message?: string;
   };
   if (data.status !== "success" || !data.data?.link) {
-    markTransaction(txRef, "failed");
+    await markTransaction(txRef, "failed");
     throw new Error(data.message ?? "Could not start payment");
   }
   return { link: data.data.link, txRef };
@@ -89,7 +89,7 @@ export async function verifyAndFulfill(
   txRef: string,
   transactionId: string
 ): Promise<boolean> {
-  const tx = getTransaction(txRef);
+  const tx = await getTransaction(txRef);
   if (!tx) return false;
   if (tx.status === "successful") return true; // idempotent
 
@@ -108,20 +108,21 @@ export async function verifyAndFulfill(
     Math.round(data.data.amount * 100) >= tx.amount_cents &&
     data.data.currency === tx.currency;
 
-  if (ok) fulfill(txRef, transactionId);
-  else markTransaction(txRef, "failed", transactionId);
+  if (ok) await fulfill(txRef, transactionId);
+  else await markTransaction(txRef, "failed", transactionId);
   return ok;
 }
 
 /** Idempotent: grants the product exactly once. */
-export function fulfill(txRef: string, providerRef: string) {
-  const tx = getTransaction(txRef);
+export async function fulfill(txRef: string, providerRef: string) {
+  const tx = await getTransaction(txRef);
   if (!tx || tx.status === "successful") return;
   const p = PRODUCTS[tx.product as ProductId];
   if (!p) return;
-  markTransaction(txRef, "successful", providerRef);
-  if ("credits" in p.grant && p.grant.credits) adjustCredits(tx.user_id, p.grant.credits);
+  await markTransaction(txRef, "successful", providerRef);
+  if ("credits" in p.grant && p.grant.credits)
+    await adjustCredits(tx.user_id, p.grant.credits);
   if ("premiumDays" in p.grant && p.grant.premiumDays) {
-    grantPremium(tx.user_id, p.grant.premiumDays);
+    await grantPremium(tx.user_id, p.grant.premiumDays);
   }
 }

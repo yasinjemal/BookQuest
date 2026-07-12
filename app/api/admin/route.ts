@@ -11,15 +11,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   if (user.role !== "admin") {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
+  const [counts, learningLedger, users] = await Promise.all([
+    platformCounts(),
+    learningLedgerHealth(),
+    listUsers(),
+  ]);
   return NextResponse.json({
-    counts: platformCounts(),
-    learningLedger: learningLedgerHealth(),
-    users: listUsers().map((u) => ({
+    counts,
+    learningLedger,
+    users: users.map((u) => ({
       id: u.id,
       email: u.email,
       name: u.name,
@@ -32,12 +37,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   if (user.role !== "admin") {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
   const body = (await req.json()) as { userId: number; credits: number };
-  adjustCredits(Number(body.userId), Math.trunc(body.credits));
+  await adjustCredits(Number(body.userId), Math.trunc(body.credits));
   return NextResponse.json({ ok: true });
 }

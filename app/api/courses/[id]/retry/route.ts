@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
-import { getCourse, prepareCourseRetry, setCourseStatus } from "@/lib/db";
+import { after } from "next/server";
+import { getCourse, getCourseSource, prepareCourseRetry, setCourseStatus } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { extractDocument } from "@/lib/extract";
 import { generateCourse } from "@/lib/generator";
+import type { Chapter } from "@/lib/extract";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,47 +12,40 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { id } = await params;
-  const course = getCourse(Number(id));
+  const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (course.owner_id !== user.id && user.role !== "admin") {
     return NextResponse.json({ error: "Only the owner can retry" }, { status: 403 });
   }
-  const uploadPath = path.join(
-    process.cwd(),
-    "data",
-    "uploads",
-    `${course.id}-${course.source_filename.replace(/[^\w.\-]+/g, "_")}`
-  );
+
+  const sourceJson = await getCourseSource(course.id);
+  if (!sourceJson) {
+    return NextResponse.json(
+      { error: "Original document is no longer available. Please upload it again." },
+      { status: 410 }
+    );
+  }
+  let chapters: Chapter[];
   try {
-    await fs.access(uploadPath);
+    chapters = JSON.parse(sourceJson) as Chapter[];
   } catch {
     return NextResponse.json(
-      { error: "Original file no longer exists. Please upload it again." },
+      { error: "Stored document was corrupted. Please upload it again." },
       { status: 410 }
     );
   }
 
   // Retrying a failed generation is free — the credit was already spent.
-  if (!prepareCourseRetry(course.id)) {
+  if (!(await prepareCourseRetry(course.id))) {
     return NextResponse.json(
       { error: "This course is already being generated." },
       { status: 409 }
     );
   }
 
-  try {
-    const { chapters } = await extractDocument(uploadPath, course.source_filename);
-    void generateCourse(course.id, chapters);
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    setCourseStatus(
-      course.id,
-      "error",
-      err instanceof Error ? err.message : String(err)
-    );
-    return NextResponse.json({ error: "Extraction failed" }, { status: 422 });
-  }
+  after(() => generateCourse(course.id, chapters));
+  return NextResponse.json({ ok: true });
 }

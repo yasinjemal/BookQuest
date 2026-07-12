@@ -11,27 +11,32 @@ export const dynamic = "force-dynamic";
 
 /** Practice hub summary: per accessible course, the learner's weakest concepts. */
 export async function GET(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
-  const courses = [...listOwnedCourses(user.id), ...listEnrolledCourses(user.id)]
-    .filter((c) => c.status === "ready");
-  const summary = courses.map((c) => {
-    const mastery = getCourseMastery(user.id, c.id);
-    const avg =
-      mastery.length > 0
-        ? mastery.reduce((s, m) => s + m.mastery, 0) / mastery.length
-        : null;
-    return {
-      courseId: c.id,
-      title: c.title,
-      conceptCount: mastery.length,
-      avgMastery: avg,
-      weakest: mastery.slice(0, 3).map((m) => ({
-        concept: m.concept,
-        mastery: m.mastery,
-      })),
-    };
-  });
+  const [owned, enrolled] = await Promise.all([
+    listOwnedCourses(user.id),
+    listEnrolledCourses(user.id),
+  ]);
+  const courses = [...owned, ...enrolled].filter((c) => c.status === "ready");
+  const summary = await Promise.all(
+    courses.map(async (c) => {
+      const mastery = await getCourseMastery(user.id, c.id);
+      const avg =
+        mastery.length > 0
+          ? mastery.reduce((s, m) => s + m.mastery, 0) / mastery.length
+          : null;
+      return {
+        courseId: c.id,
+        title: c.title,
+        conceptCount: mastery.length,
+        avgMastery: avg,
+        weakest: mastery.slice(0, 3).map((m) => ({
+          concept: m.concept,
+          mastery: m.mastery,
+        })),
+      };
+    })
+  );
   return NextResponse.json({ courses: summary });
 }
 

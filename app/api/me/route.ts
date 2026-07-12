@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const user = getUser(req);
+  const user = await getUser(req);
   if (!user) return NextResponse.json({ user: null }, { status: 401 });
   return NextResponse.json({ user: publicUser(user) });
 }

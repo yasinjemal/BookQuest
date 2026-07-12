@@ -5,7 +5,7 @@ import { PRODUCTS, startCheckout, type ProductId } from "@/lib/billing";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const { product } = (await req.json()) as { product: ProductId };
   if (!PRODUCTS[product]) {

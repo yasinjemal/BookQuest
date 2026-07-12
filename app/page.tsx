@@ -104,15 +104,23 @@ export default function HomePage() {
   const [owned, setOwned] = useState<CourseSummary[]>([]);
   const [enrolled, setEnrolled] = useState<CourseSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
+    setFailed(false);
     try {
       const meRes = await fetch("/api/me");
       if (meRes.status === 401) {
         setMe("anon");
+        return;
+      }
+      if (!meRes.ok) {
+        // The server is reachable but erroring (e.g. 500). Surface it instead of
+        // hanging on "Loading…" forever with me stuck at null.
+        setFailed(true);
         return;
       }
       const meData = await meRes.json();
@@ -124,11 +132,13 @@ export default function HomePage() {
         setEnrolled(data.enrolled);
       }
     } catch {
-      /* offline: cached data may still render via SW */
+      // Network failure. If we have never loaded, show the error state; an
+      // offline reload with cached SW data keeps whatever already rendered.
+      setFailed((prev) => prev || me === null);
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [me]);
 
   useEffect(() => {
     load();
@@ -198,6 +208,24 @@ export default function HomePage() {
       </div>
     );
   }
+
+  if (failed)
+    return (
+      <div className="px-6 pt-20 text-center">
+        <div className="text-5xl">⚠️</div>
+        <h1 className="text-xl font-extrabold mt-4">Couldn&apos;t reach BookQuest</h1>
+        <p className="text-ink-soft mt-2 text-sm">
+          The server had a problem responding. Please check your connection and try
+          again.
+        </p>
+        <button
+          onClick={() => load()}
+          className="mt-6 rounded-2xl bg-primary text-white font-bold py-3 px-6 border-b-4 border-amber-700 active:scale-[0.98] transition"
+        >
+          Try again
+        </button>
+      </div>
+    );
 
   if (!loaded || me === null)
     return <p className="p-8 text-center text-ink-soft">Loading…</p>;

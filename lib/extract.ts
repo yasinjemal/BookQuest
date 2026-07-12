@@ -1,5 +1,3 @@
-import fs from "fs/promises";
-
 export interface Chapter {
   title: string;
   text: string;
@@ -11,8 +9,13 @@ export interface Extracted {
 
 const MAX_CHAPTER_CHARS = 24000; // ~6k tokens per chapter chunk
 
+/**
+ * Extract text straight from the uploaded bytes — no filesystem. Vercel's
+ * serverless filesystem is read-only, and the original file is never needed
+ * again once its chapters are extracted (retries reuse the stored chapters).
+ */
 export async function extractDocument(
-  filePath: string,
+  buffer: Buffer,
   filename: string
 ): Promise<Extracted> {
   const ext = filename.toLowerCase().split(".").pop() ?? "";
@@ -20,23 +23,22 @@ export async function extractDocument(
 
   if (ext === "pdf") {
     const { extractText, getDocumentProxy } = await import("unpdf");
-    const buffer = await fs.readFile(filePath);
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
     const { text } = await extractText(pdf, { mergePages: true });
     markdown = text;
   } else if (ext === "docx") {
     const mammoth = await import("mammoth");
-    // convertToMarkdown exists at runtime but is missing from mammoth's types
+    // convertToMarkdown accepts a buffer at runtime but is missing from the types
     const convert = (
       mammoth as unknown as {
-        convertToMarkdown: (input: { path: string }) => Promise<{ value: string }>;
+        convertToMarkdown: (input: { buffer: Buffer }) => Promise<{ value: string }>;
       }
     ).convertToMarkdown;
-    const result = await convert({ path: filePath });
+    const result = await convert({ buffer });
     markdown = result.value;
   } else {
     // md / txt / anything text-like
-    markdown = await fs.readFile(filePath, "utf-8");
+    markdown = buffer.toString("utf-8");
   }
 
   markdown = markdown.replace(/\r\n/g, "\n").trim();

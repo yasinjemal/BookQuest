@@ -5,6 +5,6 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   const res = NextResponse.json({ ok: true });
-  endSession(req, res);
+  await endSession(req, res);
   return res;
 }

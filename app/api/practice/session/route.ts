@@ -34,22 +34,22 @@ interface PracticeCard {
     - default: reuse the course's own quiz cards for the weakest concepts (free)
     - fresh: Claude writes brand-new questions (premium / admin) */
 export async function POST(req: NextRequest) {
-  const [user, unauth] = requireUser(req);
+  const [user, unauth] = await requireUser(req);
   if (!user) return unauth;
   const body = (await req.json()) as { courseId: number; fresh?: boolean };
-  const course = getCourse(Number(body.courseId));
-  if (!course || !canAccessCourse(user.id, course.id)) {
+  const course = await getCourse(Number(body.courseId));
+  if (!course || !(await canAccessCourse(user.id, course.id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const mastery = getCourseMastery(user.id, course.id);
+  const mastery = await getCourseMastery(user.id, course.id);
   const weakest = mastery.slice(0, 4).map((m) => m.concept);
 
   // Gather all quiz cards in the course, grouped by concept
   const allQuiz: PracticeCard[] = [];
   const conceptTexts: string[] = [];
-  for (const m of listModules(course.id)) {
-    for (const l of listLessons(m.id)) {
+  for (const m of await listModules(course.id)) {
+    for (const l of await listLessons(m.id)) {
       const cards = JSON.parse(l.cards) as Card[];
       for (let cardIndex = 0; cardIndex < cards.length; cardIndex++) {
         const card = cards[cardIndex];
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
             concepts[0],
           card,
         }));
-      const session = createPracticeSession(
+      const session = await createPracticeSession(
         user.id,
         course.id,
         items,
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
   );
   const rest = allQuiz.filter((q) => !inWeakest.includes(q));
   const shuffled = [...inWeakest.sort(() => Math.random() - 0.5), ...rest.sort(() => Math.random() - 0.5)];
-  const session = createPracticeSession(
+  const session = await createPracticeSession(
     user.id,
     course.id,
     shuffled.slice(0, 8),

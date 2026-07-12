@@ -9,11 +9,11 @@ export async function POST(req: NextRequest) {
     name: string;
     password: string;
   };
-  const result = register(email ?? "", name ?? "", password ?? "");
+  const result = await register(email ?? "", name ?? "", password ?? "");
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   const res = NextResponse.json({ user: publicUser(result.user) });
-  startSession(res, result.user.id);
+  await startSession(res, result.user.id);
   return res;
 }
