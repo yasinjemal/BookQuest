@@ -4,8 +4,8 @@
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
 **Last updated:** 13 July 2026
-**Current phase:** Phase 1 — Spaces, tenancy and permissions
-**Next product slice:** Phase 2 — Course Studio, blocks and reusable recipes
+**Current phase:** Phase 2 — Course Studio, blocks and reusable recipes
+**Next product slice:** versioned Source Library and immutable course drafts
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -107,8 +107,8 @@ and an institution operate securely. Its four primary experiences are:
 | Phase | Outcome | Status | Dependency |
 |---|---|---|---|
 | 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **COMPLETE** | — |
-| 1. Spaces and tenancy | Anyone can create a controlled learning space | **IN PROGRESS** | Phase 0 gates passed |
-| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | Not started | Phase 1 permissions |
+| 1. Spaces and tenancy | Anyone can create a controlled learning space | **COMPLETE** | Phase 0 gates passed |
+| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **IN PROGRESS** | Phase 1 permissions passed |
 | 3. Institutional pilot | An organization completes an auditable training journey | Not started | Phases 1–2 |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | Not started | Phase 3 evidence |
 | 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | Not started | Stable contracts |
@@ -246,7 +246,7 @@ audit packs → Phase 3; adaptive learning → Phase 6.
 
 ## Phase 1 — Spaces, tenancy and permissions
 
-**Status:** LOCAL IMPLEMENTATION COMPLETE — CI/deployment proof pending
+**Status:** COMPLETE (12 July 2026 UTC)
 **Outcome:** individuals, groups, schools, companies and departments use one
 Space model while retaining distinct privacy and access rules.
 
@@ -360,6 +360,29 @@ Space model while retaining distinct privacy and access rules.
   course/enrollment flows resolve it without setup, and the Spaces screen lists
   it alongside collaborative Spaces.)
 
+### Closure evidence
+
+- Implementation commit `6b48c5a818c8141b7d9d5d64aa4437a48b17afcd` passed
+  [GitHub Actions CI #7](https://github.com/yasinjemal/BookQuest/actions/runs/29212859675)
+  with the full scratch-Postgres suite, type checking and production build.
+- Vercel reported a successful production deployment for the same commit at
+  `https://book-quest-silk.vercel.app`.
+- Migration 3 applied under the production advisory migration lock at
+  `2026-07-12T23:11:34.055Z`.
+- The read-only production readiness gate found 10/10 required tables, automatic
+  personal Spaces for 2/2 users, Space ownership for 2/2 courses, a valid class
+  Space for 1/1 classroom and zero ownership, membership, assignment-audience or
+  post-migration evidence-context failures.
+- Production HTTP smoke checks returned `200` for public discovery and the Spaces
+  shell, `401` for protected Space/course APIs, and redirected the unauthenticated
+  Spaces experience to login. The exact deployed commit's PostgreSQL tests supply
+  the mutating invite/assignment/revocation proof without creating synthetic
+  customer-visible production records.
+- Dated evidence is stored in
+  `docs/evidence/phase1-readiness-2026-07-12T231208Z.json`.
+- Accepted limitation: custom role bundles remain deferred to the Phase 3 pilot;
+  the fixed deny-by-default role matrix is the supported Phase 1 contract.
+
 ### Measure
 
 - Space creation and invitation completion
@@ -376,6 +399,7 @@ evaluation.
 
 ## Phase 2 — Course Studio, blocks and reusable recipes
 
+**Status:** IN PROGRESS
 **Outcome:** creators can generate, manually build, review, customize and reuse
 unique learning experiences with source traceability.
 

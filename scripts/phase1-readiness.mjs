@@ -121,13 +121,18 @@ try {
          ON sc.space_id = legacy.space_id AND sc.course_id = ca.course_id
        WHERE sc.course_id IS NULL`
     ),
-    activeAssignmentsWithoutAudience: await scalar(
-      `SELECT COUNT(*) AS count FROM (
-         SELECT a.id FROM space_assignments a
-         LEFT JOIN space_assignment_members am ON am.assignment_id = a.id
-         WHERE a.status = 'active'
-         GROUP BY a.id HAVING COUNT(am.membership_id) = 0
-       ) empty_assignments`
+    activeAssignmentsMissingLearners: await scalar(
+      `SELECT COUNT(*) AS count
+       FROM space_assignments a
+       WHERE a.status = 'active'
+         AND EXISTS (
+           SELECT 1 FROM space_memberships m
+           WHERE m.space_id = a.space_id AND m.status = 'active' AND m.role = 'learner'
+             AND NOT EXISTS (
+               SELECT 1 FROM space_assignment_members am
+               WHERE am.assignment_id = a.id AND am.membership_id = m.id
+             )
+         )`
     ),
     postMigrationAnswersWithoutContext: await scalar(
       `SELECT COUNT(*) AS count FROM learning_events

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-12T23:12:08.482Z",
+  "implementationCommit": "6b48c5a818c8141b7d9d5d64aa4437a48b17afcd",
+  "ci": {
+    "runId": 29212859675,
+    "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29212859675",
+    "status": "completed",
+    "conclusion": "success",
+    "startedAt": "2026-07-12T23:08:37Z",
+    "completedAt": "2026-07-12T23:10:01Z"
+  },
+  "deployment": {
+    "provider": "Vercel",
+    "status": "success",
+    "productionUrl": "https://book-quest-silk.vercel.app",
+    "deploymentUrl": "https://vercel.com/dynasty-built-academy/book-quest/AZWAyygJuiQYvrzgvVJhZjxio61n"
+  },
+  "migration": {
+    "id": 3,
+    "name": "spaces_tenancy",
+    "appliedAt": "2026-07-12T23:11:34.055Z"
+  },
+  "requiredTables": [
+    "spaces",
+    "space_memberships",
+    "space_invitations",
+    "space_teams",
+    "space_team_members",
+    "space_courses",
+    "space_assignments",
+    "space_assignment_members",
+    "space_audit_events",
+    "legacy_classroom_spaces"
+  ],
+  "missingTables": [],
+  "metrics": {
+    "users": 2,
+    "spaces": 3,
+    "personalSpaces": 2,
+    "classrooms": 1,
+    "courses": 2,
+    "postMigrationAnswers": 0,
+    "postMigrationCompletions": 0
+  },
+  "failures": {
+    "missingTables": 0,
+    "usersWithoutPersonalSpace": 0,
+    "coursesWithoutOwnerSpace": 0,
+    "classroomsWithoutClassSpace": 0,
+    "classroomOwnersWithoutMembership": 0,
+    "classroomMembersWithoutMembership": 0,
+    "classroomCoursesWithoutSpaceLink": 0,
+    "activeAssignmentsMissingLearners": 0,
+    "postMigrationAnswersWithoutContext": 0,
+    "postMigrationCompletionsWithoutContext": 0
+  },
+  "httpSmoke": {
+    "publicDiscovery": { "path": "/api/spaces/discover", "status": 200 },
+    "spacesRequiresAuthentication": { "path": "/api/spaces", "status": 401 },
+    "coursesRequiresAuthentication": { "path": "/api/courses", "status": 401 },
+    "spacesShell": { "path": "/spaces", "status": 200 },
+    "unauthenticatedSpacesUiOutcome": "/login"
+  },
+  "verificationLayers": {
+    "production": "Read-only migration, ownership/backfill and HTTP boundary checks",
+    "ci": "Exact implementation commit passed 93 PostgreSQL integration tests, type checking and production build"
+  },
+  "healthy": true
+}
