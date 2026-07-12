@@ -151,7 +151,11 @@ changing outcomes twice, and operate reliably enough for organizations.
   (Logical backup restoration is automated in CI by
   `scripts/backup-restore-drill.mjs`: it restores a snapshot-consistent dump to a
   guarded disposable database and verifies tables, rows and schema objects.
-  Neon provider-level PITR restoration and recorded RPO/RTO remain required.)
+  Neon provider-level PITR restoration and recorded RPO/RTO remain required.
+  The production project/branch, 24-hour retention window, selected historical
+  timestamp and privacy-safe verification counts are prepared in
+  `docs/evidence/phase0-pitr-reference-2026-07-12T220239Z.json`; the isolated
+  historical branch exercise is still pending.)
 - [x] Run database integration tests in CI on a scratch database.
   (`.github/workflows/ci.yml` runs typecheck, build and `npm test` against a
   throwaway Postgres 16 service, so the gated integration tests execute for real.)

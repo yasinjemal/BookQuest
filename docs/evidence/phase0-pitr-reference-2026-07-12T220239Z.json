@@ -1,0 +1,34 @@
+{
+  "status": "prepared",
+  "project": {
+    "name": "bookqeust",
+    "id": "purple-shadow-87152203",
+    "region": "aws-eu-central-1",
+    "postgresVersion": 18,
+    "historyRetentionSeconds": 86400
+  },
+  "productionBranch": {
+    "name": "production",
+    "id": "br-raspy-tree-asm5dia2"
+  },
+  "observedAt": "2026-07-12T22:02:39.106Z",
+  "selectedRecoveryTimestamp": "2026-07-12T21:30:00.000Z",
+  "reference": {
+    "database": "neondb",
+    "publicTables": 28,
+    "users": 2,
+    "courses": 2,
+    "learningEvents": 55,
+    "appliedMigrations": 2,
+    "latestMigrationId": 2,
+    "earliestCourseCreatedAt": "2026-07-12T10:29:39.642Z",
+    "latestCourseCreatedAt": "2026-07-12T13:48:10.823Z"
+  },
+  "pendingProof": [
+    "Create an isolated branch from the selected historical timestamp",
+    "Verify the branch reports the selected ancestor timestamp",
+    "Run migrations and ledger reconciliation against that branch",
+    "Record measured recovery time and recovery-point lag",
+    "Delete the temporary branch"
+  ]
+}

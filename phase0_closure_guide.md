@@ -16,6 +16,11 @@ production work can begin.
 
 **Owner:** deployment operator with Neon console or API access
 
+Prepared reference (12 July 2026): project `purple-shadow-87152203`, production
+branch `br-raspy-tree-asm5dia2`, 24-hour history retention, selected recovery
+timestamp `2026-07-12T21:30:00Z`. The privacy-safe current-state reference is in
+`docs/evidence/phase0-pitr-reference-2026-07-12T220239Z.json`.
+
 1. Confirm the production project's PITR entitlement and retention window.
 2. Choose a recoverable timestamp far enough in the past to prove time travel.
 3. Record the drill start time and the chosen recovery timestamp.
