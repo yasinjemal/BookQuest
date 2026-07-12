@@ -48,7 +48,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     );
     await raw.query(
       `INSERT INTO lessons (id, module_id, title, position, cards, generator_model, prompt_version)
-       VALUES (1, 1, 'Lesson A1', 0, '[]', 'legacy-model', 'legacy-prompt'),
+       VALUES (1, 1, 'Lesson A1', 0, '[{"type":"concept","title":"Legacy","body":"Preserved"}]', 'legacy-model', 'legacy-prompt'),
               (2, 2, 'Lesson B1', 0, '[]', 'legacy-model', 'legacy-prompt')`
     );
     await raw.query(
@@ -80,7 +80,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     const client: PoolClient = await raw.connect();
     try {
       const applied = await applyPendingMigrations(client);
-      expect(applied).toEqual([1, 2, 3]);
+      expect(applied).toEqual([1, 2, 3, 4]);
     } finally {
       client.release();
     }
@@ -98,6 +98,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       { id: 1, name: "baseline_schema" },
       { id: 2, name: "privacy_lifecycle" },
       { id: 3, name: "spaces_tenancy" },
+      { id: 4, name: "course_studio_foundation" },
     ]);
   });
 
@@ -182,6 +183,22 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "space_assignment_members",
       "space_audit_events",
       "legacy_classroom_spaces",
+      "source_assets",
+      "source_versions",
+      "source_collections",
+      "source_collection_versions",
+      "source_collection_version_items",
+      "recipes",
+      "recipe_versions",
+      "course_versions",
+      "course_version_sources",
+      "course_source_assets",
+      "block_types",
+      "course_blocks",
+      "course_block_revisions",
+      "course_version_reviews",
+      "course_version_comments",
+      "course_generation_jobs",
     ];
     for (const table of expected) expect(present).toContain(table);
   });
@@ -288,6 +305,80 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       )
     ).rows[0] as { mastery: number };
     expect(mastery.mastery).toBeCloseTo(0.6);
+  });
+
+  it("backfills versioned sources, course snapshots and block lineage", async () => {
+    const result = (
+      await raw.query(
+        `SELECT sa.owning_space_id, sa.kind, sv.version AS source_version,
+                scv.version AS collection_version, cv.version_number,
+                cv.lifecycle_status, c.current_draft_version_id,
+                c.published_version_id, cv.content_json
+         FROM courses c
+         JOIN source_assets sa ON sa.created_by_user_id = c.owner_id
+         JOIN source_versions sv ON sv.source_id = sa.id
+         JOIN source_collection_version_items item ON item.source_version_id = sv.id
+         JOIN source_collection_versions scv ON scv.id = item.collection_version_id
+         JOIN course_versions cv
+           ON cv.course_id = c.id AND cv.source_collection_version_id = scv.id
+         WHERE c.id = 1`
+      )
+    ).rows[0] as Record<string, unknown>;
+    expect(result).toMatchObject({
+      owning_space_id: expect.any(String),
+      kind: "pdf",
+      source_version: 1,
+      collection_version: 1,
+      version_number: 2,
+      lifecycle_status: "draft",
+      current_draft_version_id: expect.any(String),
+      published_version_id: null,
+    });
+    expect(String(result.content_json)).toContain("Lesson A1");
+    expect(String(result.content_json)).toContain("Preserved");
+
+    const block = (
+      await raw.query(
+        `SELECT cb.lineage_id, cb.block_type, cb.current_revision,
+                revision.content_json, revision.edit_origin,
+                revision.accessibility_json
+         FROM course_blocks cb
+         JOIN course_block_revisions revision
+           ON revision.block_id = cb.id AND revision.revision = cb.current_revision`
+      )
+    ).rows[0];
+    expect(block).toMatchObject({
+      lineage_id: "course:1:lesson:1:card:0",
+      block_type: "explanation",
+      current_revision: 1,
+      edit_origin: "generated",
+      accessibility_json: '{"status":"legacy_needs_review"}',
+    });
+    expect(block.content_json).toContain("Preserved");
+  });
+
+  it("protects source history and published course content from mutation", async () => {
+    await expect(
+      raw.query("UPDATE source_versions SET content_hash = 'tampered'")
+    ).rejects.toThrow(/append-only/);
+
+    const client = await raw.connect();
+    try {
+      await client.query("BEGIN");
+      const version = (
+        await client.query(
+          `UPDATE course_versions SET lifecycle_status = 'published', published_at = $1
+           WHERE course_id = 1 RETURNING id`,
+          [new Date().toISOString()]
+        )
+      ).rows[0] as { id: string };
+      await expect(
+        client.query("UPDATE course_versions SET title = 'tampered' WHERE id = $1", [version.id])
+      ).rejects.toThrow(/immutable/);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
   });
 
   it("installs the append-only ledger guards", async () => {

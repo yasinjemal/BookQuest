@@ -22,6 +22,11 @@ import {
   createLegacyClassroomSpace,
   resolveCourseLearningContext,
 } from "./spaces";
+import {
+  initializeCourseStudioDraft,
+  branchCourseVersionForRegeneration,
+  recordExtractedCourseSource,
+} from "./studio";
 
 /**
  * Data layer, backed by Neon Postgres (see ./pg for the connection + schema).
@@ -284,13 +289,25 @@ export async function createCourse(
         ]
       )
     ).rows[0];
+    await initializeCourseStudioDraft(client, {
+      courseId: Number(row.id),
+      userId: ownerId,
+      spaceId: personal.space.id,
+      title: sourceFilename,
+      sourceFilename,
+    });
     return { id: Number(row.id), generationRunId };
   });
 }
 
 /** Persist the extracted chapters so retries regenerate without the original file. */
 export async function setCourseSource(id: number, sourceJson: string) {
-  await q("UPDATE courses SET source_json = $1 WHERE id = $2", [sourceJson, id]);
+  await tx(async (client) => {
+    await recordExtractedCourseSource(client, {
+      courseId: id,
+      extractedContentJson: sourceJson,
+    });
+  });
 }
 
 export async function getCourseSource(id: number): Promise<string | null> {
@@ -421,6 +438,13 @@ export async function prepareCourseRetry(id: number): Promise<string | undefined
       [id, generationRunId]
     );
     if (claimed.rowCount !== 1) return undefined;
+    const version = (
+      await c.query<{ content_version: number }>(
+        "SELECT content_version FROM courses WHERE id = $1",
+        [id]
+      )
+    ).rows[0];
+    await branchCourseVersionForRegeneration(c, id, version.content_version);
     await c.query("DELETE FROM modules WHERE course_id = $1", [id]);
     return generationRunId;
   });
@@ -476,16 +500,18 @@ export async function createModule(
   const row = generationRunId
     ? ((await one(
         `INSERT INTO modules
-          (course_id, title, summary, position, chapter_indexes, generation_run_id)
-         SELECT id, $2, $3, $4, $5, $6 FROM courses
+          (course_id, title, summary, position, chapter_indexes, generation_run_id,
+           content_version)
+         SELECT id, $2, $3, $4, $5, $6, content_version FROM courses
          WHERE id = $1 AND generation_run_id = $6
          RETURNING id`,
         [...args, generationRunId]
       )) as { id: number } | undefined)
     : ((await one(
         `INSERT INTO modules
-          (course_id, title, summary, position, chapter_indexes)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          (course_id, title, summary, position, chapter_indexes, content_version)
+         SELECT id, $2, $3, $4, $5, content_version FROM courses WHERE id = $1
+         RETURNING id`,
         args
       )) as { id: number });
   if (!row) throw new StaleGenerationRunError();
@@ -696,7 +722,9 @@ export async function claimStalledCourses(
 
 export async function listModules(courseId: number): Promise<ModuleRow[]> {
   return (await many(
-    "SELECT * FROM modules WHERE course_id = $1 ORDER BY position",
+    `SELECT m.* FROM modules m JOIN courses c ON c.id = m.course_id
+     WHERE m.course_id = $1 AND m.content_version = c.content_version
+     ORDER BY m.position`,
     [courseId]
   )) as ModuleRow[];
 }
@@ -725,8 +753,8 @@ export async function createLesson(
     ? ((await one(
         `INSERT INTO lessons
           (module_id, title, position, cards, generator_model, prompt_version,
-           generation_run_id)
-         SELECT m.id, $2, $3, $4, $5, $6, $7
+           generation_run_id, content_version)
+         SELECT m.id, $2, $3, $4, $5, $6, $7, m.content_version
          FROM modules m JOIN courses c ON c.id = m.course_id
          WHERE m.id = $1 AND m.generation_run_id = $7
            AND c.generation_run_id = $7
@@ -735,8 +763,10 @@ export async function createLesson(
       )) as { id: number } | undefined)
     : ((await one(
         `INSERT INTO lessons
-          (module_id, title, position, cards, generator_model, prompt_version)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          (module_id, title, position, cards, generator_model, prompt_version,
+           content_version)
+         SELECT id, $2, $3, $4, $5, $6, content_version
+         FROM modules WHERE id = $1 RETURNING id`,
         args
       )) as { id: number });
   if (!row) throw new StaleGenerationRunError();
@@ -745,7 +775,9 @@ export async function createLesson(
 
 export async function listLessons(moduleId: number): Promise<LessonRow[]> {
   return (await many(
-    "SELECT * FROM lessons WHERE module_id = $1 ORDER BY position",
+    `SELECT l.* FROM lessons l JOIN modules m ON m.id = l.module_id
+     WHERE l.module_id = $1 AND l.content_version = m.content_version
+     ORDER BY l.position`,
     [moduleId]
   )) as LessonRow[];
 }

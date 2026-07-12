@@ -584,7 +584,7 @@ export async function exportSpaceBundle(actorUserId: number, spaceId: string) {
   });
 }
 
-async function authorizeStoredMembership(
+export async function authorizeStoredMembership(
   userId: number,
   spaceId: string,
   capability: SpaceCapability,

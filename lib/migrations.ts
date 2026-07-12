@@ -804,6 +804,673 @@ CREATE INDEX idx_learning_events_space_time ON learning_events(space_id, recorde
 CREATE INDEX idx_learning_events_assignment_time ON learning_events(assignment_id, recorded_at);
 `;
 
+const COURSE_STUDIO_FOUNDATION_SQL = `
+CREATE TABLE recipes (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  owning_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  title TEXT NOT NULL,
+  visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN (
+    'private', 'space', 'unlisted', 'public'
+  )),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  current_version INTEGER NOT NULL DEFAULT 1 CHECK (current_version > 0),
+  forked_from_recipe_id TEXT REFERENCES recipes(id) ON DELETE SET NULL,
+  forked_from_version INTEGER,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_recipes_space_visibility ON recipes(owning_space_id, visibility, updated_at);
+
+CREATE TABLE recipe_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
+  audience_json TEXT NOT NULL DEFAULT '{}',
+  objectives_json TEXT NOT NULL DEFAULT '[]',
+  difficulty TEXT NOT NULL DEFAULT 'adaptive',
+  duration_minutes INTEGER CHECK (duration_minutes IS NULL OR duration_minutes > 0),
+  lesson_size_minutes INTEGER CHECK (lesson_size_minutes IS NULL OR lesson_size_minutes > 0),
+  teaching_style TEXT NOT NULL DEFAULT 'clear',
+  tone TEXT NOT NULL DEFAULT 'supportive',
+  language TEXT NOT NULL DEFAULT 'en',
+  reading_level TEXT NOT NULL DEFAULT 'general',
+  block_mix_json TEXT NOT NULL DEFAULT '{}',
+  assessment_json TEXT NOT NULL DEFAULT '{}',
+  completion_rule_json TEXT NOT NULL DEFAULT '{}',
+  credential_json TEXT NOT NULL DEFAULT '{}',
+  expiry_json TEXT NOT NULL DEFAULT '{}',
+  delivery_json TEXT NOT NULL DEFAULT '{}',
+  accessibility_json TEXT NOT NULL DEFAULT '{}',
+  source_trace_policy TEXT NOT NULL DEFAULT 'required' CHECK (source_trace_policy IN (
+    'required', 'recommended', 'manual_only'
+  )),
+  safety_boundaries_json TEXT NOT NULL DEFAULT '[]',
+  content_hash TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  published_at TEXT,
+  UNIQUE (recipe_id, version)
+);
+CREATE INDEX idx_recipe_versions_recipe ON recipe_versions(recipe_id, version DESC);
+
+CREATE TABLE source_assets (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  owning_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  kind TEXT NOT NULL CHECK (kind IN (
+    'pdf', 'docx', 'markdown', 'text', 'pptx', 'webpage', 'transcript', 'manual'
+  )),
+  title TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle_status IN (
+    'active', 'replaced', 'archived', 'deletion_scheduled'
+  )),
+  access_policy TEXT NOT NULL DEFAULT 'editors' CHECK (access_policy IN (
+    'owner', 'editors', 'members'
+  )),
+  retention_policy_json TEXT NOT NULL DEFAULT '{}',
+  current_version INTEGER NOT NULL DEFAULT 0 CHECK (current_version >= 0),
+  replaced_by_source_id TEXT REFERENCES source_assets(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  deletion_scheduled_at TEXT
+);
+CREATE INDEX idx_source_assets_space_status
+  ON source_assets(owning_space_id, lifecycle_status, updated_at);
+
+CREATE TABLE source_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  source_id TEXT NOT NULL REFERENCES source_assets(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL CHECK (version > 0),
+  content_hash TEXT NOT NULL,
+  original_filename TEXT,
+  mime_type TEXT,
+  raw_storage_key TEXT,
+  extracted_content_json TEXT,
+  extraction_model TEXT,
+  extractor_version TEXT,
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (source_id, version)
+);
+CREATE INDEX idx_source_versions_source ON source_versions(source_id, version DESC);
+
+CREATE TABLE source_collections (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  owning_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  name TEXT NOT NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'active' CHECK (lifecycle_status IN (
+    'active', 'archived'
+  )),
+  current_version INTEGER NOT NULL DEFAULT 0 CHECK (current_version >= 0),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_source_collections_space ON source_collections(owning_space_id, updated_at);
+
+CREATE TABLE source_collection_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  collection_id TEXT NOT NULL REFERENCES source_collections(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  published_at TEXT,
+  UNIQUE (collection_id, version)
+);
+
+CREATE TABLE source_collection_version_items (
+  collection_version_id TEXT NOT NULL REFERENCES source_collection_versions(id) ON DELETE CASCADE,
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id) ON DELETE RESTRICT,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  usage_policy TEXT NOT NULL DEFAULT 'primary' CHECK (usage_policy IN (
+    'primary', 'supporting', 'reference', 'excluded'
+  )),
+  PRIMARY KEY (collection_version_id, source_version_id),
+  UNIQUE (collection_version_id, position)
+);
+
+CREATE TABLE course_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  version_number INTEGER NOT NULL CHECK (version_number > 0),
+  parent_version_id TEXT REFERENCES course_versions(id) ON DELETE SET NULL,
+  lifecycle_status TEXT NOT NULL DEFAULT 'draft' CHECK (lifecycle_status IN (
+    'draft', 'review', 'approved', 'published', 'superseded', 'archived'
+  )),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  source_collection_version_id TEXT REFERENCES source_collection_versions(id) ON DELETE SET NULL,
+  recipe_version_id TEXT REFERENCES recipe_versions(id) ON DELETE SET NULL,
+  outline_json TEXT NOT NULL DEFAULT '{}',
+  content_json TEXT NOT NULL DEFAULT '{"modules":[]}',
+  content_hash TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  submitted_at TEXT,
+  approved_at TEXT,
+  published_at TEXT,
+  superseded_at TEXT,
+  UNIQUE (course_id, version_number)
+);
+CREATE INDEX idx_course_versions_course_status
+  ON course_versions(course_id, lifecycle_status, version_number DESC);
+
+ALTER TABLE courses
+  ADD COLUMN authoring_status TEXT NOT NULL DEFAULT 'draft' CHECK (authoring_status IN (
+    'draft', 'review', 'approved', 'published', 'superseded', 'archived'
+  )),
+  ADD COLUMN current_draft_version_id TEXT REFERENCES course_versions(id) ON DELETE SET NULL,
+  ADD COLUMN published_version_id TEXT REFERENCES course_versions(id) ON DELETE SET NULL,
+  ADD COLUMN source_collection_id TEXT REFERENCES source_collections(id) ON DELETE SET NULL;
+ALTER TABLE modules ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1 CHECK (content_version > 0);
+ALTER TABLE lessons ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1 CHECK (content_version > 0);
+UPDATE modules m SET content_version = c.content_version
+  FROM courses c WHERE c.id = m.course_id;
+UPDATE lessons l SET content_version = m.content_version
+  FROM modules m WHERE m.id = l.module_id;
+CREATE INDEX idx_modules_course_content_version
+  ON modules(course_id, content_version, position);
+CREATE INDEX idx_lessons_module_content_version
+  ON lessons(module_id, content_version, position);
+
+CREATE TABLE course_version_sources (
+  course_version_id TEXT NOT NULL REFERENCES course_versions(id) ON DELETE CASCADE,
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id) ON DELETE RESTRICT,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  coverage_json TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY (course_version_id, source_version_id),
+  UNIQUE (course_version_id, position)
+);
+
+CREATE TABLE course_source_assets (
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  source_id TEXT NOT NULL REFERENCES source_assets(id) ON DELETE RESTRICT,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  PRIMARY KEY (course_id, source_id),
+  UNIQUE (course_id, position)
+);
+
+CREATE TABLE block_types (
+  key TEXT PRIMARY KEY,
+  schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version > 0),
+  category TEXT NOT NULL CHECK (category IN (
+    'instruction', 'media', 'assessment', 'activity', 'reflection', 'completion'
+  )),
+  supports_offline SMALLINT NOT NULL CHECK (supports_offline IN (0, 1)),
+  supports_chat SMALLINT NOT NULL CHECK (supports_chat IN (0, 1)),
+  fallback_type TEXT,
+  accessibility_requirements_json TEXT NOT NULL DEFAULT '{}',
+  active SMALLINT NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+);
+
+INSERT INTO block_types
+  (key, category, supports_offline, supports_chat, fallback_type, accessibility_requirements_json)
+VALUES
+  ('explanation', 'instruction', 1, 1, NULL, '{"heading":true,"plain_text":true}'),
+  ('image', 'media', 1, 0, 'explanation', '{"alt_text":true,"decorative_flag":true}'),
+  ('audio_video', 'media', 0, 0, 'explanation', '{"captions":true,"transcript":true}'),
+  ('story', 'instruction', 1, 1, 'explanation', '{"heading":true}'),
+  ('worked_example', 'instruction', 1, 1, 'explanation', '{"steps":true}'),
+  ('flashcard', 'assessment', 1, 1, 'explanation', '{"front_label":true,"back_label":true}'),
+  ('multiple_choice', 'assessment', 1, 1, NULL, '{"prompt":true,"option_labels":true}'),
+  ('true_false', 'assessment', 1, 1, NULL, '{"prompt":true}'),
+  ('fill_in', 'assessment', 1, 1, NULL, '{"prompt":true,"answer_format":true}'),
+  ('scenario', 'activity', 1, 1, 'explanation', '{"context":true,"decision_prompt":true}'),
+  ('practical_task', 'activity', 1, 0, 'explanation', '{"instructions":true,"submission_alternative":true}'),
+  ('discussion', 'reflection', 1, 1, 'explanation', '{"prompt":true,"private_alternative":true}'),
+  ('survey', 'reflection', 1, 1, 'explanation', '{"question_labels":true}'),
+  ('attestation', 'completion', 1, 1, 'explanation', '{"statement":true,"consent_label":true}'),
+  ('recap', 'instruction', 1, 1, 'explanation', '{"heading":true,"list_semantics":true}');
+
+CREATE TABLE course_blocks (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_version_id TEXT NOT NULL REFERENCES course_versions(id) ON DELETE CASCADE,
+  lineage_id TEXT NOT NULL,
+  module_key TEXT NOT NULL,
+  module_title TEXT NOT NULL DEFAULT '',
+  module_summary TEXT NOT NULL DEFAULT '',
+  lesson_key TEXT NOT NULL,
+  lesson_title TEXT NOT NULL DEFAULT '',
+  module_position INTEGER NOT NULL DEFAULT 0 CHECK (module_position >= 0),
+  lesson_position INTEGER NOT NULL DEFAULT 0 CHECK (lesson_position >= 0),
+  position INTEGER NOT NULL CHECK (position >= 0),
+  block_type TEXT NOT NULL REFERENCES block_types(key) ON DELETE RESTRICT,
+  current_revision INTEGER NOT NULL DEFAULT 1 CHECK (current_revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (course_version_id, lesson_key, position)
+);
+CREATE INDEX idx_course_blocks_version_lesson
+  ON course_blocks(course_version_id, module_position, lesson_position, position);
+CREATE INDEX idx_course_blocks_lineage ON course_blocks(lineage_id, course_version_id);
+
+CREATE TABLE course_block_revisions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  block_id TEXT NOT NULL REFERENCES course_blocks(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  content_json TEXT NOT NULL,
+  source_refs_json TEXT NOT NULL DEFAULT '[]',
+  accessibility_json TEXT NOT NULL DEFAULT '{}',
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  edit_origin TEXT NOT NULL CHECK (edit_origin IN (
+    'generated', 'manual', 'regenerated', 'imported'
+  )),
+  created_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (block_id, revision)
+);
+CREATE INDEX idx_course_block_revisions_block ON course_block_revisions(block_id, revision DESC);
+
+CREATE TABLE course_version_reviews (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_version_id TEXT NOT NULL REFERENCES course_versions(id) ON DELETE CASCADE,
+  reviewer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  decision TEXT NOT NULL CHECK (decision IN ('commented', 'changes_requested', 'approved')),
+  summary TEXT NOT NULL DEFAULT '',
+  checklist_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_course_version_reviews_version
+  ON course_version_reviews(course_version_id, created_at);
+
+CREATE TABLE course_version_comments (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_version_id TEXT NOT NULL REFERENCES course_versions(id) ON DELETE CASCADE,
+  block_lineage_id TEXT,
+  author_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  resolved_at TEXT,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE course_generation_jobs (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_version_id TEXT NOT NULL REFERENCES course_versions(id) ON DELETE CASCADE,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('full', 'outline', 'module', 'lesson', 'block')),
+  scope_key TEXT,
+  base_revision INTEGER,
+  run_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN (
+    'queued', 'running', 'complete', 'error', 'stale'
+  )),
+  model TEXT,
+  prompt_version TEXT,
+  requested_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  started_at TEXT,
+  completed_at TEXT,
+  error TEXT
+);
+CREATE INDEX idx_course_generation_jobs_version_status
+  ON course_generation_jobs(course_version_id, status, created_at);
+
+-- Backfill every legacy course into a Space-owned source and collection.
+INSERT INTO source_assets
+  (id, owning_space_id, created_by_user_id, kind, title, current_version, created_at, updated_at)
+SELECT
+  substr(md5('bookquest:source:' || c.id::text), 1, 8) || '-' ||
+  substr(md5('bookquest:source:' || c.id::text), 9, 4) || '-' ||
+  substr(md5('bookquest:source:' || c.id::text), 13, 4) || '-' ||
+  substr(md5('bookquest:source:' || c.id::text), 17, 4) || '-' ||
+  substr(md5('bookquest:source:' || c.id::text), 21, 12),
+  c.owning_space_id,
+  c.owner_id,
+  CASE
+    WHEN lower(c.source_filename) LIKE '%.pdf' THEN 'pdf'
+    WHEN lower(c.source_filename) LIKE '%.docx' THEN 'docx'
+    WHEN lower(c.source_filename) LIKE '%.md' OR lower(c.source_filename) LIKE '%.markdown' THEN 'markdown'
+    WHEN lower(c.source_filename) LIKE '%.pptx' THEN 'pptx'
+    ELSE 'text'
+  END,
+  c.source_filename,
+  1,
+  c.created_at,
+  c.created_at
+FROM courses c;
+
+INSERT INTO source_versions
+  (id, source_id, version, content_hash, original_filename, extracted_content_json,
+   extraction_model, extractor_version, provenance_json, created_by_user_id, created_at)
+SELECT
+  substr(md5('bookquest:source-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+  substr(md5('bookquest:source-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+  substr(md5('bookquest:source-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+  substr(md5('bookquest:source-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+  substr(md5('bookquest:source-version:' || c.id::text || ':1'), 21, 12),
+  s.id,
+  1,
+  md5(COALESCE(c.source_json, '')),
+  c.source_filename,
+  c.source_json,
+  'legacy-import',
+  'phase2-migration-v1',
+  jsonb_build_object('legacy_course_id', c.id, 'migrated', true)::text,
+  c.owner_id,
+  c.created_at
+FROM courses c
+JOIN source_assets s
+  ON s.id = substr(md5('bookquest:source:' || c.id::text), 1, 8) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 9, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 13, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 17, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 21, 12);
+
+INSERT INTO source_collections
+  (id, owning_space_id, name, current_version, created_by_user_id, created_at, updated_at)
+SELECT
+  substr(md5('bookquest:source-collection:' || c.id::text), 1, 8) || '-' ||
+  substr(md5('bookquest:source-collection:' || c.id::text), 9, 4) || '-' ||
+  substr(md5('bookquest:source-collection:' || c.id::text), 13, 4) || '-' ||
+  substr(md5('bookquest:source-collection:' || c.id::text), 17, 4) || '-' ||
+  substr(md5('bookquest:source-collection:' || c.id::text), 21, 12),
+  c.owning_space_id,
+  c.title || ' sources',
+  1,
+  c.owner_id,
+  c.created_at,
+  c.created_at
+FROM courses c;
+
+INSERT INTO source_collection_versions
+  (id, collection_id, version, status, created_by_user_id, created_at, published_at)
+SELECT
+  substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+  substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+  substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+  substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+  substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 21, 12),
+  sc.id,
+  1,
+  CASE WHEN c.published = 1 THEN 'published' ELSE 'draft' END,
+  c.owner_id,
+  c.created_at,
+  CASE WHEN c.published = 1 THEN c.created_at ELSE NULL END
+FROM courses c
+JOIN source_collections sc
+  ON sc.id = substr(md5('bookquest:source-collection:' || c.id::text), 1, 8) || '-' ||
+             substr(md5('bookquest:source-collection:' || c.id::text), 9, 4) || '-' ||
+             substr(md5('bookquest:source-collection:' || c.id::text), 13, 4) || '-' ||
+             substr(md5('bookquest:source-collection:' || c.id::text), 17, 4) || '-' ||
+             substr(md5('bookquest:source-collection:' || c.id::text), 21, 12);
+
+INSERT INTO source_collection_version_items
+  (collection_version_id, source_version_id, position, usage_policy)
+SELECT scv.id, sv.id, 0, 'primary'
+FROM courses c
+JOIN source_collection_versions scv
+  ON scv.id = substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 21, 12)
+JOIN source_versions sv
+  ON sv.id = substr(md5('bookquest:source-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 21, 12);
+
+INSERT INTO course_source_assets (course_id, source_id, position)
+SELECT c.id, s.id, 0
+FROM courses c
+JOIN source_assets s
+  ON s.id = substr(md5('bookquest:source:' || c.id::text), 1, 8) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 9, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 13, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 17, 4) || '-' ||
+            substr(md5('bookquest:source:' || c.id::text), 21, 12);
+
+WITH course_snapshots AS (
+  SELECT c.*,
+    jsonb_build_object(
+      'modules', COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'legacyModuleId', m.id,
+            'title', m.title,
+            'summary', m.summary,
+            'position', m.position,
+            'chapterIndexes', COALESCE(m.chapter_indexes, '[]'),
+            'lessons', COALESCE((
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'legacyLessonId', l.id,
+                  'title', l.title,
+                  'position', l.position,
+                  'cards', l.cards::jsonb,
+                  'generatorModel', l.generator_model,
+                  'promptVersion', l.prompt_version
+                ) ORDER BY l.position, l.id
+              ) FROM lessons l WHERE l.module_id = m.id
+            ), '[]'::jsonb)
+          ) ORDER BY m.position, m.id
+        ) FROM modules m WHERE m.course_id = c.id
+      ), '[]'::jsonb)
+    ) AS snapshot
+  FROM courses c
+)
+INSERT INTO course_versions
+  (id, course_id, version_number, lifecycle_status, title, description,
+   source_collection_version_id, outline_json, content_json, content_hash,
+   created_by_user_id, created_at, updated_at, published_at)
+SELECT
+  substr(md5('bookquest:course-version:' || c.id::text || ':' || c.content_version::text), 1, 8) || '-' ||
+  substr(md5('bookquest:course-version:' || c.id::text || ':' || c.content_version::text), 9, 4) || '-' ||
+  substr(md5('bookquest:course-version:' || c.id::text || ':' || c.content_version::text), 13, 4) || '-' ||
+  substr(md5('bookquest:course-version:' || c.id::text || ':' || c.content_version::text), 17, 4) || '-' ||
+  substr(md5('bookquest:course-version:' || c.id::text || ':' || c.content_version::text), 21, 12),
+  c.id,
+  c.content_version,
+  CASE WHEN c.published = 1 THEN 'published' ELSE 'draft' END,
+  c.title,
+  c.description,
+  scv.id,
+  jsonb_build_object('legacy', true)::text,
+  c.snapshot::text,
+  md5(c.title || c.description || c.snapshot::text),
+  c.owner_id,
+  c.created_at,
+  c.created_at,
+  CASE WHEN c.published = 1 THEN c.created_at ELSE NULL END
+FROM course_snapshots c
+JOIN source_collection_versions scv
+  ON scv.id = substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+              substr(md5('bookquest:source-collection-version:' || c.id::text || ':1'), 21, 12);
+
+INSERT INTO course_version_sources (course_version_id, source_version_id, position, coverage_json)
+SELECT cv.id, sv.id, 0, '{"status":"legacy_needs_review"}'
+FROM courses c
+JOIN course_versions cv ON cv.course_id = c.id AND cv.version_number = c.content_version
+JOIN source_versions sv
+  ON sv.id = substr(md5('bookquest:source-version:' || c.id::text || ':1'), 1, 8) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 9, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 13, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 17, 4) || '-' ||
+             substr(md5('bookquest:source-version:' || c.id::text || ':1'), 21, 12);
+
+UPDATE courses c SET
+  authoring_status = CASE WHEN c.published = 1 THEN 'published' ELSE 'draft' END,
+  current_draft_version_id = CASE WHEN c.published = 0 THEN cv.id ELSE NULL END,
+  published_version_id = CASE WHEN c.published = 1 THEN cv.id ELSE NULL END,
+  source_collection_id = sc.collection_id
+FROM course_versions cv
+LEFT JOIN source_collection_versions sc ON sc.id = cv.source_collection_version_id
+WHERE cv.course_id = c.id AND cv.version_number = c.content_version;
+
+WITH legacy_cards AS (
+  SELECT cv.id AS course_version_id, c.id AS course_id, m.id AS module_id,
+    m.position AS module_position, m.chapter_indexes,
+    l.id AS lesson_id, l.title AS lesson_title, l.position AS lesson_position,
+    l.generator_model, l.prompt_version,
+    (card.ordinality - 1)::int AS card_position, card.value AS content
+  FROM course_versions cv
+  JOIN courses c ON c.id = cv.course_id
+  JOIN modules m ON m.course_id = c.id
+  JOIN lessons l ON l.module_id = m.id
+  CROSS JOIN LATERAL jsonb_array_elements(l.cards::jsonb) WITH ORDINALITY AS card(value, ordinality)
+)
+INSERT INTO course_blocks
+  (id, course_version_id, lineage_id, lesson_key, lesson_title, module_position,
+   lesson_position, position, block_type, current_revision, created_at, updated_at,
+   module_key, module_title, module_summary)
+SELECT
+  substr(md5('bookquest:block:' || lc.course_version_id || ':' || lc.lesson_id::text || ':' || lc.card_position::text), 1, 8) || '-' ||
+  substr(md5('bookquest:block:' || lc.course_version_id || ':' || lc.lesson_id::text || ':' || lc.card_position::text), 9, 4) || '-' ||
+  substr(md5('bookquest:block:' || lc.course_version_id || ':' || lc.lesson_id::text || ':' || lc.card_position::text), 13, 4) || '-' ||
+  substr(md5('bookquest:block:' || lc.course_version_id || ':' || lc.lesson_id::text || ':' || lc.card_position::text), 17, 4) || '-' ||
+  substr(md5('bookquest:block:' || lc.course_version_id || ':' || lc.lesson_id::text || ':' || lc.card_position::text), 21, 12),
+  lc.course_version_id,
+  'course:' || lc.course_id::text || ':lesson:' || lc.lesson_id::text || ':card:' || lc.card_position::text,
+  'legacy:' || lc.lesson_id::text,
+  lc.lesson_title,
+  lc.module_position,
+  lc.lesson_position,
+  lc.card_position,
+  CASE lc.content ->> 'type'
+    WHEN 'concept' THEN 'explanation'
+    WHEN 'example' THEN 'worked_example'
+    WHEN 'quiz_mcq' THEN 'multiple_choice'
+    WHEN 'quiz_truefalse' THEN 'true_false'
+    WHEN 'quiz_fillblank' THEN 'fill_in'
+    WHEN 'recap' THEN 'recap'
+    ELSE 'explanation'
+  END,
+  1,
+  cv.created_at,
+  cv.created_at,
+  'legacy:' || lc.module_id::text,
+  (SELECT title FROM modules WHERE id = lc.module_id),
+  (SELECT summary FROM modules WHERE id = lc.module_id)
+FROM legacy_cards lc
+JOIN course_versions cv ON cv.id = lc.course_version_id;
+
+WITH legacy_cards AS (
+  SELECT cv.id AS course_version_id, m.chapter_indexes,
+    l.id AS lesson_id, l.generator_model, l.prompt_version,
+    (card.ordinality - 1)::int AS card_position, card.value AS content
+  FROM course_versions cv
+  JOIN courses c ON c.id = cv.course_id
+  JOIN modules m ON m.course_id = c.id
+  JOIN lessons l ON l.module_id = m.id
+  CROSS JOIN LATERAL jsonb_array_elements(l.cards::jsonb) WITH ORDINALITY AS card(value, ordinality)
+)
+INSERT INTO course_block_revisions
+  (block_id, revision, content_json, source_refs_json, accessibility_json,
+   provenance_json, edit_origin, created_by_user_id, created_at)
+SELECT cb.id, 1, lc.content::text,
+  jsonb_build_array(jsonb_build_object('legacy_chapter_indexes', COALESCE(lc.chapter_indexes, '[]')))::text,
+  '{"status":"legacy_needs_review"}',
+  jsonb_build_object(
+    'generator_model', lc.generator_model,
+    'prompt_version', lc.prompt_version,
+    'migration', 'phase2-v1'
+  )::text,
+  CASE WHEN lc.generator_model IS NULL THEN 'imported' ELSE 'generated' END,
+  NULL,
+  cv.created_at
+FROM legacy_cards lc
+JOIN course_blocks cb
+  ON cb.course_version_id = lc.course_version_id
+ AND cb.lesson_key = 'legacy:' || lc.lesson_id::text
+ AND cb.position = lc.card_position
+JOIN course_versions cv ON cv.id = lc.course_version_id;
+
+CREATE OR REPLACE FUNCTION phase2_immutable_row_block_write() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'Phase 2 history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER source_versions_no_update
+  BEFORE UPDATE OR DELETE ON source_versions
+  FOR EACH ROW EXECUTE FUNCTION phase2_immutable_row_block_write();
+CREATE TRIGGER course_block_revisions_no_update
+  BEFORE UPDATE OR DELETE ON course_block_revisions
+  FOR EACH ROW EXECUTE FUNCTION phase2_immutable_row_block_write();
+CREATE TRIGGER course_version_reviews_no_update
+  BEFORE UPDATE OR DELETE ON course_version_reviews
+  FOR EACH ROW EXECUTE FUNCTION phase2_immutable_row_block_write();
+
+CREATE OR REPLACE FUNCTION phase2_version_lifecycle_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.lifecycle_status IN ('published', 'superseded', 'archived') THEN
+    RAISE EXCEPTION 'Published course versions are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER course_versions_locked_lifecycle
+  BEFORE UPDATE OR DELETE ON course_versions
+  FOR EACH ROW EXECUTE FUNCTION phase2_version_lifecycle_guard();
+
+CREATE OR REPLACE FUNCTION phase2_recipe_version_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status IN ('published', 'archived') THEN
+    RAISE EXCEPTION 'Published recipe versions are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER recipe_versions_locked_lifecycle
+  BEFORE UPDATE OR DELETE ON recipe_versions
+  FOR EACH ROW EXECUTE FUNCTION phase2_recipe_version_guard();
+CREATE TRIGGER source_collection_versions_locked_lifecycle
+  BEFORE UPDATE OR DELETE ON source_collection_versions
+  FOR EACH ROW EXECUTE FUNCTION phase2_recipe_version_guard();
+
+CREATE OR REPLACE FUNCTION phase2_course_block_guard() RETURNS trigger AS $$
+DECLARE
+  old_status TEXT;
+  new_status TEXT;
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    SELECT lifecycle_status INTO old_status
+      FROM course_versions WHERE id = OLD.course_version_id;
+    IF old_status IN ('published', 'superseded', 'archived') THEN
+      RAISE EXCEPTION 'Published course content is immutable';
+    END IF;
+  END IF;
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    SELECT lifecycle_status INTO new_status
+      FROM course_versions WHERE id = NEW.course_version_id;
+    IF new_status IN ('published', 'superseded', 'archived') THEN
+      RAISE EXCEPTION 'Published course content is immutable';
+    END IF;
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER course_blocks_version_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON course_blocks
+  FOR EACH ROW EXECUTE FUNCTION phase2_course_block_guard();
+
+CREATE OR REPLACE FUNCTION phase2_block_revision_insert_guard() RETURNS trigger AS $$
+DECLARE
+  version_status TEXT;
+BEGIN
+  SELECT cv.lifecycle_status INTO version_status
+    FROM course_blocks cb JOIN course_versions cv ON cv.id = cb.course_version_id
+    WHERE cb.id = NEW.block_id;
+  IF version_status IN ('published', 'superseded', 'archived') THEN
+    RAISE EXCEPTION 'Published course content is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER course_block_revisions_version_guard
+  BEFORE INSERT ON course_block_revisions
+  FOR EACH ROW EXECUTE FUNCTION phase2_block_revision_insert_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -812,6 +1479,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 1, name: "baseline_schema", sql: BASELINE_SQL },
   { id: 2, name: "privacy_lifecycle", sql: PRIVACY_LIFECYCLE_SQL },
   { id: 3, name: "spaces_tenancy", sql: SPACES_TENANCY_SQL },
+  { id: 4, name: "course_studio_foundation", sql: COURSE_STUDIO_FOUNDATION_SQL },
 ];
 
 /**

@@ -15,6 +15,7 @@ import {
   StaleGenerationRunError,
   touchGenerationHeartbeat,
 } from "./db";
+import { syncGeneratedCourseDraft } from "./studio";
 import type { Chapter } from "./extract";
 import { Card, CourseOutline, ModuleLessons, PracticeQuiz } from "./schemas";
 import {
@@ -208,6 +209,7 @@ export async function runGenerationStep(
   // Nothing left to claim. If no modules are unfinished, the course is ready
   // (even if some modules ended in 'error' — a partial course is still usable).
   if ((await countUnfinishedModules(courseId, generationRunId)) === 0) {
+    await syncGeneratedCourseDraft(courseId, generationRunId);
     await setCourseStatus(courseId, "ready", undefined, generationRunId);
     return "done";
   }
