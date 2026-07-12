@@ -2,8 +2,16 @@
    - API GETs: network-first, cache fallback → always fresh online, still works offline.
    - Pages & static assets: stale-while-revalidate → instant loads.
    Course data therefore plays offline once it has been viewed online. */
-const CACHE = "bookquest-v3";
-const PRECACHE = ["/", "/explore", "/review", "/profile", "/manifest.json", "/icon.svg"];
+const CACHE = "bookquest-v4";
+const PRECACHE = [
+  "/",
+  "/explore",
+  "/classes",
+  "/review",
+  "/profile",
+  "/manifest.json",
+  "/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

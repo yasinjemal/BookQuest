@@ -1,110 +1,133 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { Card } from "@/lib/schemas";
-import QuizCard from "@/components/QuizCard";
 
-type QuizCardType = Extract<
-  Card,
-  { type: "quiz_mcq" | "quiz_truefalse" | "quiz_fillblank" }
->;
-
-interface ReviewItem {
-  reviewId: number;
-  lessonTitle: string;
-  card: QuizCardType;
+interface CoursePractice {
+  courseId: number;
+  title: string;
+  conceptCount: number;
+  avgMastery: number | null;
+  weakest: { concept: string; mastery: number }[];
 }
 
-export default function ReviewPage() {
-  const [items, setItems] = useState<ReviewItem[] | null>(null);
-  const [index, setIndex] = useState(0);
-  const [answered, setAnswered] = useState(false);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [done, setDone] = useState(false);
+function masteryColor(m: number) {
+  if (m < 0.4) return "bg-no";
+  if (m < 0.7) return "bg-primary";
+  return "bg-go";
+}
+
+export default function PracticeHubPage() {
+  const [dueReviews, setDueReviews] = useState<number>(0);
+  const [courses, setCourses] = useState<CoursePractice[] | null>(null);
 
   useEffect(() => {
-    fetch("/api/review")
+    fetch("/api/stats")
       .then((r) => {
         if (r.status === 401) {
           window.location.href = "/login";
-          return { items: [] };
+          return null;
         }
         return r.json();
       })
-      .then((d) => setItems(d.items))
-      .catch(() => setItems([]));
+      .then((d) => d && setDueReviews(d.dueReviews))
+      .catch(() => null);
+    fetch("/api/practice")
+      .then((r) => (r.ok ? r.json() : { courses: [] }))
+      .then((d) => setCourses(d.courses))
+      .catch(() => setCourses([]));
   }, []);
 
-  async function onAnswered(correct: boolean) {
-    if (!items) return;
-    setAnswered(true);
-    if (correct) setCorrectCount((n) => n + 1);
-    try {
-      await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewId: items[index].reviewId, correct }),
-      });
-    } catch {
-      /* offline — the item stays due, that's fine */
-    }
-  }
-
-  function next() {
-    if (!items) return;
-    if (index + 1 >= items.length) setDone(true);
-    else {
-      setIndex(index + 1);
-      setAnswered(false);
-    }
-  }
-
-  if (items === null)
-    return <p className="p-8 text-center text-ink-soft">Loading…</p>;
-
-  if (items.length === 0)
-    return (
-      <div className="min-h-[70dvh] flex flex-col items-center justify-center px-8 text-center">
-        <div className="text-5xl">🌴</div>
-        <h1 className="text-xl font-extrabold mt-4">Nothing to review</h1>
-        <p className="text-ink-soft text-sm mt-1">
-          Questions you get wrong in lessons come back here at the right time
-          to lock them into memory.
-        </p>
-      </div>
-    );
-
-  if (done)
-    return (
-      <div className="min-h-[70dvh] flex flex-col items-center justify-center px-8 text-center">
-        <div className="text-5xl pop-in">💪</div>
-        <h1 className="text-xl font-extrabold mt-4">Review done!</h1>
-        <p className="text-ink-soft mt-1">
-          {correctCount}/{items.length} correct. Missed ones will come back
-          sooner.
-        </p>
-      </div>
-    );
-
-  const item = items[index];
   return (
-    <div className="px-4 pt-6 flex flex-col min-h-[calc(100dvh-5rem)]">
-      <header className="mb-4">
-        <h1 className="text-xl font-extrabold">Review</h1>
-        <p className="text-xs text-ink-soft">
-          {index + 1} of {items.length} · from “{item.lessonTitle}”
-        </p>
-      </header>
-      <div key={item.reviewId} className="flex-1 slide-up">
-        <QuizCard card={item.card} onAnswered={onAnswered} />
-      </div>
-      <button
-        onClick={next}
-        disabled={!answered}
-        className="mt-6 mb-4 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
+    <div className="px-4 pt-6 pb-8">
+      <h1 className="text-2xl font-extrabold mb-1">Practice</h1>
+      <p className="text-sm text-ink-soft mb-5">
+        BookQuest tracks every concept you answer and targets your weak spots.
+      </p>
+
+      {/* Spaced repetition */}
+      <Link
+        href="/review/session"
+        className={`block rounded-2xl border p-4 shadow-sm active:scale-[0.99] transition ${
+          dueReviews > 0
+            ? "bg-teal/10 border-teal/30"
+            : "bg-card border-line opacity-70"
+        }`}
       >
-        {index + 1 >= items.length ? "Finish" : "Next"}
-      </button>
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">🔁</span>
+          <div className="flex-1">
+            <div className="font-bold">
+              {dueReviews > 0
+                ? `${dueReviews} question${dueReviews === 1 ? "" : "s"} due for review`
+                : "No reviews due"}
+            </div>
+            <div className="text-xs text-ink-soft">
+              Spaced repetition — questions return right before you&apos;d forget
+              them.
+            </div>
+          </div>
+          {dueReviews > 0 && <span className="font-extrabold text-teal">→</span>}
+        </div>
+      </Link>
+
+      {/* Smart practice per course */}
+      <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
+        Smart practice
+      </h2>
+      <div className="space-y-3">
+        {courses === null && (
+          <p className="text-center text-ink-soft text-sm py-6">Loading…</p>
+        )}
+        {courses?.length === 0 && (
+          <p className="text-center text-ink-soft text-sm py-6">
+            Complete a lesson first — then practice sessions built from your
+            weakest concepts appear here.
+          </p>
+        )}
+        {courses?.map((c) => (
+          <div
+            key={c.courseId}
+            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-bold leading-snug">{c.title}</h3>
+              {c.avgMastery !== null && (
+                <span className="shrink-0 text-xs font-bold text-ink-soft">
+                  {Math.round(c.avgMastery * 100)}% mastered
+                </span>
+              )}
+            </div>
+            {c.weakest.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                {c.weakest.map((w) => (
+                  <div key={w.concept} className="flex items-center gap-2">
+                    <span className="flex-1 text-xs font-semibold truncate capitalize">
+                      {w.concept}
+                    </span>
+                    <div className="w-24 h-1.5 rounded-full bg-line overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${masteryColor(w.mastery)}`}
+                        style={{ width: `${Math.round(w.mastery * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-ink-soft">
+                Answer some quizzes to build your mastery map.
+              </p>
+            )}
+            <Link
+              href={`/review/practice/${c.courseId}`}
+              className="mt-3 block rounded-xl bg-primary text-white text-center font-bold py-2.5 border-b-2 border-amber-700 active:scale-[0.98] transition text-sm"
+            >
+              🎯 Practice weak spots
+            </Link>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   setModuleStatus,
 } from "./db";
 import type { Chapter } from "./extract";
-import { Card, CourseOutline, ModuleLessons } from "./schemas";
+import { Card, CourseOutline, ModuleLessons, PracticeQuiz } from "./schemas";
 
 const MODEL = "claude-opus-4-8";
 
@@ -96,6 +96,33 @@ export async function generateCourse(courseId: number, chapters: Chapter[]) {
     }
     setCourseStatus(courseId, "error", message);
   }
+}
+
+/** Fresh, never-seen practice questions targeting a learner's weakest
+    concepts — the premium half of the mastery engine. */
+export async function generatePracticeQuiz(
+  courseTitle: string,
+  weakConcepts: string[],
+  sourceText: string
+): Promise<Card[]> {
+  const resp = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 6000,
+    thinking: { type: "adaptive" },
+    system: SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: `A learner studying "${courseTitle}" is weak on these concepts: ${weakConcepts
+          .map((c) => `"${c}"`)
+          .join(", ")}.\n\nCourse material:\n\n${sourceText.slice(0, 30000)}\n\nWrite 6 brand-new quiz questions (mix of multiple choice, true/false, fill-in-the-blank) that test exactly these weak concepts from fresh angles. Tag each question's "concept" field with the matching concept string from the list above.`,
+      },
+    ],
+    output_config: { format: zodOutputFormat(PracticeQuiz) },
+  });
+  const parsed = resp.parsed_output;
+  if (!parsed) throw new Error("Practice generation returned no parsable output.");
+  return parsed.cards.filter((c) => Card.safeParse(c).success) as Card[];
 }
 
 async function generateModuleLessons(

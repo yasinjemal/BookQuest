@@ -6,7 +6,8 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { href: "/", label: "Learn", icon: "📚" },
   { href: "/explore", label: "Explore", icon: "🧭" },
-  { href: "/review", label: "Review", icon: "🔁" },
+  { href: "/classes", label: "Classes", icon: "🏫" },
+  { href: "/review", label: "Practice", icon: "🎯" },
   { href: "/profile", label: "Profile", icon: "👤" },
 ];
 
@@ -27,7 +28,9 @@ export default function BottomNav() {
           const active =
             t.href === "/"
               ? pathname === "/" || pathname.startsWith("/course")
-              : pathname.startsWith(t.href);
+              : t.href === "/classes"
+                ? pathname.startsWith("/classes") || pathname.startsWith("/class/")
+                : pathname.startsWith(t.href);
           return (
             <Link
               key={t.href}

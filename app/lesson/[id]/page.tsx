@@ -18,7 +18,11 @@ export default function LessonPage() {
   const [lesson, setLesson] = useState<LessonData | null>(null);
   const [index, setIndex] = useState(0);
   const [results, setResults] = useState<Record<number, boolean>>({});
-  const [finished, setFinished] = useState<{ xp: number; streak: number } | null>(null);
+  const [finished, setFinished] = useState<{
+    xp: number;
+    streak: number;
+    certificateId?: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -57,10 +61,15 @@ export default function LessonPage() {
           score,
           total: quizIndexes.length,
           wrongCardIndexes: wrong,
+          results: finalResults, // per-card answers feed the mastery engine
         }),
       });
       const data = await res.json();
-      setFinished({ xp: data.xp ?? 0, streak: data.stats?.streak ?? 0 });
+      setFinished({
+        xp: data.xp ?? 0,
+        streak: data.stats?.streak ?? 0,
+        certificateId: data.certificate?.id,
+      });
     } catch {
       setFinished({ xp: 0, streak: 0 });
     } finally {
@@ -108,9 +117,17 @@ export default function LessonPage() {
             <div className="text-xs text-ink-soft">day streak</div>
           </div>
         </div>
+        {finished.certificateId && (
+          <a
+            href={`/cert/${finished.certificateId}`}
+            className="mt-6 block w-full max-w-xs rounded-2xl bg-teal text-white font-bold py-3.5 border-b-4 border-teal-800 active:scale-[0.98] transition"
+          >
+            🎓 Course complete — view your certificate
+          </a>
+        )}
         <button
           onClick={() => router.back()}
-          className="mt-8 w-full max-w-xs rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition"
+          className="mt-4 w-full max-w-xs rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition"
         >
           Continue
         </button>

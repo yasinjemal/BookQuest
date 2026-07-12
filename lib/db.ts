@@ -22,6 +22,7 @@ function tableExists(db: Database.Database, table: string) {
 function createDb(): Database.Database {
   const db = new Database(path.join(DATA_DIR, "app.db"));
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON"); // required for ON DELETE CASCADE to work
 
   // ---------- Base tables (v1) ----------
   db.exec(`
@@ -73,6 +74,43 @@ function createDb(): Database.Database {
       course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY (user_id, course_id)
+    );
+    CREATE TABLE IF NOT EXISTS concept_mastery (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      concept TEXT NOT NULL,
+      correct INTEGER NOT NULL DEFAULT 0,
+      wrong INTEGER NOT NULL DEFAULT 0,
+      mastery REAL NOT NULL DEFAULT 0.5,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, course_id, concept)
+    );
+    CREATE TABLE IF NOT EXISTS classrooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS classroom_members (
+      classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (classroom_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS classroom_assignments (
+      classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (classroom_id, course_id)
+    );
+    CREATE TABLE IF NOT EXISTS certificates (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      score_pct INTEGER NOT NULL,
+      issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, course_id)
     );
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -397,12 +435,14 @@ export function isEnrolled(userId: number, courseId: number): boolean {
     .get(userId, courseId);
 }
 
-/** Owner or enrolled → full access. Published → auto-enroll on first use. */
+/** Owner, enrolled, or classroom-assigned → full access.
+    Published → auto-enroll on first use. */
 export function canAccessCourse(userId: number, courseId: number): boolean {
   const course = getCourse(courseId);
   if (!course) return false;
   if (course.owner_id === userId) return true;
   if (isEnrolled(userId, courseId)) return true;
+  if (hasAssignmentAccess(userId, courseId)) return true;
   if (course.published) {
     enroll(userId, courseId);
     return true;
@@ -579,6 +619,270 @@ export function countDueReviews(userId: number): number {
     )
     .get(userId) as { n: number };
   return r.n;
+}
+
+// ---------- Concept mastery (the adaptive engine) ----------
+
+/** EWMA mastery update: recent answers weigh more, old knowledge decays. */
+export function recordConceptAnswer(
+  userId: number,
+  courseId: number,
+  concept: string,
+  correct: boolean
+) {
+  const key = concept.trim().toLowerCase().slice(0, 60);
+  if (!key) return;
+  const row = db
+    .prepare(
+      "SELECT mastery FROM concept_mastery WHERE user_id = ? AND course_id = ? AND concept = ?"
+    )
+    .get(userId, courseId, key) as { mastery: number } | undefined;
+  const prev = row?.mastery ?? 0.5;
+  const next = 0.7 * prev + 0.3 * (correct ? 1 : 0);
+  db.prepare(
+    `INSERT INTO concept_mastery (user_id, course_id, concept, correct, wrong, mastery, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT (user_id, course_id, concept) DO UPDATE SET
+       correct = correct + excluded.correct,
+       wrong = wrong + excluded.wrong,
+       mastery = ?,
+       updated_at = datetime('now')`
+  ).run(userId, courseId, key, correct ? 1 : 0, correct ? 0 : 1, next, next);
+}
+
+export interface MasteryRow {
+  concept: string;
+  correct: number;
+  wrong: number;
+  mastery: number;
+}
+
+export function getCourseMastery(userId: number, courseId: number): MasteryRow[] {
+  return db
+    .prepare(
+      "SELECT concept, correct, wrong, mastery FROM concept_mastery WHERE user_id = ? AND course_id = ? ORDER BY mastery ASC"
+    )
+    .all(userId, courseId) as MasteryRow[];
+}
+
+/** Class-level weak spots: average mastery per concept across members. */
+export function classWeakConcepts(
+  memberIds: number[],
+  courseIds: number[],
+  limit = 6
+): { concept: string; avg_mastery: number; learners: number }[] {
+  if (memberIds.length === 0 || courseIds.length === 0) return [];
+  const mPh = memberIds.map(() => "?").join(",");
+  const cPh = courseIds.map(() => "?").join(",");
+  return db
+    .prepare(
+      `SELECT concept, AVG(mastery) AS avg_mastery, COUNT(DISTINCT user_id) AS learners
+       FROM concept_mastery
+       WHERE user_id IN (${mPh}) AND course_id IN (${cPh})
+       GROUP BY concept HAVING learners >= 1
+       ORDER BY avg_mastery ASC LIMIT ?`
+    )
+    .all(...memberIds, ...courseIds, limit) as {
+    concept: string;
+    avg_mastery: number;
+    learners: number;
+  }[];
+}
+
+// ---------- Classrooms ----------
+
+export interface ClassroomRow {
+  id: number;
+  owner_id: number;
+  name: string;
+  code: string;
+  created_at: string;
+}
+
+function makeClassCode(): string {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
+  let code = "";
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+export function createClassroom(ownerId: number, name: string): ClassroomRow {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = makeClassCode();
+    try {
+      const r = db
+        .prepare("INSERT INTO classrooms (owner_id, name, code) VALUES (?, ?, ?)")
+        .run(ownerId, name.trim().slice(0, 80), code);
+      return getClassroom(Number(r.lastInsertRowid))!;
+    } catch {
+      /* code collision — retry */
+    }
+  }
+  throw new Error("Could not generate a class code");
+}
+
+export function getClassroom(id: number): ClassroomRow | undefined {
+  return db.prepare("SELECT * FROM classrooms WHERE id = ?").get(id) as
+    | ClassroomRow
+    | undefined;
+}
+
+export function getClassroomByCode(code: string): ClassroomRow | undefined {
+  return db
+    .prepare("SELECT * FROM classrooms WHERE code = ?")
+    .get(code.trim().toUpperCase()) as ClassroomRow | undefined;
+}
+
+export function joinClassroom(classroomId: number, userId: number) {
+  db.prepare(
+    "INSERT OR IGNORE INTO classroom_members (classroom_id, user_id) VALUES (?, ?)"
+  ).run(classroomId, userId);
+}
+
+export function listMyClassrooms(userId: number): (ClassroomRow & {
+  member_count: number;
+  is_owner: number;
+})[] {
+  return db
+    .prepare(
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM classroom_members m WHERE m.classroom_id = c.id) AS member_count,
+        (c.owner_id = ?) AS is_owner
+       FROM classrooms c
+       WHERE c.owner_id = ?
+          OR c.id IN (SELECT classroom_id FROM classroom_members WHERE user_id = ?)
+       ORDER BY c.created_at DESC`
+    )
+    .all(userId, userId, userId) as (ClassroomRow & {
+    member_count: number;
+    is_owner: number;
+  })[];
+}
+
+export function classroomMembers(classroomId: number): {
+  user_id: number;
+  name: string;
+  joined_at: string;
+}[] {
+  return db
+    .prepare(
+      `SELECT m.user_id, u.name, m.joined_at
+       FROM classroom_members m JOIN users u ON u.id = m.user_id
+       WHERE m.classroom_id = ? ORDER BY m.joined_at`
+    )
+    .all(classroomId) as { user_id: number; name: string; joined_at: string }[];
+}
+
+export function isClassroomMember(classroomId: number, userId: number): boolean {
+  return !!db
+    .prepare(
+      "SELECT 1 FROM classroom_members WHERE classroom_id = ? AND user_id = ?"
+    )
+    .get(classroomId, userId);
+}
+
+export function assignCourse(classroomId: number, courseId: number) {
+  db.prepare(
+    "INSERT OR IGNORE INTO classroom_assignments (classroom_id, course_id) VALUES (?, ?)"
+  ).run(classroomId, courseId);
+}
+
+export function unassignCourse(classroomId: number, courseId: number) {
+  db.prepare(
+    "DELETE FROM classroom_assignments WHERE classroom_id = ? AND course_id = ?"
+  ).run(classroomId, courseId);
+}
+
+export function classroomAssignments(classroomId: number): (CourseRow &
+  PlatformCourseCols)[] {
+  return db
+    .prepare(
+      `SELECT c.* FROM courses c
+       JOIN classroom_assignments a ON a.course_id = c.id
+       WHERE a.classroom_id = ? ORDER BY a.assigned_at DESC`
+    )
+    .all(classroomId) as (CourseRow & PlatformCourseCols)[];
+}
+
+/** Is this course assigned to any classroom the user belongs to? */
+export function hasAssignmentAccess(userId: number, courseId: number): boolean {
+  return !!db
+    .prepare(
+      `SELECT 1 FROM classroom_assignments a
+       JOIN classroom_members m ON m.classroom_id = a.classroom_id
+       WHERE a.course_id = ? AND m.user_id = ?
+       UNION
+       SELECT 1 FROM classroom_assignments a2
+       JOIN classrooms c2 ON c2.id = a2.classroom_id
+       WHERE a2.course_id = ? AND c2.owner_id = ?`
+    )
+    .get(courseId, userId, courseId, userId);
+}
+
+/** Average quiz score (0-100) across a learner's completed lessons in a course. */
+export function courseAverageScore(userId: number, courseId: number): number {
+  const r = db
+    .prepare(
+      `SELECT AVG(p.score * 100.0 / p.total) AS pct
+       FROM progress p
+       JOIN lessons l ON l.id = p.lesson_id
+       JOIN modules m ON m.id = l.module_id
+       WHERE p.user_id = ? AND m.course_id = ? AND p.total > 0`
+    )
+    .get(userId, courseId) as { pct: number | null };
+  return Math.round(r.pct ?? 0);
+}
+
+// ---------- Certificates ----------
+
+export interface CertificateRow {
+  id: string;
+  user_id: number;
+  course_id: number;
+  score_pct: number;
+  issued_at: string;
+}
+
+export function issueCertificate(
+  id: string,
+  userId: number,
+  courseId: number,
+  scorePct: number
+): CertificateRow {
+  db.prepare(
+    "INSERT OR IGNORE INTO certificates (id, user_id, course_id, score_pct) VALUES (?, ?, ?, ?)"
+  ).run(id, userId, courseId, scorePct);
+  return db
+    .prepare("SELECT * FROM certificates WHERE user_id = ? AND course_id = ?")
+    .get(userId, courseId) as CertificateRow;
+}
+
+export function getCertificate(id: string):
+  | (CertificateRow & { user_name: string; course_title: string })
+  | undefined {
+  return db
+    .prepare(
+      `SELECT ct.*, u.name AS user_name, c.title AS course_title
+       FROM certificates ct
+       JOIN users u ON u.id = ct.user_id
+       JOIN courses c ON c.id = ct.course_id
+       WHERE ct.id = ?`
+    )
+    .get(id) as
+    | (CertificateRow & { user_name: string; course_title: string })
+    | undefined;
+}
+
+export function listCertificates(userId: number): (CertificateRow & {
+  course_title: string;
+})[] {
+  return db
+    .prepare(
+      `SELECT ct.*, c.title AS course_title FROM certificates ct
+       JOIN courses c ON c.id = ct.course_id
+       WHERE ct.user_id = ? ORDER BY ct.issued_at DESC`
+    )
+    .all(userId) as (CertificateRow & { course_title: string })[];
 }
 
 // ---------- Transactions (billing) ----------

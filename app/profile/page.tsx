@@ -16,6 +16,7 @@ interface Data {
   stats: { total_xp: number; streak: number };
   dueReviews: number;
   leaderboard: { user_id: number; name: string; xp: number }[];
+  certificates: { id: string; course_title: string; score_pct: number }[];
 }
 
 const LEVELS = [0, 50, 150, 300, 500, 800, 1200, 1700, 2300, 3000, 4000];
@@ -192,6 +193,32 @@ function ProfileInner() {
           Payments by Flutterwave — cards & mobile money across Africa.
         </p>
       </section>
+
+      {/* Certificates */}
+      {data.certificates.length > 0 && (
+        <section className="mt-6">
+          <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">
+            🎓 Certificates
+          </h2>
+          <div className="space-y-2">
+            {data.certificates.map((c) => (
+              <Link
+                key={c.id}
+                href={`/cert/${c.id}`}
+                className="flex items-center gap-3 rounded-2xl bg-card border border-line p-4 shadow-sm active:scale-[0.99] transition"
+              >
+                <span className="text-2xl">🎓</span>
+                <span className="flex-1 min-w-0 font-semibold truncate">
+                  {c.course_title}
+                </span>
+                <span className="shrink-0 text-sm font-bold text-go">
+                  {c.score_pct}%
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Leaderboard */}
       <section className="mt-6">

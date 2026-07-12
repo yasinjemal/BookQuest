@@ -20,8 +20,17 @@ export const ExampleCard = z.object({
     .describe("A concrete example or analogy illustrating the previous concept, max 80 words"),
 });
 
+/** The concept a quiz question tests — the atom of the mastery engine. */
+const conceptField = z
+  .string()
+  .optional()
+  .describe(
+    "REQUIRED: the single concept this question tests, 1-4 lowercase words, e.g. 'compound interest'. Reuse the exact same concept string for questions testing the same idea."
+  );
+
 export const QuizMcqCard = z.object({
   type: z.literal("quiz_mcq"),
+  concept: conceptField,
   question: z.string().describe("A single clear question"),
   options: z.array(z.string()).describe("Exactly 4 answer options"),
   correct_index: z
@@ -35,6 +44,7 @@ export const QuizMcqCard = z.object({
 
 export const QuizTrueFalseCard = z.object({
   type: z.literal("quiz_truefalse"),
+  concept: conceptField,
   statement: z.string().describe("A statement that is clearly true or false"),
   answer: z.boolean().describe("true if the statement is true"),
   explanation: z.string().describe("One sentence explanation"),
@@ -42,6 +52,7 @@ export const QuizTrueFalseCard = z.object({
 
 export const QuizFillBlankCard = z.object({
   type: z.literal("quiz_fillblank"),
+  concept: conceptField,
   sentence: z
     .string()
     .describe(
@@ -96,6 +107,14 @@ export const CourseOutline = z.object({
     .describe("4-12 modules covering the whole document in order"),
 });
 export type CourseOutline = z.infer<typeof CourseOutline>;
+
+/** Output shape for AI-generated fresh practice questions. */
+export const PracticeQuiz = z.object({
+  cards: z
+    .array(z.discriminatedUnion("type", [QuizMcqCard, QuizTrueFalseCard, QuizFillBlankCard]))
+    .describe("6 quiz cards. Each must test one of the requested weak concepts, tagged with that exact concept string. Never repeat a question the learner has seen — invent new angles."),
+});
+export type PracticeQuiz = z.infer<typeof PracticeQuiz>;
 
 export const ModuleLessons = z.object({
   lessons: z
