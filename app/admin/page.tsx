@@ -27,6 +27,24 @@ interface AdminData {
       occurred_at: string;
     }[];
   };
+  delivery: {
+    delayed_events_24h: number;
+    max_delay_seconds: number;
+    answer_failures_24h: number;
+    delayed_sample: {
+      session_kind: string;
+      course_id: number | null;
+      delay_seconds: number;
+      recorded_at: string;
+    }[];
+    failure_sample: {
+      area: string;
+      occurred_at: string;
+      answer_source: string | null;
+      error_fingerprint: string | null;
+    }[];
+    alerts: string[];
+  };
   users: {
     id: number;
     email: string;
@@ -36,6 +54,13 @@ interface AdminData {
     premium_until: string | null;
     created_at: string;
   }[];
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  return `${Math.floor(seconds / 86400)}d ${Math.floor((seconds % 86400) / 3600)}h`;
 }
 
 export default function AdminPage() {
@@ -153,6 +178,80 @@ export default function AdminPage() {
             </div>
           ))}
         </div>
+      )}
+
+      <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
+        Delivery health · last 24 hours
+      </h2>
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          ["Delayed answers", data.delivery.delayed_events_24h],
+          ["Max delay", formatDuration(data.delivery.max_delay_seconds)],
+          ["Answer failures", data.delivery.answer_failures_24h],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm"
+          >
+            <div className="text-xl font-extrabold">{value ?? 0}</div>
+            <div className="text-xs text-ink-soft">{label}</div>
+          </div>
+        ))}
+      </div>
+      {data.delivery.alerts.map((alert) => (
+        <p key={alert} className="mt-2 text-sm text-no font-semibold">
+          {alert}
+        </p>
+      ))}
+      {data.delivery.delayed_sample.length > 0 && (
+        <>
+          <p className="mt-3 mb-1 text-xs font-bold text-ink-soft uppercase tracking-wide">
+            Most delayed answers
+          </p>
+          <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+            {data.delivery.delayed_sample.map((event, index) => (
+              <div
+                key={`delayed-${event.recorded_at}-${index}`}
+                className="px-4 py-3 flex justify-between gap-3 text-sm"
+              >
+                <span className="font-semibold">
+                  {event.session_kind}
+                  {event.course_id !== null && (
+                    <span className="text-ink-soft"> · course {event.course_id}</span>
+                  )}
+                </span>
+                <span className="text-ink-soft">
+                  {formatDuration(event.delay_seconds)} late
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {data.delivery.failure_sample.length > 0 && (
+        <>
+          <p className="mt-3 mb-1 text-xs font-bold text-ink-soft uppercase tracking-wide">
+            Recent answer failures
+          </p>
+          <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+            {data.delivery.failure_sample.map((event, index) => (
+              <div key={`failure-${event.occurred_at}-${index}`} className="px-4 py-3">
+                <div className="flex justify-between gap-3 text-sm">
+                  <span className="font-semibold">{event.area}</span>
+                  <span className="text-ink-soft">
+                    {event.answer_source ?? "unknown"}
+                  </span>
+                </div>
+                <div className="text-xs text-ink-soft mt-0.5">
+                  {event.error_fingerprint
+                    ? `fingerprint ${event.error_fingerprint} · `
+                    : ""}
+                  {new Date(event.occurred_at).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">

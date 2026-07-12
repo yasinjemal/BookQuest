@@ -169,7 +169,11 @@ changing outcomes twice, and operate reliably enough for organizations.
   (`lib/projection.ts` reconciles/rebuilds `concept_mastery` from the immutable
   ledger; `node scripts/reconcile.mjs [--rebuild] [--course=<id>]` exits non-zero
   on drift. Tests in `tests/projection-reconciliation.test.ts`.)
-- [ ] Add admin drill-down for delayed events and outbox failures.
+- [x] Add admin drill-down for delayed events and outbox failures.
+  (`deliveryHealth` in `lib/observability.ts` aggregates delayed events
+  (recorded_at − occurred_at) and `learning.answer_failed` events with samples;
+  surfaced in the admin dashboard. Tests in `tests/delivery-health.test.ts` and
+  `tests/observability.test.ts`.)
 - [ ] Decide when volume requires IndexedDB and table partitioning.
 
 ### Release gates

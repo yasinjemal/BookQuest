@@ -4,6 +4,7 @@ import {
   operationalSubject,
   safeErrorMetadata,
   sanitizeOperationalMetadata,
+  summarizeFailureMetadata,
 } from "../lib/observability";
 
 afterEach(() => {
@@ -52,5 +53,23 @@ describe("privacy-safe operational monitoring", () => {
       ai_failures_24h: 1,
     });
     expect(alerts).toHaveLength(3);
+  });
+
+  it("extracts groupable fields from answer-failure metadata safely", () => {
+    expect(
+      summarizeFailureMetadata(
+        JSON.stringify({ answer_source: "lesson", error_fingerprint: "abc123" })
+      )
+    ).toEqual({ answer_source: "lesson", error_fingerprint: "abc123" });
+
+    // Missing fields and malformed JSON degrade to nulls, never throw.
+    expect(summarizeFailureMetadata("{}")).toEqual({
+      answer_source: null,
+      error_fingerprint: null,
+    });
+    expect(summarizeFailureMetadata("not json")).toEqual({
+      answer_source: null,
+      error_fingerprint: null,
+    });
   });
 });

@@ -198,8 +198,8 @@ URL cache. Account-scoped offline course-content caching remains future work.
 - Define soft-delete, archival, and controlled redaction rules for private
   question snapshots retained after a source course is deleted.
 - Add backup/restore tests against realistic database copies.
-- Add an admin drill-down for delayed events, outbox failures, and question data
-  quality.
+- Extend the admin drill-down (delayed events and answer-delivery failures are
+  shown) to question data quality.
 - Replace local storage with IndexedDB if answer volume requires it.
 - Plan partitioning/retention and PostgreSQL migration before high-volume rollout.
 

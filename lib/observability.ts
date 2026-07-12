@@ -162,6 +162,121 @@ export function operationalAlerts(counts: Omit<OperationalHealth, "alerts" | "re
   return alerts;
 }
 
+// An answer whose server record landed this long after the learner answered it
+// counts as "delayed" — evidence of offline reconciliation (or a stuck queue).
+export const DELAYED_EVENT_THRESHOLD_SECONDS = 120;
+
+export interface DeliveryHealth {
+  /** Events recorded in the last 24h more than the threshold after they occurred. */
+  delayed_events_24h: number;
+  /** Largest occurred_at -> recorded_at gap among those, in seconds. */
+  max_delay_seconds: number;
+  /** Server-side answer delivery failures in the last 24h. */
+  answer_failures_24h: number;
+  delayed_sample: {
+    session_kind: string;
+    course_id: number | null;
+    delay_seconds: number;
+    recorded_at: string;
+  }[];
+  failure_sample: {
+    area: string;
+    occurred_at: string;
+    answer_source: string | null;
+    error_fingerprint: string | null;
+  }[];
+  alerts: string[];
+}
+
+/** Pull the safe, groupable fields out of an answer-failure event's metadata. */
+export function summarizeFailureMetadata(metadataJson: string): {
+  answer_source: string | null;
+  error_fingerprint: string | null;
+} {
+  try {
+    const parsed = JSON.parse(metadataJson) as Record<string, unknown>;
+    return {
+      answer_source:
+        typeof parsed.answer_source === "string" ? parsed.answer_source : null,
+      error_fingerprint:
+        typeof parsed.error_fingerprint === "string"
+          ? parsed.error_fingerprint
+          : null,
+    };
+  } catch {
+    return { answer_source: null, error_fingerprint: null };
+  }
+}
+
+/**
+ * Admin drill-down for delivery reliability: how often answers arrive late (the
+ * offline outbox reconciling) and how many failed to record server-side. Both are
+ * cheap aggregates plus a small recent sample for investigation.
+ */
+export async function deliveryHealth(): Promise<DeliveryHealth> {
+  const { one, many } = await import("./pg");
+  const threshold = DELAYED_EVENT_THRESHOLD_SECONDS;
+
+  const delayed = (await one(
+    `SELECT
+       COUNT(*) FILTER (
+         WHERE recorded_at::timestamptz - occurred_at::timestamptz > ($1 * interval '1 second')
+       )::int AS delayed_events_24h,
+       GREATEST(0, COALESCE(MAX(
+         EXTRACT(EPOCH FROM (recorded_at::timestamptz - occurred_at::timestamptz))
+       ), 0))::int AS max_delay_seconds
+     FROM learning_events
+     WHERE recorded_at::timestamptz >= now() - interval '1 day'`,
+    [threshold]
+  )) as { delayed_events_24h: number; max_delay_seconds: number } | undefined;
+
+  const delayedSample = (await many(
+    `SELECT session_kind, course_id,
+       EXTRACT(EPOCH FROM (recorded_at::timestamptz - occurred_at::timestamptz))::int AS delay_seconds,
+       recorded_at
+     FROM learning_events
+     WHERE recorded_at::timestamptz >= now() - interval '1 day'
+       AND recorded_at::timestamptz - occurred_at::timestamptz > ($1 * interval '1 second')
+     ORDER BY (recorded_at::timestamptz - occurred_at::timestamptz) DESC
+     LIMIT 10`,
+    [threshold]
+  )) as DeliveryHealth["delayed_sample"];
+
+  const failures = (await one(
+    `SELECT COUNT(*)::int AS answer_failures_24h
+     FROM operational_events
+     WHERE occurred_at::timestamptz >= now() - interval '1 day'
+       AND event_type = 'learning.answer_failed'`
+  )) as { answer_failures_24h: number } | undefined;
+
+  const failureRows = (await many(
+    `SELECT area, occurred_at, metadata_json
+     FROM operational_events
+     WHERE event_type = 'learning.answer_failed'
+     ORDER BY occurred_at DESC
+     LIMIT 10`
+  )) as { area: string; occurred_at: string; metadata_json: string }[];
+
+  const answerFailures = Number(failures?.answer_failures_24h ?? 0);
+  const alerts: string[] = [];
+  if (answerFailures > 0) {
+    alerts.push(`${answerFailures} answer delivery failure(s) in the last 24 hours.`);
+  }
+
+  return {
+    delayed_events_24h: Number(delayed?.delayed_events_24h ?? 0),
+    max_delay_seconds: Number(delayed?.max_delay_seconds ?? 0),
+    answer_failures_24h: answerFailures,
+    delayed_sample: delayedSample,
+    failure_sample: failureRows.map((row) => ({
+      area: row.area,
+      occurred_at: row.occurred_at,
+      ...summarizeFailureMetadata(row.metadata_json),
+    })),
+    alerts,
+  };
+}
+
 export async function operationalHealth(): Promise<OperationalHealth> {
   const { one, many } = await import("./pg");
   const counts = (await one(
