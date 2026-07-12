@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import {
   addStatsXp,
   answerReviewItem,
+  CourseParticipationRevokedError,
   EvidenceConflictError,
   getAnswerSession,
   getPracticeSession,
@@ -183,6 +184,12 @@ export async function POST(req: NextRequest) {
       questionVersionId: result.questionVersionId,
     });
   } catch (error) {
+    if (error instanceof CourseParticipationRevokedError) {
+      return NextResponse.json(
+        { error: "Course access is no longer available" },
+        { status: 403 }
+      );
+    }
     if (error instanceof InvalidAnswerError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

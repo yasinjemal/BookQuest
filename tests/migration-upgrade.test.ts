@@ -32,7 +32,9 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
 
     await raw.query(
       `INSERT INTO users (id, email, name, password_hash, role, created_at)
-       VALUES (1, 'legacy@example.com', 'Legacy Learner', 'hash', 'admin', $1)`,
+       VALUES
+         (1, 'legacy@example.com', 'Legacy Learner', 'hash', 'admin', $1),
+         (2, 'member@example.com', 'Legacy Member', 'hash', 'user', $1)`,
       [USER_CREATED_AT]
     );
     await raw.query(
@@ -58,12 +60,27 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       `INSERT INTO concept_mastery (user_id, course_id, concept, correct, wrong, mastery)
        VALUES (1, 1, 'legacy concept', 2, 1, 0.6)`
     );
+    await raw.query(
+      `INSERT INTO classrooms (id, owner_id, name, code, created_at)
+       VALUES (1, 1, 'Legacy Class', 'LEGACY1', $1)`,
+      [USER_CREATED_AT]
+    );
+    await raw.query(
+      `INSERT INTO classroom_members (classroom_id, user_id, joined_at)
+       VALUES (1, 2, $1)`,
+      [USER_CREATED_AT]
+    );
+    await raw.query(
+      `INSERT INTO classroom_assignments (classroom_id, course_id, assigned_at)
+       VALUES (1, 1, $1)`,
+      [USER_CREATED_AT]
+    );
 
     // Run the real migration path against the old database.
     const client: PoolClient = await raw.connect();
     try {
       const applied = await applyPendingMigrations(client);
-      expect(applied).toEqual([1, 2]);
+      expect(applied).toEqual([1, 2, 3]);
     } finally {
       client.release();
     }
@@ -80,6 +97,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     expect(rows).toEqual([
       { id: 1, name: "baseline_schema" },
       { id: 2, name: "privacy_lifecycle" },
+      { id: 3, name: "spaces_tenancy" },
     ]);
   });
 
@@ -154,8 +172,66 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "lesson_completion_events",
       "consent_records",
       "privacy_actions",
+      "spaces",
+      "space_memberships",
+      "space_teams",
+      "space_team_members",
+      "space_invitations",
+      "space_courses",
+      "space_assignments",
+      "space_assignment_members",
+      "space_audit_events",
+      "legacy_classroom_spaces",
     ];
     for (const table of expected) expect(present).toContain(table);
+  });
+
+  it("backfills personal and classroom Spaces without losing relationships", async () => {
+    const personal = (
+      await raw.query(
+        `SELECT s.id, s.type, m.role, m.status
+         FROM spaces s
+         JOIN space_memberships m ON m.space_id = s.id
+         WHERE s.personal_owner_user_id = 1 AND m.user_id = 1`
+      )
+    ).rows[0];
+    expect(personal).toMatchObject({
+      type: "personal",
+      role: "owner",
+      status: "active",
+    });
+
+    const course = (
+      await raw.query("SELECT owning_space_id FROM courses WHERE id = 1")
+    ).rows[0] as { owning_space_id: string };
+    expect(course.owning_space_id).toBe(personal.id);
+
+    const migratedClass = (
+      await raw.query(
+        `SELECT s.id, s.type, s.preset, s.join_code_enabled,
+          (SELECT role FROM space_memberships WHERE space_id = s.id AND user_id = 1) AS owner_role,
+          (SELECT role FROM space_memberships WHERE space_id = s.id AND user_id = 2) AS member_role,
+          (SELECT COUNT(*)::int FROM space_courses WHERE space_id = s.id AND course_id = 1) AS courses,
+          (SELECT COUNT(*)::int FROM space_assignments WHERE space_id = s.id AND course_id = 1) AS assignments,
+          (SELECT COUNT(*)::int FROM space_assignment_members sam
+             JOIN space_assignments sa ON sa.id = sam.assignment_id
+            WHERE sa.space_id = s.id) AS assignees
+         FROM legacy_classroom_spaces legacy
+         JOIN spaces s ON s.id = legacy.space_id
+         WHERE legacy.classroom_id = 1`
+      )
+    ).rows[0];
+    expect(migratedClass).toEqual({
+      id: expect.any(String),
+      type: "private",
+      preset: "class",
+      join_code_enabled: 1,
+      owner_role: "owner",
+      member_role: "learner",
+      courses: 1,
+      assignments: 1,
+      assignees: 1,
+    });
   });
 
   it("backfills the service consent and active lifecycle state", async () => {

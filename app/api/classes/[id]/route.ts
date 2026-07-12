@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  assignCourse,
   classWeakConcepts,
   classroomAssignments,
   classroomMembers,
@@ -12,9 +11,12 @@ import {
   listLessons,
   listModules,
   listOwnedCourses,
-  unassignCourse,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import {
+  assignLegacyClassroomCourse,
+  unassignLegacyClassroomCourse,
+} from "@/lib/spaces";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,16 +112,15 @@ export async function POST(
   const course = await getCourse(Number(body.courseId));
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
   if (body.action === "assign") {
-    // Teachers can assign their own courses or any published course
-    if (course.owner_id !== user.id && !course.published) {
+    if (course.owner_id !== user.id) {
       return NextResponse.json(
-        { error: "You can only assign your own or published courses" },
+        { error: "Copy a public course into your own library before assigning it" },
         { status: 403 }
       );
     }
-    await assignCourse(classroom.id, course.id);
+    await assignLegacyClassroomCourse(user.id, classroom.id, course.id);
   } else {
-    await unassignCourse(classroom.id, course.id);
+    await unassignLegacyClassroomCourse(user.id, classroom.id, course.id);
   }
   return NextResponse.json({ ok: true });
 }

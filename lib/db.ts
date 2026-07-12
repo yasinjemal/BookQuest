@@ -14,9 +14,14 @@ import {
   normalizeConcept,
 } from "./learning";
 import type { PoolClient } from "pg";
-import { many, one, q, tx, type Queryable } from "./pg";
+import { many, one, pool, q, tx, type Queryable } from "./pg";
 import { newGenerationRunId } from "./generation-run";
 import { SERVICE_CONSENT_VERSION } from "./privacy";
+import {
+  ensurePersonalSpaceForUser,
+  createLegacyClassroomSpace,
+  resolveCourseLearningContext,
+} from "./spaces";
 
 /**
  * Data layer, backed by Neon Postgres (see ./pg for the connection + schema).
@@ -81,6 +86,12 @@ export async function createUser(
         (user_id, purpose, version, decision, source)
        VALUES ($1, 'service', $2, 'granted', 'registration')`,
       [id, serviceConsentVersion]
+    );
+    const personal = await ensurePersonalSpaceForUser(id, name, c);
+    await c.query(
+      `UPDATE courses SET owning_space_id = $1
+       WHERE owner_id = $2 AND owning_space_id IS NULL`,
+      [personal.space.id, id]
     );
     return (await c.query("SELECT * FROM users WHERE id = $1", [id])).rows[0] as UserRow;
   });
@@ -250,14 +261,31 @@ export async function createCourse(
   ownerId: number,
   sourceFilename: string
 ): Promise<CreatedCourse> {
-  const generationRunId = newGenerationRunId();
-  const row = (await one(
-    `INSERT INTO courses
-      (owner_id, title, source_filename, status, generation_run_id)
-     VALUES ($1, $2, $3, 'extracting', $4) RETURNING id`,
-    [ownerId, sourceFilename, sourceFilename, generationRunId]
-  )) as { id: number };
-  return { id: Number(row.id), generationRunId };
+  return tx(async (client) => {
+    const user = (
+      await client.query<{ name: string }>("SELECT name FROM users WHERE id = $1", [
+        ownerId,
+      ])
+    ).rows[0];
+    if (!user) throw new Error("Course owner not found");
+    const personal = await ensurePersonalSpaceForUser(ownerId, user.name, client);
+    const generationRunId = newGenerationRunId();
+    const row = (
+      await client.query<{ id: number }>(
+        `INSERT INTO courses
+          (owner_id, owning_space_id, title, source_filename, status, generation_run_id)
+         VALUES ($1, $2, $3, $4, 'extracting', $5) RETURNING id`,
+        [
+          ownerId,
+          personal.space.id,
+          sourceFilename,
+          sourceFilename,
+          generationRunId,
+        ]
+      )
+    ).rows[0];
+    return { id: Number(row.id), generationRunId };
+  });
 }
 
 /** Persist the extracted chapters so retries regenerate without the original file. */
@@ -323,6 +351,7 @@ export async function getCourse(
 
 export interface PlatformCourseCols {
   owner_id: number;
+  owning_space_id: string | null;
   published: number;
   category: string;
   price_cents: number;
@@ -421,14 +450,10 @@ export async function canAccessCourse(
 ): Promise<boolean> {
   const course = await getCourse(courseId);
   if (!course) return false;
-  if (course.owner_id === userId) return true;
-  if (await isEnrolled(userId, courseId)) return true;
-  if (await hasAssignmentAccess(userId, courseId)) return true;
   if (course.published) {
     await enroll(userId, courseId);
-    return true;
   }
-  return false;
+  return !!(await resolveCourseLearningContext(userId, courseId, pool));
 }
 
 // ---------- Modules / lessons ----------
@@ -1124,9 +1149,13 @@ export interface AnswerEvidenceInput extends QuestionContext {
   attemptNumber?: number;
   hintCount?: number;
   deliveryChannel?: string;
-  organizationId?: string;
-  enrollmentId?: string;
-  assignmentId?: string;
+}
+
+export class CourseParticipationRevokedError extends Error {
+  constructor() {
+    super("Course participation is no longer authorized");
+    this.name = "CourseParticipationRevokedError";
+  }
 }
 
 export interface AnswerEvidenceResult {
@@ -1149,6 +1178,12 @@ export async function recordAnswerEvidence(
     if (!isQuizAnswerCompatible(input.card, input.answer)) {
       throw new InvalidAnswerError();
     }
+    const spaceContext = await resolveCourseLearningContext(
+      input.userId,
+      input.courseId,
+      c
+    );
+    if (!spaceContext) throw new CourseParticipationRevokedError();
     const learnerKey = await getLearnerKey(input.userId, c);
     const question = await ensureQuestionVersion(input, c);
     const canProjectMastery = !!(await getCourse(input.courseId, c));
@@ -1166,12 +1201,17 @@ export async function recordAnswerEvidence(
       is_correct: number;
       mastery_before: number;
       mastery_after: number;
+      space_id: string | null;
+      membership_id: string | null;
+      assignment_id: string | null;
+      space_policy_version: number | null;
     };
     const byEventId = (
       await c.query(
         `SELECT event_id, learner_key, question_version_id, response_data,
                 session_kind, session_id, attempt_number, is_correct,
-                mastery_before, mastery_after
+                mastery_before, mastery_after, space_id, membership_id,
+                assignment_id, space_policy_version
          FROM learning_events WHERE event_id = $1`,
         [input.eventId]
       )
@@ -1181,7 +1221,8 @@ export async function recordAnswerEvidence(
           await c.query(
             `SELECT event_id, learner_key, question_version_id, response_data,
                     session_kind, session_id, attempt_number, is_correct,
-                    mastery_before, mastery_after
+                    mastery_before, mastery_after, space_id, membership_id,
+                    assignment_id, space_policy_version
              FROM learning_events
              WHERE learner_key = $1 AND session_kind = $2 AND session_id = $3
                AND question_version_id = $4 AND attempt_number = $5`,
@@ -1211,7 +1252,11 @@ export async function recordAnswerEvidence(
         existing.response_data !== responseData ||
         existing.session_kind !== input.sessionKind ||
         existing.session_id !== (input.sessionId ?? null) ||
-        existing.attempt_number !== attemptNumber
+        existing.attempt_number !== attemptNumber ||
+        existing.space_id !== spaceContext.spaceId ||
+        existing.membership_id !== spaceContext.membershipId ||
+        existing.assignment_id !== spaceContext.assignmentId ||
+        existing.space_policy_version !== spaceContext.policyVersion
       ) {
         throw new EvidenceConflictError();
       }
@@ -1245,19 +1290,24 @@ export async function recordAnswerEvidence(
     await c.query(
       `INSERT INTO learning_events
         (event_id, learner_key, organization_id, enrollment_id, assignment_id,
+         space_id, membership_id, space_policy_version,
          course_id, course_version, lesson_id, card_index, question_version_id,
          concept_id, concept_label, session_id, session_kind, delivery_channel,
          response_data, is_correct, was_skipped, response_time_ms,
          attempt_number, hint_count, mastery_before, mastery_after,
          mastery_algorithm_version, privacy_scope, occurred_at, schema_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-               $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+               $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+               $27, $28, $29, $30)`,
       [
         input.eventId,
         learnerKey,
-        input.organizationId ?? null,
-        input.enrollmentId ?? null,
-        input.assignmentId ?? null,
+        null,
+        null,
+        spaceContext.assignmentId,
+        spaceContext.spaceId,
+        spaceContext.membershipId,
+        spaceContext.policyVersion,
         input.courseId,
         question.courseVersion,
         input.lessonId ?? null,
@@ -1343,16 +1393,27 @@ export interface AnswerSessionRow {
   items: AnswerSessionItem[];
   created_at: string;
   expires_at: string;
+  space_id?: string | null;
+  membership_id?: string | null;
+  assignment_id?: string | null;
+  space_policy_version?: number | null;
 }
 
 async function createAnswerSession(
   userId: number,
   kind: AnswerSessionRow["kind"],
-  items: AnswerSessionItem[]
+  items: AnswerSessionItem[],
+  scopeCourseIds: number[] = []
 ): Promise<AnswerSessionRow> {
   const id = `${kind}_${crypto.randomUUID()}`;
   const expiresAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
   await tx(async (c) => {
+    const contexts = [] as Awaited<ReturnType<typeof resolveCourseLearningContext>>[];
+    for (const courseId of new Set([...scopeCourseIds, ...items.map((item) => item.courseId)])) {
+      const context = await resolveCourseLearningContext(userId, courseId, c);
+      if (!context) throw new CourseParticipationRevokedError();
+      contexts.push(context);
+    }
     for (const item of items) {
       await ensureQuestionVersion(
         {
@@ -1368,11 +1429,27 @@ async function createAnswerSession(
         c
       );
     }
+    const sharedContext = contexts.length > 0 && contexts.every((context) =>
+      context?.spaceId === contexts[0]?.spaceId &&
+      context?.membershipId === contexts[0]?.membershipId &&
+      context?.assignmentId === contexts[0]?.assignmentId
+    ) ? contexts[0] : undefined;
     await c.query(
       `INSERT INTO answer_sessions
-        (id, user_id, kind, items_json, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, userId, kind, JSON.stringify(items), expiresAt]
+        (id, user_id, kind, items_json, expires_at, space_id, membership_id,
+         assignment_id, space_policy_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        id,
+        userId,
+        kind,
+        JSON.stringify(items),
+        expiresAt,
+        sharedContext?.spaceId ?? null,
+        sharedContext?.membershipId ?? null,
+        sharedContext?.assignmentId ?? null,
+        sharedContext?.policyVersion ?? null,
+      ]
     );
   });
   return {
@@ -1408,7 +1485,7 @@ export async function createLessonAnswerSession(
       promptVersion: lesson.prompt_version,
     });
   }
-  return createAnswerSession(userId, "lesson", items);
+  return createAnswerSession(userId, "lesson", items, [lesson.course_id]);
 }
 
 export async function createReviewAnswerSession(
@@ -1428,9 +1505,12 @@ export async function getAnswerSession(
      WHERE id = $1 AND user_id = $2 AND kind = $3`,
     [sessionId, userId, kind]
   )) as (Omit<AnswerSessionRow, "items"> & { items_json: string }) | undefined;
-  return row
-    ? { ...row, items: JSON.parse(row.items_json) as AnswerSessionItem[] }
-    : undefined;
+  if (!row) return undefined;
+  const items = JSON.parse(row.items_json) as AnswerSessionItem[];
+  for (const courseId of new Set(items.map((item) => item.courseId))) {
+    if (!(await resolveCourseLearningContext(userId, courseId, pool))) return undefined;
+  }
+  return { ...row, items };
 }
 
 export interface PracticeSessionRow {
@@ -1443,6 +1523,10 @@ export interface PracticeSessionRow {
   prompt_version: string | null;
   created_at: string;
   expires_at: string;
+  space_id?: string | null;
+  membership_id?: string | null;
+  assignment_id?: string | null;
+  space_policy_version?: number | null;
 }
 
 export async function createPracticeSession(
@@ -1461,11 +1545,14 @@ export async function createPracticeSession(
   const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
 
   await tx(async (c) => {
+    const context = await resolveCourseLearningContext(userId, courseId, c);
+    if (!context) throw new CourseParticipationRevokedError();
     await c.query(
       `INSERT INTO practice_sessions
         (id, user_id, course_id, fresh, items_json, generator_model,
-         prompt_version, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         prompt_version, expires_at, space_id, membership_id, assignment_id,
+         space_policy_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         id,
         userId,
@@ -1475,6 +1562,10 @@ export async function createPracticeSession(
         provenance?.generatorModel ?? null,
         provenance?.promptVersion ?? null,
         expiresAt,
+        context.spaceId,
+        context.membershipId,
+        context.assignmentId,
+        context.policyVersion,
       ]
     );
     for (const item of sessionItems) {
@@ -1517,6 +1608,15 @@ export async function getPracticeSession(
     [sessionId, userId]
   )) as (Omit<PracticeSessionRow, "items"> & { items_json: string }) | undefined;
   if (!row) return undefined;
+  if (row.course_id !== null) {
+    const context = await resolveCourseLearningContext(userId, row.course_id, pool);
+    if (!context) return undefined;
+    if (row.space_id && (
+      row.space_id !== context.spaceId ||
+      row.membership_id !== context.membershipId ||
+      row.assignment_id !== context.assignmentId
+    )) return undefined;
+  }
   return { ...row, items: JSON.parse(row.items_json) as PracticeSessionItem[] };
 }
 
@@ -1594,6 +1694,7 @@ export async function lessonCompletionExists(
 /** Record a lesson completion. Returns false if this session already completed. */
 export async function recordLessonCompletion(input: {
   answerSessionId: string;
+  userId: number;
   learnerKey: string;
   courseId: number;
   lessonId: number;
@@ -1601,21 +1702,31 @@ export async function recordLessonCompletion(input: {
   total: number;
   xpAwarded: number;
 }): Promise<boolean> {
-  const r = await q(
-    `INSERT INTO lesson_completion_events
-      (answer_session_id, learner_key, course_id, lesson_id, score, total, xp_awarded)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING`,
-    [
-      input.answerSessionId,
-      input.learnerKey,
-      input.courseId,
-      input.lessonId,
-      input.score,
-      input.total,
-      input.xpAwarded,
-    ]
-  );
-  return r.rowCount === 1;
+  return tx(async (client) => {
+    const context = await resolveCourseLearningContext(input.userId, input.courseId, client);
+    if (!context) throw new CourseParticipationRevokedError();
+    const r = await client.query(
+      `INSERT INTO lesson_completion_events
+        (answer_session_id, learner_key, course_id, lesson_id, score, total,
+         xp_awarded, space_id, membership_id, assignment_id, space_policy_version)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT DO NOTHING`,
+      [
+        input.answerSessionId,
+        input.learnerKey,
+        input.courseId,
+        input.lessonId,
+        input.score,
+        input.total,
+        input.xpAwarded,
+        context.spaceId,
+        context.membershipId,
+        context.assignmentId,
+        context.policyVersion,
+      ]
+    );
+    return r.rowCount === 1;
+  });
 }
 
 export async function learningLedgerHealth(): Promise<{
@@ -1696,12 +1807,9 @@ export async function createClassroom(
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = makeClassCode();
     try {
-      const row = (await one(
-        "INSERT INTO classrooms (owner_id, name, code) VALUES ($1, $2, $3) RETURNING id",
-        [ownerId, name.trim().slice(0, 80), code]
-      )) as { id: number };
-      return (await getClassroom(Number(row.id)))!;
-    } catch {
+      return await createLegacyClassroomSpace(ownerId, name, code);
+    } catch (error) {
+      if ((error as { code?: string }).code !== "23505") throw error;
       /* code collision — retry */
     }
   }

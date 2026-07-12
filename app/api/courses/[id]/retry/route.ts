@@ -9,6 +9,8 @@ import {
   rateLimitSubject,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { authorizeCourseAction } from "@/lib/spaces";
+import { spaceApiError } from "@/lib/space-api";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -27,8 +29,12 @@ export async function POST(
   const { id } = await params;
   const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (course.owner_id !== user.id && user.role !== "admin") {
-    return NextResponse.json({ error: "Only the owner can retry" }, { status: 403 });
+  try {
+    await authorizeCourseAction(user.id, course.id, "content.update");
+  } catch (error) {
+    const response = spaceApiError(error);
+    if (response) return response;
+    throw error;
   }
 
   // The stored chapters are what generation regenerates from (no original file).

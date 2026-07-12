@@ -246,32 +246,78 @@ audit packs → Phase 3; adaptive learning → Phase 6.
 
 ## Phase 1 — Spaces, tenancy and permissions
 
-**Status:** IN PROGRESS
+**Status:** LOCAL IMPLEMENTATION COMPLETE — CI/deployment proof pending
 **Outcome:** individuals, groups, schools, companies and departments use one
 Space model while retaining distinct privacy and access rules.
 
 ### Build checklist
 
-- [ ] Create an automatic personal Space for every account.
-- [ ] Support personal, private, unlisted, organization and public Space types.
-- [ ] Separate discovery, visibility, joining and content-sharing policies.
-- [ ] Add active, suspended, archived and deletion-scheduled states.
-- [ ] Add profile, branding, language, timezone and optional child Spaces.
-- [ ] Migrate classrooms without losing members, courses or progress.
-- [ ] Keep “class” as a simple Space preset.
-- [ ] Add invited, active, suspended, removed and expired memberships.
-- [ ] Add owner, administrator, creator, reviewer, manager, learner and auditor.
-- [ ] Store roles per Space instead of relying on one global role.
-- [ ] Centralize authorization for every protected route.
-- [ ] Later allow custom roles as bundles of approved capabilities.
-- [ ] Add teams/groups and secure expiring, revocable invitations.
-- [ ] Keep join codes only where a Space policy explicitly allows them.
-- [ ] Audit membership and permission changes immutably.
-- [ ] Associate sources, courses, templates, assignments and reports with a Space.
-- [ ] Derive Space, assignment and enrollment evidence context on the server.
-- [ ] Define ownership and move/copy rules for personal and organization content.
-- [ ] Add cross-Space tests for every resource family, storage key, cache and job.
-- [ ] Add safe tenant export, archive and deletion workflows.
+- [x] Create an automatic personal Space for every account.
+  (`createUser` and migration 3 create one idempotent owner membership; verified
+  by `tests/spaces-tenancy.test.ts` and the legacy upgrade test.)
+- [x] Support personal, private, unlisted, organization and public Space types.
+  (`spaces.type`, policy defaults and the `/spaces` creation journey.)
+- [x] Separate discovery, visibility, joining and content-sharing policies.
+  (Independent database policy fields with private-by-default presets.)
+- [x] Add active, suspended, archived and deletion-scheduled states.
+  (Constrained lifecycle state plus deny/read-only enforcement in centralized
+  authorization; lifecycle transition UI remains part of the open workflow work.)
+- [x] Add profile, branding, language, timezone and optional child Spaces.
+  (`updateSpaceProfile` validates and audits these fields, authorizes both sides
+  of a parent link and rejects hierarchy cycles; database tests cover the flow.)
+- [x] Migrate classrooms without losing members, courses or progress.
+  (Migration 3 deterministically backfills class Spaces, memberships, course
+  links, assignments and assignees while retaining all legacy records; verified
+  by `tests/migration-upgrade.test.ts`.)
+- [x] Keep “class” as a simple Space preset.
+  (`preset='class'` on migrated classrooms; no separate authorization model.)
+- [x] Add invited, active, suspended, removed and expired memberships.
+  (Constrained membership lifecycle, live expiry/status authorization and
+  invitation/removal transitions.)
+- [x] Add owner, administrator, creator, reviewer, manager, learner and auditor.
+  (`ROLE_CAPABILITIES` deny-by-default matrix and per-Space membership role.)
+- [x] Store roles per Space instead of relying on one global role.
+  (All Space service authorization reads `space_memberships`; platform admin has
+  no implicit tenant access.)
+- [x] Centralize authorization for every protected route.
+  (`authorizeSpace`, stored-membership services and live course participation are
+  the shared enforcement points for Space, class, course, lesson, practice,
+  review, answer and completion routes. Course owner mutations no longer grant a
+  global admin bypass; account/billing/privacy routes remain account-scoped.)
+- **DEFERRED (Phase 3):** custom roles as bundles of approved capabilities.
+  (The fixed Phase 1 role matrix must stabilize in a real institutional pilot
+  before administrators can compose safer custom bundles.)
+- [x] Add teams/groups and secure expiring, revocable invitations.
+  (Space-scoped team membership APIs reject cross-Space/inactive members;
+  invitation acceptance, expiry and revocation are single-use and audited.)
+- [x] Keep join codes only where a Space policy explicitly allows them.
+  (Only migrated/new `class` presets set `join_code_enabled`; legacy class join,
+  creation and assignment now update Space state transactionally.)
+- [x] Audit membership and permission changes immutably.
+  (Invitation, activation, removal, role and revocation events are protected by
+  append-only database triggers and adversarial tests.)
+- [x] Associate every current tenant resource with a Space; require the same for
+  Phase 2 source/template records before their routes ship.
+  (`docs/SPACE_CONTENT_OWNERSHIP.md` maps direct and inherited ownership for
+  courses, embedded source chapters, modules, lessons, sessions, assignments,
+  evidence, projections, classes, teams and reports. Standalone source/template
+  records do not exist yet and remain a Phase 2 creation gate.)
+- [x] Derive Space, assignment and enrollment evidence context on the server.
+  (Answer and lesson-completion events reauthorize live membership and persist
+  server-selected Space, membership, assignment and policy version.)
+- [x] Define ownership and move/copy rules for personal and organization content.
+  (`docs/SPACE_CONTENT_OWNERSHIP.md` defines single ownership, explicit sharing,
+  version/evidence preservation and denied-until-safe move/copy semantics.)
+- [x] Add cross-Space tests for every current resource family, storage key, cache and job.
+  (Pure and PostgreSQL suites cover Space/resource mismatch, foreign courses,
+  assignments, roles, teams, class codes, answer/practice sessions, completion,
+  queued answers and immutable evidence. Account-scoped outbox tests prevent
+  cross-user storage keys; generation-run tests prevent stale/foreign job writes.)
+- [x] Add safe tenant export, archive and deletion workflows.
+  (Owner-only rate-limited export, audited archive/restore and reversible
+  deletion scheduling; read-only enforcement is covered by database tests. The
+  retention worker for eventual physical purge remains governed by the ownership
+  contract rather than a request-path cascade.)
 
 ### Privacy modes
 
@@ -285,14 +331,34 @@ Space model while retaining distinct privacy and access rules.
 
 ### Release gates
 
-- [ ] Accounts and classrooms migrate without losing content or progress.
-- [ ] Every protected resource has a Space owner and policy.
-- [ ] Tests prove users cannot read or change another private Space.
-- [ ] Revoked or expired invitations cannot be reused.
-- [ ] Role changes take effect immediately and are audited.
-- [ ] Public, unlisted and private metadata behave differently as documented.
-- [ ] Evidence uses server-derived Space and assignment context.
-- [ ] Personal learning remains simple after Spaces are introduced.
+- [x] Accounts and classrooms migrate without losing content or progress.
+  (The pre-ledger upgrade test preserves users, course hierarchy and progress,
+  and verifies class Space memberships/course/assignment backfills; compatibility
+  tests cover post-migration create, code join, assign and unassign.)
+- [x] Every protected current resource has a Space owner and policy.
+  (The ownership matrix documents direct/inherited keys; migration 3 backfills
+  courses and classes, session/evidence writes stamp context, and shared route
+  authorization rechecks policy. Future Phase 2 records are gated on adding their
+  owner before exposure.)
+- [x] Tests prove users cannot read or change another private Space.
+  (`tests/space-authorization.test.ts` and `tests/spaces-tenancy.test.ts` cover
+  missing membership, wrong-Space resources and cross-tenant attachment.)
+- [x] Revoked or expired invitations cannot be reused.
+  (`tests/spaces-tenancy.test.ts` verifies accepted, revoked and expired tokens
+  fail on reuse and membership state follows invitation lifecycle.)
+- [x] Role changes take effect immediately and are audited.
+  (Database test promotes a learner to manager, uses the capability, demotes the
+  learner, observes immediate denial and verifies immutable audit events.)
+- [x] Public, unlisted and private metadata behave differently as documented.
+  (Anonymous discovery returns only active public Spaces with public discovery;
+  database tests prove private and unlisted metadata are excluded.)
+- [x] Evidence uses server-derived Space and assignment context.
+  (Schema v2 answer and completion records are asserted against the resolved
+  live membership and assignment; forged client context is not accepted.)
+- [x] Personal learning remains simple after Spaces are introduced.
+  (Account creation supplies an owner-only personal Space automatically; existing
+  course/enrollment flows resolve it without setup, and the Spaces screen lists
+  it alongside collaborative Spaces.)
 
 ### Measure
 
@@ -302,8 +368,9 @@ Space model while retaining distinct privacy and access rules.
 - Cross-tenant coverage and incidents (target: zero)
 - Classroom migration success
 
-**Deferred:** custom domains, SSO/SCIM and data residency → Phase 3; template
-marketplace → Phase 5; cross-installation federation → future evaluation.
+**Deferred:** custom domains, SSO/SCIM, data residency and custom role bundles →
+Phase 3; template marketplace → Phase 5; cross-installation federation → future
+evaluation.
 
 ---
 

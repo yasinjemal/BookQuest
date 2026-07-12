@@ -1,7 +1,7 @@
 # Phase 1 Space, Membership and Authorization Model
 
-**Status:** pre-implementation contract; APIs remain gated on Phase 0  
-**Last updated:** 12 July 2026
+**Status:** local implementation complete; CI/deployment proof pending
+**Last updated:** 13 July 2026
 
 ## Domain model
 
@@ -54,7 +54,7 @@ codes without confirming that an unrelated private resource exists.
 | `users.role=admin` | Platform operator flag; no implicit Space access |
 | Classroom | Private Space with `class` preset and legacy-ID mapping |
 | Classroom owner/member | Owner/learner membership preserving timestamps |
-| Classroom code | Legacy join credential, rotated to expiring invitation |
+| Classroom code | Retained only on a `class` preset with explicit `join_code_enabled`; all other Spaces use invitations |
 | Owned course | Owned by creator's personal Space |
 | Classroom assignment | Versioned assignment referencing course/share grant |
 | Enrollment | Space-aware enrollment preserving progress and time |
@@ -83,11 +83,23 @@ mismatch; remove legacy authority only after rollback and backup proof.
 | Role changes during long job | reauthorize before committed effect |
 | Evidence payload forges Space/assignment | ignore and derive from session |
 
-`tests/space-authorization.test.ts` proves the pure contract now. Database and
-route variants ship with the migration, before endpoints are enabled.
+`tests/space-authorization.test.ts` proves the pure contract.
+`tests/spaces-tenancy.test.ts` proves the migration-backed private-Space journey,
+cross-tenant denial, invitation replay/revocation, immediate role enforcement,
+late assignment membership, server-derived answer/completion context and audit
+immutability. The `/api/spaces` route family uses these services; `/spaces` is
+the first member-facing management experience.
 
 ## First vertical slice
 
 Create private Space -> invite member -> accept -> share existing course -> create
 assignment -> authorize learning -> record Space/assignment in evidence -> revoke
 member -> prove cached URLs, sessions and queued jobs stop.
+
+This slice is implemented. Migration 3 creates and backfills the Space domain,
+new accounts receive personal Spaces transactionally, and cached/queued answer
+delivery is rejected after live membership removal. The remaining closure work is
+operational: push the local commit, pass CI, apply the migration in deployment,
+and smoke-test personal Space, private invite, assignment, revocation and legacy
+Class compatibility in production. Custom role bundles are explicitly deferred
+to the Phase 3 institutional pilot.

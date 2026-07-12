@@ -45,7 +45,7 @@ export const AnswerSubmission = z.discriminatedUnion("source", [
 export type AnswerSubmission = z.infer<typeof AnswerSubmission>;
 
 export const MASTERY_ALGORITHM_VERSION = "ewma-v1";
-export const EVIDENCE_SCHEMA_VERSION = 1;
+export const EVIDENCE_SCHEMA_VERSION = 2;
 
 /** Neutral mastery before any evidence exists. */
 export const INITIAL_MASTERY = 0.5;

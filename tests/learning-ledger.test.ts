@@ -88,7 +88,7 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
       is_correct: 1,
       session_kind: "lesson",
       mastery_algorithm_version: "ewma-v1",
-      schema_version: 1,
+      schema_version: 2,
     });
     expect(String(row.learner_key)).toMatch(/^learner_/);
   });
@@ -223,7 +223,8 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
     expect((await data.getStats(userId)).total_xp).toBe(15);
   });
 
-  it("preserves historical evidence when source content is deleted", async () => {
+  it("preserves historical evidence and rejects new cached evidence after source deletion", async () => {
+    const delayedSession = (await data.getPracticeSession(userId, practiceSessionId))!;
     await expect(data.deleteCourse(courseId)).resolves.not.toThrow();
     const event = (await pg.one(
       "SELECT course_id, lesson_id FROM learning_events WHERE event_id = $1",
@@ -237,22 +238,27 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
     expect(question.course_id).toBeNull();
     expect(question.content_json).toContain("earned interest");
 
-    const delayedSession = (await data.getPracticeSession(userId, practiceSessionId))!;
     const delayedItem = delayedSession.items[0];
-    const recorded = await data.recordAnswerEvidence({
-      eventId: "event_after_course_deletion",
-      userId,
-      courseId,
-      questionId: delayedItem.questionId,
-      concept: delayedItem.concept,
-      card: delayedItem.card,
-      answer: 0,
-      responseTimeMs: 4000,
-      occurredAt: new Date().toISOString(),
-      sessionKind: "practice",
-      sessionId: delayedSession.id,
-    });
-    expect(recorded.inserted).toBe(true);
+    await expect(
+      data.recordAnswerEvidence({
+        eventId: "event_after_course_deletion",
+        userId,
+        courseId,
+        questionId: delayedItem.questionId,
+        concept: delayedItem.concept,
+        card: delayedItem.card,
+        answer: 0,
+        responseTimeMs: 4000,
+        occurredAt: new Date().toISOString(),
+        sessionKind: "practice",
+        sessionId: delayedSession.id,
+      })
+    ).rejects.toMatchObject({ name: "CourseParticipationRevokedError" });
+    const rejected = (await pg.one(
+      "SELECT COUNT(*)::int AS count FROM learning_events WHERE event_id = $1",
+      ["event_after_course_deletion"]
+    )) as { count: number };
+    expect(rejected.count).toBe(0);
   });
 
   it("consumes account tokens once and invalidates sessions after reset", async () => {

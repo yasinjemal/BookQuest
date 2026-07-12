@@ -496,6 +496,314 @@ CREATE TRIGGER privacy_actions_no_delete
   FOR EACH ROW EXECUTE FUNCTION privacy_history_block_write();
 `;
 
+const SPACES_TENANCY_SQL = `
+CREATE TABLE spaces (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  type TEXT NOT NULL CHECK (type IN (
+    'personal', 'private', 'unlisted', 'organization', 'public'
+  )),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN (
+    'active', 'suspended', 'archived', 'deletion_scheduled'
+  )),
+  preset TEXT CHECK (preset IS NULL OR preset IN ('class')),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  personal_owner_user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
+  parent_space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT,
+  discovery_policy TEXT NOT NULL DEFAULT 'hidden' CHECK (discovery_policy IN (
+    'owner_only', 'hidden', 'unlisted', 'organization', 'public'
+  )),
+  entry_policy TEXT NOT NULL DEFAULT 'invitation' CHECK (entry_policy IN (
+    'owner_only', 'invitation', 'approval', 'managed', 'open', 'moderated'
+  )),
+  member_directory_policy TEXT NOT NULL DEFAULT 'members' CHECK (
+    member_directory_policy IN ('owner_only', 'managers', 'members', 'public')
+  ),
+  content_sharing_policy TEXT NOT NULL DEFAULT 'members' CHECK (
+    content_sharing_policy IN ('owner_only', 'members', 'organization', 'public')
+  ),
+  join_code_enabled SMALLINT NOT NULL DEFAULT 0 CHECK (join_code_enabled IN (0, 1)),
+  language TEXT NOT NULL DEFAULT 'en',
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  profile_json TEXT NOT NULL DEFAULT '{}',
+  branding_json TEXT NOT NULL DEFAULT '{}',
+  policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version > 0),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  deletion_scheduled_at TEXT
+);
+CREATE INDEX idx_spaces_parent ON spaces(parent_space_id);
+CREATE INDEX idx_spaces_type_status ON spaces(type, status);
+
+CREATE TABLE space_memberships (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN (
+    'invited', 'active', 'suspended', 'removed', 'expired'
+  )),
+  role TEXT NOT NULL CHECK (role IN (
+    'owner', 'administrator', 'creator', 'reviewer', 'manager', 'learner', 'auditor'
+  )),
+  invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  invitation_id TEXT,
+  policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version > 0),
+  expires_at TEXT,
+  joined_at TEXT,
+  suspended_at TEXT,
+  removed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (space_id, user_id)
+);
+CREATE INDEX idx_space_memberships_user_status
+  ON space_memberships(user_id, status, space_id);
+CREATE INDEX idx_space_memberships_space_status
+  ON space_memberships(space_id, status, role);
+
+CREATE TABLE space_teams (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (space_id, name)
+);
+CREATE INDEX idx_space_teams_space_status ON space_teams(space_id, status);
+
+CREATE TABLE space_team_members (
+  team_id TEXT NOT NULL REFERENCES space_teams(id) ON DELETE CASCADE,
+  membership_id TEXT NOT NULL REFERENCES space_memberships(id) ON DELETE CASCADE,
+  added_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (team_id, membership_id)
+);
+CREATE INDEX idx_space_team_members_membership ON space_team_members(membership_id, team_id);
+
+CREATE TABLE space_invitations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  invitee_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL CHECK (role IN (
+    'administrator', 'creator', 'reviewer', 'manager', 'learner', 'auditor'
+  )),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+    'pending', 'accepted', 'revoked', 'expired'
+  )),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version > 0),
+  expires_at TEXT NOT NULL,
+  accepted_at TEXT,
+  revoked_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_space_invitations_space_status
+  ON space_invitations(space_id, status, expires_at);
+CREATE INDEX idx_space_invitations_user_status
+  ON space_invitations(invitee_user_id, status, expires_at);
+CREATE UNIQUE INDEX idx_space_invitations_one_pending_user
+  ON space_invitations(space_id, invitee_user_id)
+  WHERE status = 'pending' AND invitee_user_id IS NOT NULL;
+ALTER TABLE space_memberships
+  ADD CONSTRAINT space_memberships_invitation_fk
+  FOREIGN KEY (invitation_id) REFERENCES space_invitations(id) ON DELETE SET NULL;
+
+CREATE TABLE space_courses (
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  attached_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  attached_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (space_id, course_id)
+);
+CREATE INDEX idx_space_courses_course ON space_courses(course_id, space_id);
+
+CREATE TABLE space_assignments (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  course_version INTEGER NOT NULL CHECK (course_version > 0),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN (
+    'draft', 'active', 'closed', 'archived'
+  )),
+  assigned_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version > 0),
+  due_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_space_assignments_space_status
+  ON space_assignments(space_id, status, created_at);
+CREATE INDEX idx_space_assignments_course ON space_assignments(course_id, space_id);
+
+CREATE TABLE space_assignment_members (
+  assignment_id TEXT NOT NULL REFERENCES space_assignments(id) ON DELETE CASCADE,
+  membership_id TEXT NOT NULL REFERENCES space_memberships(id) ON DELETE CASCADE,
+  assigned_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (assignment_id, membership_id)
+);
+
+CREATE TABLE space_audit_events (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  subject_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  membership_id TEXT REFERENCES space_memberships(id) ON DELETE SET NULL,
+  invitation_id TEXT REFERENCES space_invitations(id) ON DELETE SET NULL,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  assignment_id TEXT REFERENCES space_assignments(id) ON DELETE SET NULL,
+  policy_version INTEGER NOT NULL CHECK (policy_version > 0),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_space_audit_space_time
+  ON space_audit_events(space_id, occurred_at DESC, id DESC);
+
+CREATE OR REPLACE FUNCTION space_audit_block_write() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'space audit history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER space_audit_no_update
+  BEFORE UPDATE ON space_audit_events
+  FOR EACH ROW EXECUTE FUNCTION space_audit_block_write();
+CREATE TRIGGER space_audit_no_delete
+  BEFORE DELETE ON space_audit_events
+  FOR EACH ROW EXECUTE FUNCTION space_audit_block_write();
+
+CREATE TABLE legacy_classroom_spaces (
+  classroom_id INTEGER PRIMARY KEY REFERENCES classrooms(id) ON DELETE RESTRICT,
+  space_id TEXT NOT NULL UNIQUE REFERENCES spaces(id) ON DELETE RESTRICT,
+  migrated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+-- Every existing account receives exactly one personal tenancy boundary.
+INSERT INTO spaces (
+  type, name, personal_owner_user_id, discovery_policy, entry_policy,
+  member_directory_policy, content_sharing_policy, created_at, updated_at
+)
+SELECT 'personal', u.name || '''s Space', u.id, 'owner_only', 'owner_only',
+       'owner_only', 'owner_only', u.created_at, u.created_at
+FROM users u;
+
+INSERT INTO space_memberships (
+  space_id, user_id, status, role, policy_version, joined_at, created_at, updated_at
+)
+SELECT s.id, s.personal_owner_user_id, 'active', 'owner', s.policy_version,
+       s.created_at, s.created_at, s.created_at
+FROM spaces s
+WHERE s.type = 'personal';
+
+-- Legacy classes use deterministic opaque UUIDs so duplicate names/timestamps
+-- cannot cross-wire the mapping during backfill.
+INSERT INTO spaces (
+  id, type, preset, name, discovery_policy, entry_policy,
+  member_directory_policy, content_sharing_policy, join_code_enabled,
+  created_at, updated_at
+)
+SELECT
+  substr(md5('bookquest:classroom:' || c.id::text), 1, 8) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 9, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 13, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 17, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 21, 12),
+  'private', 'class', c.name, 'hidden', 'invitation',
+  'members', 'members', 1, c.created_at, c.created_at
+FROM classrooms c;
+
+INSERT INTO legacy_classroom_spaces (classroom_id, space_id, migrated_at)
+SELECT c.id,
+  substr(md5('bookquest:classroom:' || c.id::text), 1, 8) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 9, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 13, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 17, 4) || '-' ||
+  substr(md5('bookquest:classroom:' || c.id::text), 21, 12),
+  ${ISO_NOW}
+FROM classrooms c;
+
+INSERT INTO space_memberships (
+  space_id, user_id, status, role, policy_version, joined_at, created_at, updated_at
+)
+SELECT l.space_id, c.owner_id, 'active', 'owner', s.policy_version,
+       c.created_at, c.created_at, c.created_at
+FROM legacy_classroom_spaces l
+JOIN classrooms c ON c.id = l.classroom_id
+JOIN spaces s ON s.id = l.space_id
+ON CONFLICT (space_id, user_id) DO NOTHING;
+
+INSERT INTO space_memberships (
+  space_id, user_id, status, role, policy_version, joined_at, created_at, updated_at
+)
+SELECT l.space_id, m.user_id, 'active', 'learner', s.policy_version,
+       m.joined_at, m.joined_at, m.joined_at
+FROM legacy_classroom_spaces l
+JOIN classroom_members m ON m.classroom_id = l.classroom_id
+JOIN spaces s ON s.id = l.space_id
+ON CONFLICT (space_id, user_id) DO NOTHING;
+
+ALTER TABLE courses ADD COLUMN owning_space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT;
+UPDATE courses c
+SET owning_space_id = s.id
+FROM spaces s
+WHERE s.type = 'personal' AND s.personal_owner_user_id = c.owner_id;
+CREATE INDEX idx_courses_owning_space ON courses(owning_space_id, created_at);
+
+INSERT INTO space_courses (space_id, course_id, attached_by_user_id, attached_at)
+SELECT l.space_id, a.course_id, c.owner_id, a.assigned_at
+FROM legacy_classroom_spaces l
+JOIN classroom_assignments a ON a.classroom_id = l.classroom_id
+JOIN classrooms c ON c.id = l.classroom_id
+ON CONFLICT DO NOTHING;
+
+INSERT INTO space_assignments (
+  space_id, course_id, course_version, status, assigned_by_user_id,
+  policy_version, created_at, updated_at
+)
+SELECT l.space_id, a.course_id, course.content_version, 'active', classroom.owner_id,
+       space.policy_version, a.assigned_at, a.assigned_at
+FROM legacy_classroom_spaces l
+JOIN classroom_assignments a ON a.classroom_id = l.classroom_id
+JOIN classrooms classroom ON classroom.id = l.classroom_id
+JOIN courses course ON course.id = a.course_id
+JOIN spaces space ON space.id = l.space_id;
+
+INSERT INTO space_assignment_members (assignment_id, membership_id, assigned_at)
+SELECT assignment.id, membership.id, assignment.created_at
+FROM space_assignments assignment
+JOIN space_memberships membership
+  ON membership.space_id = assignment.space_id
+ AND membership.status = 'active'
+ AND membership.role <> 'owner';
+
+ALTER TABLE answer_sessions
+  ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT,
+  ADD COLUMN membership_id TEXT REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  ADD COLUMN assignment_id TEXT REFERENCES space_assignments(id) ON DELETE RESTRICT,
+  ADD COLUMN space_policy_version INTEGER;
+ALTER TABLE practice_sessions
+  ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT,
+  ADD COLUMN membership_id TEXT REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  ADD COLUMN assignment_id TEXT REFERENCES space_assignments(id) ON DELETE RESTRICT,
+  ADD COLUMN space_policy_version INTEGER;
+ALTER TABLE learning_events
+  ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT,
+  ADD COLUMN membership_id TEXT REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  ADD COLUMN space_policy_version INTEGER;
+ALTER TABLE learning_events
+  ADD CONSTRAINT learning_events_assignment_fk
+  FOREIGN KEY (assignment_id) REFERENCES space_assignments(id) ON DELETE RESTRICT;
+ALTER TABLE lesson_completion_events
+  ADD COLUMN space_id TEXT REFERENCES spaces(id) ON DELETE RESTRICT,
+  ADD COLUMN membership_id TEXT REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  ADD COLUMN assignment_id TEXT REFERENCES space_assignments(id) ON DELETE RESTRICT,
+  ADD COLUMN space_policy_version INTEGER;
+CREATE INDEX idx_learning_events_space_time ON learning_events(space_id, recorded_at);
+CREATE INDEX idx_learning_events_assignment_time ON learning_events(assignment_id, recorded_at);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -503,6 +811,7 @@ CREATE TRIGGER privacy_actions_no_delete
 export const MIGRATIONS: readonly Migration[] = [
   { id: 1, name: "baseline_schema", sql: BASELINE_SQL },
   { id: 2, name: "privacy_lifecycle", sql: PRIVACY_LIFECYCLE_SQL },
+  { id: 3, name: "spaces_tenancy", sql: SPACES_TENANCY_SQL },
 ];
 
 /**

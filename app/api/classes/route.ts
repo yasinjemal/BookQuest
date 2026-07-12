@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createClassroom,
   getClassroomByCode,
-  joinClassroom,
   listMyClassrooms,
 } from "@/lib/db";
+import { joinLegacyClassroomSpaceByCode } from "@/lib/spaces";
 import { requireUser } from "@/lib/auth";
 import {
   consumeRateLimit,
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    await joinClassroom(classroom.id, user.id);
+    await joinLegacyClassroomSpaceByCode(user.id, classroom.id);
     return NextResponse.json({ classroom });
   }
   return NextResponse.json(

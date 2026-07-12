@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCourse, setCoursePublished } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { CATEGORIES } from "@/lib/categories";
+import { authorizeCourseAction } from "@/lib/spaces";
+import { spaceApiError } from "@/lib/space-api";
 
 export const runtime = "nodejs";
 
@@ -14,8 +16,12 @@ export async function POST(
   const { id } = await params;
   const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (course.owner_id !== user.id) {
-    return NextResponse.json({ error: "Only the owner can publish" }, { status: 403 });
+  try {
+    await authorizeCourseAction(user.id, course.id, "content.publish");
+  } catch (error) {
+    const response = spaceApiError(error);
+    if (response) return response;
+    throw error;
   }
   if (course.status !== "ready") {
     return NextResponse.json(

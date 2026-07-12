@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createReviewAnswerSession,
+  canAccessCourse,
   getDueReviewItems,
   getLesson,
   type AnswerSessionItem,
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
     due.map(async (item) => {
       const lesson = await getLesson(item.lesson_id);
       if (!lesson) return null;
+      if (!(await canAccessCourse(user.id, lesson.course_id))) return null;
       const cards = JSON.parse(lesson.cards) as Card[];
       const card = cards[item.card_index];
       if (!card || !card.type.startsWith("quiz_")) return null;

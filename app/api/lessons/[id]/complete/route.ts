@@ -15,6 +15,7 @@ import {
   listLessons,
   listModules,
   recordLessonCompletion,
+  CourseParticipationRevokedError,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { withLessonCompletionLock } from "@/lib/pg";
@@ -93,6 +94,7 @@ export async function POST(
       const learnerKey = await getLearnerKey(user.id);
       const inserted = await recordLessonCompletion({
         answerSessionId,
+        userId: user.id,
         learnerKey,
         courseId: lesson.course_id,
         lessonId,
@@ -111,5 +113,10 @@ export async function POST(
       certificate: completion.certificate,
       duplicate: completion.duplicate,
     });
+  }).catch((error) => {
+    if (error instanceof CourseParticipationRevokedError) {
+      return NextResponse.json({ error: "Course access was revoked" }, { status: 403 });
+    }
+    throw error;
   });
 }

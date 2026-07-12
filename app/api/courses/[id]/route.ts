@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   deleteCourse,
+  canAccessCourse,
   getCompletedLessonIds,
   getCourse,
-  isEnrolled,
   listLessons,
   listModules,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { authorizeCourseAction } from "@/lib/spaces";
+import { spaceApiError } from "@/lib/space-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +25,7 @@ export async function GET(
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const isOwner = course.owner_id === user.id;
-  if (!isOwner && !course.published && !(await isEnrolled(user.id, course.id))) {
+  if (!(await canAccessCourse(user.id, course.id))) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -56,8 +58,12 @@ export async function DELETE(
   const { id } = await params;
   const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (course.owner_id !== user.id && user.role !== "admin") {
-    return NextResponse.json({ error: "Only the owner can delete a course" }, { status: 403 });
+  try {
+    await authorizeCourseAction(user.id, course.id, "content.update");
+  } catch (error) {
+    const response = spaceApiError(error);
+    if (response) return response;
+    throw error;
   }
   await deleteCourse(course.id);
   return NextResponse.json({ ok: true });
