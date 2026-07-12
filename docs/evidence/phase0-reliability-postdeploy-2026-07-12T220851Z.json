@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-12T22:08:51.875Z",
+  "deployedCommit": "a4f0ba9",
+  "deploymentStartedAt": "2026-07-12T22:07:00Z",
+  "ciRun": "https://github.com/yasinjemal/BookQuest/actions/runs/29210905776",
+  "ledger": {
+    "events": 55,
+    "events24h": 55,
+    "learners": 1,
+    "questionVersions": 44,
+    "malformed": 0
+  },
+  "reconciliation": {
+    "ok": true,
+    "scanned": 30,
+    "missing": 0,
+    "mismatched": 0,
+    "orphaned": 0
+  },
+  "delivery": {
+    "delayedEvents24h": 0,
+    "maxDelaySeconds": 2,
+    "answerFailures24h": 0
+  },
+  "generation": {
+    "courses": 2,
+    "ready": 1,
+    "failed": 0,
+    "active": 1,
+    "stalled": 1,
+    "stalledCourse": {
+      "id": 3,
+      "status": "generating",
+      "generationAttempts": 0,
+      "generationHeartbeat": "2026-07-12T13:52:55.483Z",
+      "hasSource": true,
+      "modules": 11,
+      "readyModules": 8,
+      "unfinishedModules": 3
+    }
+  },
+  "operations": {
+    "errors24h": 6153,
+    "errorsSinceDeployment": 0,
+    "lastRecordedTriggerFailure": "2026-07-12T21:31:56.681Z"
+  },
+  "healthy": false,
+  "closingDecision": "pending_stalled_generation_recovery"
+}

@@ -713,8 +713,12 @@ passed on 12 July 2026.
    `docs/evidence/phase0-reliability-baseline-2026-07-12T214646Z.json`; it is
    intentionally not accepted as the closing baseline because it exposed one
    stalled generation and 6,153 error events, including a 6,151-event recovery
-   retry storm. The atomic recovery-lease remediation must deploy and a healthy
-   post-deploy baseline must replace it before this item is checked.)
+   retry storm. The atomic recovery-lease remediation deployed successfully in
+   commit `a4f0ba9`; CI #6 passed and the first post-deploy observation recorded
+   zero new errors, but the existing course has not yet exercised recovery and
+   remains stalled. Evidence is in
+   `docs/evidence/phase0-reliability-postdeploy-2026-07-12T220851Z.json`. A
+   healthy post-recovery baseline must replace it before this item is checked.)
 
 The first Phase 1 vertical slice should be:
 
