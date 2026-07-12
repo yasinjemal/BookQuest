@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { adjustCredits, createCourse, setCourseSource, setCourseStatus } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { extractDocument } from "@/lib/extract";
-import { generateCourse } from "@/lib/generator";
+import { resolveBaseUrl, runAndChain } from "@/lib/generation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -53,9 +53,10 @@ export async function POST(req: NextRequest) {
     // Charge only after extraction succeeds; a failed generation can be
     // retried free of charge from the course card.
     if (!isAdmin) await adjustCredits(user.id, -1);
-    // `after` runs post-response within the function's budget — unlike a bare
-    // fire-and-forget promise, which a serverless worker freezes immediately.
-    after(() => generateCourse(courseId, chapters));
+    // Durable, resumable generation that survives the serverless time limit by
+    // chaining fresh invocations. `after` triggers the first one post-response.
+    const baseUrl = resolveBaseUrl(req);
+    after(() => runAndChain(courseId, baseUrl));
     return NextResponse.json({ courseId, chapters: chapters.length });
   } catch (err) {
     await setCourseStatus(

@@ -177,7 +177,7 @@ export default function CoursePathPage() {
                 Unit {mi + 1}: {m.title}
               </h2>
               <p className="text-xs text-ink-soft">{m.summary}</p>
-              {m.status === "pending" && (
+              {(m.status === "pending" || m.status === "generating") && (
                 <p className="text-xs font-semibold text-primary-deep mt-1">
                   ✍️ Writing…
                 </p>

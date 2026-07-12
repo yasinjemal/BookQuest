@@ -11,8 +11,9 @@ Genome, compliance evidence, and Skill Passport.
 - Keep personal identity outside analytics events.
 - Preserve the exact content and algorithm versions used at answer time.
 - Update the current mastery projection in the same database transaction.
-- Support the current single-node SQLite product without blocking a later
-  PostgreSQL migration.
+- Run on managed PostgreSQL (Neon) so it deploys on serverless platforms.
+  (Originally built on SQLite; migrated in July 2026 — see
+  [`DEPLOYMENT_AND_MIGRATION.md`](DEPLOYMENT_AND_MIGRATION.md).)
 
 ## Answer flow
 

@@ -265,7 +265,8 @@ export async function prepareCourseRetry(id: number): Promise<boolean> {
     const claimed = await c.query(
       `UPDATE courses
        SET content_version = content_version + 1,
-           status = 'extracting', error = NULL
+           status = 'outlining', error = NULL,
+           generation_attempts = 0, generation_heartbeat = NULL
        WHERE id = $1 AND status = 'error'`,
       [id]
     );
@@ -315,17 +316,148 @@ export async function createModule(
   courseId: number,
   title: string,
   summary: string,
-  position: number
+  position: number,
+  chapterIndexes?: number[]
 ): Promise<number> {
   const row = (await one(
-    "INSERT INTO modules (course_id, title, summary, position) VALUES ($1, $2, $3, $4) RETURNING id",
-    [courseId, title, summary, position]
+    "INSERT INTO modules (course_id, title, summary, position, chapter_indexes) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    [
+      courseId,
+      title,
+      summary,
+      position,
+      chapterIndexes ? JSON.stringify(chapterIndexes) : null,
+    ]
   )) as { id: number };
   return Number(row.id);
 }
 
 export async function setModuleStatus(id: number, status: ModuleRow["status"]) {
   await q("UPDATE modules SET status = $1 WHERE id = $2", [status, id]);
+}
+
+// ---------- Durable generation ----------
+
+export interface GenerationCourse {
+  id: number;
+  status: CourseStatus;
+  source_json: string | null;
+  content_version: number;
+  published: number;
+}
+
+/** The fields the generation pipeline needs to resume a course from DB state. */
+export async function getGenerationCourse(
+  courseId: number
+): Promise<GenerationCourse | undefined> {
+  return (await one(
+    "SELECT id, status, source_json, content_version, published FROM courses WHERE id = $1",
+    [courseId]
+  )) as GenerationCourse | undefined;
+}
+
+/** Mark that a generation chain is actively working on this course, now. */
+export async function touchGenerationHeartbeat(courseId: number) {
+  await q("UPDATE courses SET generation_heartbeat = $1 WHERE id = $2", [
+    nowIso(),
+    courseId,
+  ]);
+}
+
+export async function bumpCourseGenerationAttempts(courseId: number): Promise<number> {
+  const row = (await one(
+    "UPDATE courses SET generation_attempts = generation_attempts + 1 WHERE id = $1 RETURNING generation_attempts",
+    [courseId]
+  )) as { generation_attempts: number };
+  return row.generation_attempts;
+}
+
+export async function countModules(courseId: number): Promise<number> {
+  const r = (await one("SELECT COUNT(*)::int AS n FROM modules WHERE course_id = $1", [
+    courseId,
+  ])) as { n: number };
+  return r.n;
+}
+
+/** Modules that are not yet finished (still to generate or in flight). */
+export async function countUnfinishedModules(courseId: number): Promise<number> {
+  const r = (await one(
+    "SELECT COUNT(*)::int AS n FROM modules WHERE course_id = $1 AND status IN ('pending', 'generating')",
+    [courseId]
+  )) as { n: number };
+  return r.n;
+}
+
+export interface ClaimedModule {
+  id: number;
+  title: string;
+  chapter_indexes: number[];
+  attempts: number;
+}
+
+/**
+ * Atomically claim the next pending module for generation: mark it 'generating',
+ * bump its attempt count, and return it. `SKIP LOCKED` keeps concurrent claims
+ * from colliding. Returns undefined when nothing is left to claim.
+ */
+export async function claimNextModule(
+  courseId: number,
+  maxAttempts: number
+): Promise<ClaimedModule | undefined> {
+  const row = (await one(
+    `WITH next AS (
+       SELECT id FROM modules
+       WHERE course_id = $1 AND status = 'pending' AND attempts < $2
+       ORDER BY position
+       FOR UPDATE SKIP LOCKED
+       LIMIT 1
+     )
+     UPDATE modules m SET status = 'generating', attempts = m.attempts + 1
+     FROM next WHERE m.id = next.id
+     RETURNING m.id, m.title, m.chapter_indexes, m.attempts`,
+    [courseId, maxAttempts]
+  )) as
+    | { id: number; title: string; chapter_indexes: string | null; attempts: number }
+    | undefined;
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    title: row.title,
+    chapter_indexes: row.chapter_indexes
+      ? (JSON.parse(row.chapter_indexes) as number[])
+      : [],
+    attempts: row.attempts,
+  };
+}
+
+/**
+ * Recover modules left 'generating' by a chain that died. Safe because the
+ * caller holds the per-course generation lock, so no other chain is mid-module:
+ * ones with attempts left return to 'pending'; exhausted ones become 'error'.
+ */
+export async function recoverStuckModules(courseId: number, maxAttempts: number) {
+  await q(
+    "UPDATE modules SET status = 'error' WHERE course_id = $1 AND status = 'generating' AND attempts >= $2",
+    [courseId, maxAttempts]
+  );
+  await q(
+    "UPDATE modules SET status = 'pending' WHERE course_id = $1 AND status = 'generating' AND attempts < $2",
+    [courseId, maxAttempts]
+  );
+}
+
+/** Owned courses whose generation appears stalled (heartbeat gone stale). */
+export async function listStalledCourses(
+  ownerId: number,
+  staleBeforeIso: string
+): Promise<{ id: number }[]> {
+  return (await many(
+    `SELECT id FROM courses
+     WHERE owner_id = $1
+       AND status IN ('outlining', 'generating')
+       AND (generation_heartbeat IS NULL OR generation_heartbeat < $2)`,
+    [ownerId, staleBeforeIso]
+  )) as { id: number }[];
 }
 
 export async function listModules(courseId: number): Promise<ModuleRow[]> {

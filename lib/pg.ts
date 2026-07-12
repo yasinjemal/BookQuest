@@ -95,6 +95,41 @@ export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> 
   }
 }
 
+// Namespace for per-course generation locks (keeps them distinct from any other
+// advisory lock the app might take). Paired with the course id as the lock key.
+const GENERATION_LOCK_NAMESPACE = 828170;
+
+/**
+ * Run `fn` while holding an exclusive advisory lock for one course, so only one
+ * generation chain works on a course at a time. Returns `fn`'s result, or
+ * `undefined` if another worker already holds the lock (nothing was run). The
+ * lock is session-scoped and auto-released if the worker dies mid-generation.
+ */
+export async function withCourseGenerationLock<T>(
+  courseId: number,
+  fn: () => Promise<T>
+): Promise<T | undefined> {
+  await ready();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      "SELECT pg_try_advisory_lock($1, $2) AS ok",
+      [GENERATION_LOCK_NAMESPACE, courseId]
+    );
+    if (!rows[0].ok) return undefined;
+    try {
+      return await fn();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1, $2)", [
+        GENERATION_LOCK_NAMESPACE,
+        courseId,
+      ]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
 // A stable 64-bit key so every worker takes the same advisory lock during init.
 const SCHEMA_LOCK_KEY = 4927310572841100n;
 
@@ -145,6 +180,8 @@ CREATE TABLE IF NOT EXISTS courses (
   category TEXT NOT NULL DEFAULT 'General',
   price_cents INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 1,
+  generation_heartbeat TEXT,
+  generation_attempts INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
 );
 
@@ -154,8 +191,16 @@ CREATE TABLE IF NOT EXISTS modules (
   title TEXT NOT NULL,
   summary TEXT NOT NULL DEFAULT '',
   position INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending'
+  status TEXT NOT NULL DEFAULT 'pending',
+  chapter_indexes TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0
 );
+
+-- Columns added after the initial deploy (idempotent for already-created tables).
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS generation_heartbeat TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS generation_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS chapter_indexes TEXT;
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS lessons (
   id SERIAL PRIMARY KEY,

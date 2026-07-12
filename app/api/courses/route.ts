@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import {
   getCompletedLessonIds,
   listEnrolledCourses,
   listLessons,
   listModules,
   listOwnedCourses,
+  listStalledCourses,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import type { PlatformCourseCols } from "@/lib/db";
 import type { CourseRow } from "@/lib/schemas";
+import {
+  GENERATION_STALE_MS,
+  kickGeneration,
+  resolveBaseUrl,
+} from "@/lib/generation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,5 +51,17 @@ export async function GET(req: NextRequest) {
     withProgress(ownedCourses, completed),
     withProgress(enrolledCourses, completed),
   ]);
+
+  // Self-heal: if a course's generation chain died (heartbeat gone stale),
+  // resume it in the background whenever the owner views their courses.
+  const staleBefore = new Date(Date.now() - GENERATION_STALE_MS).toISOString();
+  const stalled = await listStalledCourses(user.id, staleBefore);
+  if (stalled.length > 0) {
+    const baseUrl = resolveBaseUrl(req);
+    after(() =>
+      Promise.all(stalled.map((c) => kickGeneration(c.id, baseUrl)))
+    );
+  }
+
   return NextResponse.json({ owned, enrolled });
 }

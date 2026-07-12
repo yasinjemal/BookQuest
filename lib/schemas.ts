@@ -157,7 +157,7 @@ export interface ModuleRow {
   title: string;
   summary: string;
   position: number;
-  status: "pending" | "ready" | "error";
+  status: "pending" | "generating" | "ready" | "error";
 }
 
 export interface LessonRow {

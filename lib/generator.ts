@@ -1,11 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import {
+  claimNextModule,
+  countModules,
+  countUnfinishedModules,
   createLesson,
   createModule,
+  bumpCourseGenerationAttempts,
+  getGenerationCourse,
+  recoverStuckModules,
   setCourseMeta,
   setCourseStatus,
   setModuleStatus,
+  touchGenerationHeartbeat,
 } from "./db";
 import type { Chapter } from "./extract";
 import { Card, CourseOutline, ModuleLessons, PracticeQuiz } from "./schemas";
@@ -14,7 +21,26 @@ export const GENERATOR_MODEL = "claude-opus-4-8";
 export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v1";
 export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v1";
 
+/** A module gets this many attempts across the whole durable run before it is
+ *  marked failed; the outline gets this many too before the course fails. */
+export const MAX_MODULE_ATTEMPTS = 3;
+export const MAX_OUTLINE_ATTEMPTS = 3;
+
 const client = new Anthropic();
+
+function apiKeyMessage(raw: string): string {
+  return /authentication|api.?key|x-api-key/i.test(raw)
+    ? "No API key found. Add your Anthropic API key (ANTHROPIC_API_KEY), then tap Retry."
+    : raw;
+}
+
+function moduleSourceText(chapters: Chapter[], indexes: number[]): string {
+  return indexes
+    .filter((idx) => idx >= 0 && idx < chapters.length)
+    .map((idx) => `## ${chapters[idx].title}\n\n${chapters[idx].text}`)
+    .join("\n\n")
+    .slice(0, 60000);
+}
 
 const SYSTEM = `You turn books and documents into bite-size, gamified micro-learning courses in the style of Duolingo and Sololearn. Your learners are often on mobile phones with limited data, and English may be their second language.
 
@@ -25,79 +51,119 @@ Rules for all content you write:
 - Stay faithful to the source document. Do not invent facts that are not in it.
 - Be warm and encouraging, never condescending.`;
 
+/** Outline the whole document into modules (one Claude call). */
+async function generateOutline(chapters: Chapter[]) {
+  const chapterList = chapters
+    .map((c, i) => `[${i}] ${c.title} — ${c.text.slice(0, 300).replace(/\n+/g, " ")}...`)
+    .join("\n");
+
+  const outlineResp = await client.messages.parse({
+    model: GENERATOR_MODEL,
+    max_tokens: 8000,
+    thinking: { type: "adaptive" },
+    system: SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: `Here are the chapters of a document (index, title, and opening excerpt):\n\n${chapterList}\n\nDesign a course outline that covers this document. Group related chapters into 4-12 modules in reading order. Every chapter index must be assigned to exactly one module.`,
+      },
+    ],
+    output_config: { format: zodOutputFormat(CourseOutline) },
+  });
+
+  const outline = outlineResp.parsed_output;
+  if (!outline) throw new Error("Outline generation returned no parsable output.");
+  return outline;
+}
+
+export type GenerationStep = "continue" | "done";
+
 /**
- * Full pipeline: outline the course, then generate lessons module by module.
- * Persists incrementally so a partially generated course is already usable.
+ * Advance a course's generation by exactly one unit of work, driven entirely by
+ * database state so any worker can resume it. One step is either: the outline
+ * (create the modules), one module's lessons, or finalizing the course. Callers
+ * must hold the course's generation lock so only one chain runs at a time.
  */
-export async function generateCourse(courseId: number, chapters: Chapter[]) {
-  try {
-    await setCourseStatus(courseId, "outlining");
+export async function runGenerationStep(courseId: number): Promise<GenerationStep> {
+  const course = await getGenerationCourse(courseId);
+  if (!course || course.status === "ready" || course.status === "error") return "done";
+  // Still extracting (or no stored source yet) — not ready to generate.
+  if (!course.source_json) return "done";
 
-    const chapterList = chapters
-      .map((c, i) => `[${i}] ${c.title} — ${c.text.slice(0, 300).replace(/\n+/g, " ")}...`)
-      .join("\n");
+  await touchGenerationHeartbeat(courseId);
+  const chapters = JSON.parse(course.source_json) as Chapter[];
 
-    const outlineResp = await client.messages.parse({
-      model: GENERATOR_MODEL,
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
-      system: SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: `Here are the chapters of a document (index, title, and opening excerpt):\n\n${chapterList}\n\nDesign a course outline that covers this document. Group related chapters into 4-12 modules in reading order. Every chapter index must be assigned to exactly one module.`,
-        },
-      ],
-      output_config: { format: zodOutputFormat(CourseOutline) },
-    });
-
-    const outline = outlineResp.parsed_output;
-    if (!outline) throw new Error("Outline generation returned no parsable output.");
-
-    await setCourseMeta(courseId, outline.title, outline.description);
-    await setCourseStatus(courseId, "generating");
-
-    const moduleIds: number[] = [];
-    for (let i = 0; i < outline.modules.length; i++) {
-      const m = outline.modules[i];
-      moduleIds.push(await createModule(courseId, m.title, m.summary, i));
-    }
-
-    // Generate lessons module by module, persisting as each completes
-    for (let i = 0; i < outline.modules.length; i++) {
-      const m = outline.modules[i];
-      const moduleId = moduleIds[i];
-      const sourceText = m.chapter_indexes
-        .filter((idx) => idx >= 0 && idx < chapters.length)
-        .map((idx) => `## ${chapters[idx].title}\n\n${chapters[idx].text}`)
-        .join("\n\n")
-        .slice(0, 60000);
-
-      try {
-        await generateModuleLessons(moduleId, m.title, sourceText);
-        await setModuleStatus(moduleId, "ready");
-      } catch (err) {
-        // One retry, then mark the module failed but keep going
-        try {
-          await generateModuleLessons(moduleId, m.title, sourceText);
-          await setModuleStatus(moduleId, "ready");
-        } catch {
-          console.error(`Module ${moduleId} generation failed:`, err);
-          await setModuleStatus(moduleId, "error");
-        }
+  // ---- Step 1: outline → create modules ----
+  if ((await countModules(courseId)) === 0) {
+    try {
+      await setCourseStatus(courseId, "outlining");
+      const outline = await generateOutline(chapters);
+      await setCourseMeta(courseId, outline.title, outline.description);
+      for (let i = 0; i < outline.modules.length; i++) {
+        const m = outline.modules[i];
+        await createModule(courseId, m.title, m.summary, i, m.chapter_indexes);
       }
+      await setCourseStatus(courseId, "generating");
+      return "continue";
+    } catch (err) {
+      console.error(`Course ${courseId} outline failed:`, err);
+      const attempts = await bumpCourseGenerationAttempts(courseId);
+      if (attempts >= MAX_OUTLINE_ATTEMPTS) {
+        await setCourseStatus(
+          courseId,
+          "error",
+          apiKeyMessage(err instanceof Error ? err.message : String(err))
+        );
+        return "done";
+      }
+      throw err; // let the chain retry the outline in a fresh invocation
     }
-
-    await setCourseStatus(courseId, "ready");
-  } catch (err) {
-    console.error("Course generation failed:", err);
-    let message = err instanceof Error ? err.message : String(err);
-    if (/authentication|api.?key|x-api-key/i.test(message)) {
-      message =
-        "No API key found. Paste your Anthropic API key into .env.local, restart the app, then tap Retry.";
-    }
-    await setCourseStatus(courseId, "error", message);
   }
+
+  // ---- Step 2: generate the next pending module ----
+  const claimed = await claimNextModule(courseId, MAX_MODULE_ATTEMPTS);
+  if (claimed) {
+    try {
+      const sourceText = moduleSourceText(chapters, claimed.chapter_indexes);
+      await generateModuleLessons(claimed.id, claimed.title, sourceText);
+      await setModuleStatus(claimed.id, "ready");
+    } catch (err) {
+      console.error(`Module ${claimed.id} generation failed:`, err);
+      // Give up on this module after its final attempt; otherwise release it.
+      await setModuleStatus(
+        claimed.id,
+        claimed.attempts >= MAX_MODULE_ATTEMPTS ? "error" : "pending"
+      );
+    }
+    await touchGenerationHeartbeat(courseId);
+    return "continue";
+  }
+
+  // ---- Step 3: finalize ----
+  // Nothing left to claim. If no modules are unfinished, the course is ready
+  // (even if some modules ended in 'error' — a partial course is still usable).
+  if ((await countUnfinishedModules(courseId)) === 0) {
+    await setCourseStatus(courseId, "ready");
+    return "done";
+  }
+  return "continue";
+}
+
+/**
+ * Run generation steps until the course is finished or the time budget runs out.
+ * Returns true when the course reached a terminal state, false if more work
+ * remains (the caller should schedule a fresh invocation to continue).
+ */
+export async function runGenerationUntilBudget(
+  courseId: number,
+  deadlineMs: number
+): Promise<boolean> {
+  await recoverStuckModules(courseId, MAX_MODULE_ATTEMPTS);
+  while (Date.now() < deadlineMs) {
+    const step = await runGenerationStep(courseId);
+    if (step === "done") return true;
+  }
+  return false;
 }
 
 /** Fresh, never-seen practice questions targeting a learner's weakest

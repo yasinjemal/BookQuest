@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { getCourse, getCourseSource, prepareCourseRetry, setCourseStatus } from "@/lib/db";
+import { getCourse, getCourseSource, prepareCourseRetry } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { generateCourse } from "@/lib/generator";
-import type { Chapter } from "@/lib/extract";
+import { resolveBaseUrl, runAndChain } from "@/lib/generation";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,6 +20,7 @@ export async function POST(
     return NextResponse.json({ error: "Only the owner can retry" }, { status: 403 });
   }
 
+  // The stored chapters are what generation regenerates from (no original file).
   const sourceJson = await getCourseSource(course.id);
   if (!sourceJson) {
     return NextResponse.json(
@@ -28,9 +28,8 @@ export async function POST(
       { status: 410 }
     );
   }
-  let chapters: Chapter[];
   try {
-    chapters = JSON.parse(sourceJson) as Chapter[];
+    JSON.parse(sourceJson);
   } catch {
     return NextResponse.json(
       { error: "Stored document was corrupted. Please upload it again." },
@@ -46,6 +45,7 @@ export async function POST(
     );
   }
 
-  after(() => generateCourse(course.id, chapters));
+  const baseUrl = resolveBaseUrl(req);
+  after(() => runAndChain(course.id, baseUrl));
   return NextResponse.json({ ok: true });
 }
