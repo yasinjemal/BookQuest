@@ -1,4 +1,5 @@
-// One-shot schema migration / connectivity check against Neon Postgres.
+// Applies any pending schema migrations and reports the ledger. Runs the exact
+// same `ready()` the app uses, so it is a connectivity check too.
 // Usage: node scripts/migrate.mjs
 import { readFileSync } from "fs";
 import { createJiti } from "jiti";
@@ -22,8 +23,17 @@ const { ready, pool } = await jiti.import(
 );
 
 await ready();
-const { rows } = await pool.query(
+
+const migrations = await pool.query(
+  "SELECT id, name, applied_at FROM schema_migrations ORDER BY id"
+);
+const { rows: tableRows } = await pool.query(
   "SELECT count(*)::int AS n FROM information_schema.tables WHERE table_schema = 'public'"
 );
-console.log(`Schema ready. ${rows[0].n} tables in public.`);
+
+console.log(`Schema ready. ${tableRows[0].n} tables in public.`);
+console.log(`Applied migrations (${migrations.rowCount}):`);
+for (const m of migrations.rows) {
+  console.log(`  ${String(m.id).padStart(4, "0")}  ${m.name}  (${m.applied_at})`);
+}
 await pool.end();
