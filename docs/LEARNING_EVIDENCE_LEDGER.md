@@ -197,7 +197,6 @@ URL cache. Account-scoped offline course-content caching remains future work.
 - Add explicit consent, retention, export, and erasure workflows.
 - Define soft-delete, archival, and controlled redaction rules for private
   question snapshots retained after a source course is deleted.
-- Add a projection rebuild and reconciliation command.
 - Add backup/restore tests against realistic database copies.
 - Add an admin drill-down for delayed events, outbox failures, and question data
   quality.

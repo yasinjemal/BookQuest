@@ -165,7 +165,10 @@ changing outcomes twice, and operate reliably enough for organizations.
   is transient. Tests in `tests/lesson-completion-outbox.test.ts`.)
 - [ ] Add consent, retention, export and erasure workflows.
 - [ ] Define archive, soft-delete and controlled-redaction rules.
-- [ ] Add projection rebuild and ledger reconciliation commands.
+- [x] Add projection rebuild and ledger reconciliation commands.
+  (`lib/projection.ts` reconciles/rebuilds `concept_mastery` from the immutable
+  ledger; `node scripts/reconcile.mjs [--rebuild] [--course=<id>]` exits non-zero
+  on drift. Tests in `tests/projection-reconciliation.test.ts`.)
 - [ ] Add admin drill-down for delayed events and outbox failures.
 - [ ] Decide when volume requires IndexedDB and table partitioning.
 
@@ -176,7 +179,8 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [ ] Clients cannot set correctness or another learner's context.
 - [ ] Lesson, practice and review contexts cannot cross users or courses.
 - [ ] Failed delivery recovers using the original event ID.
-- [ ] Projections reconcile against immutable evidence.
+- [x] Projections reconcile against immutable evidence.
+  (`reconcileConceptMastery` / `rebuildConceptMastery` + `scripts/reconcile.mjs`.)
 - [ ] Rate limits protect costly and authentication-sensitive routes.
 - [ ] A documented backup restoration succeeds.
 - [ ] Type checking, tests and production build pass in CI.

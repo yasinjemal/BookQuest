@@ -193,6 +193,7 @@ gitignored and the connection string is not committed anywhere.
 | Script | Purpose |
 |---|---|
 | `node scripts/migrate.mjs` | Applies any pending migrations and prints the `schema_migrations` ledger plus table count. Runs the exact same `ready()` the app uses, so it doubles as a connectivity check. |
+| `node scripts/reconcile.mjs [--rebuild] [--course=<id>]` | Reconciles the `concept_mastery` projection against the immutable `learning_events` ledger; reports drift (exit non-zero) or, with `--rebuild`, recomputes and replaces it, then re-verifies. |
 | `node scripts/seed-demo.mjs` | Seeds a small "Money Basics" demo course (reads `DATABASE_URL` from `.env.local`). |
 
 ---

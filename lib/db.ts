@@ -6,9 +6,11 @@ import {
   describeQuestionVersion,
   EVIDENCE_SCHEMA_VERSION,
   gradeQuizCard,
+  INITIAL_MASTERY,
   isQuizAnswerCompatible,
   makeConceptId,
   MASTERY_ALGORITHM_VERSION,
+  nextMastery,
   normalizeConcept,
 } from "./learning";
 import type { PoolClient } from "pg";
@@ -889,8 +891,8 @@ export async function recordConceptAnswer(
     "SELECT mastery FROM concept_mastery WHERE user_id = $1 AND course_id = $2 AND concept = $3",
     [userId, courseId, key]
   )) as { mastery: number } | undefined;
-  const prev = row?.mastery ?? 0.5;
-  const next = 0.7 * prev + 0.3 * (correct ? 1 : 0);
+  const prev = row?.mastery ?? INITIAL_MASTERY;
+  const next = nextMastery(prev, correct);
   await q(
     `INSERT INTO concept_mastery (user_id, course_id, concept, correct, wrong, mastery, updated_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -1202,11 +1204,9 @@ export async function recordAnswerEvidence(
           )
         ).rows[0] as { mastery: number } | undefined)
       : undefined;
-    const masteryBefore = current?.mastery ?? 0.5;
+    const masteryBefore = current?.mastery ?? INITIAL_MASTERY;
     const masteryAfter =
-      input.answer === null
-        ? masteryBefore
-        : 0.7 * masteryBefore + 0.3 * (correct ? 1 : 0);
+      input.answer === null ? masteryBefore : nextMastery(masteryBefore, correct);
     const responseTimeMs = Math.max(
       0,
       Math.min(86_400_000, Math.trunc(input.responseTimeMs))

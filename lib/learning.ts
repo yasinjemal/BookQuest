@@ -47,6 +47,20 @@ export type AnswerSubmission = z.infer<typeof AnswerSubmission>;
 export const MASTERY_ALGORITHM_VERSION = "ewma-v1";
 export const EVIDENCE_SCHEMA_VERSION = 1;
 
+/** Neutral mastery before any evidence exists. */
+export const INITIAL_MASTERY = 0.5;
+
+/**
+ * One EWMA mastery step (the `ewma-v1` projection): recent answers weigh more and
+ * old knowledge decays. Applied once per non-skipped answer; a skipped answer
+ * leaves mastery unchanged. This is the single source of truth for the projection
+ * formula, shared by the live writer (`recordAnswerEvidence`) and the ledger
+ * rebuild (`lib/projection`), so they cannot drift.
+ */
+export function nextMastery(previous: number, correct: boolean): number {
+  return 0.7 * previous + 0.3 * (correct ? 1 : 0);
+}
+
 export function normalizeFillAnswer(value: string): string {
   return value.trim().toLowerCase().replace(/[.,!?'\"]/g, "");
 }
