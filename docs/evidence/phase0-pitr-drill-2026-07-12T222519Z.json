@@ -1,0 +1,50 @@
+{
+  "status": "complete",
+  "project": {
+    "name": "bookqeust",
+    "id": "purple-shadow-87152203",
+    "historyRetentionSeconds": 86400
+  },
+  "productionBranch": {
+    "name": "production",
+    "id": "br-raspy-tree-asm5dia2",
+    "modified": false
+  },
+  "recoveryBranch": {
+    "name": "phase0-pitr-20260712-2130z",
+    "id": "br-falling-wave-as7zt4ln",
+    "parentId": "br-raspy-tree-asm5dia2",
+    "parentLsn": "0/2615B80",
+    "parentTimestamp": "2026-07-12T22:11:50Z",
+    "createdAt": "2026-07-12T22:20:18Z",
+    "readyAt": "2026-07-12T22:20:19Z",
+    "verifiedAt": "2026-07-12T22:25:19.353Z",
+    "expiresAt": "2026-07-13T22:20:16Z"
+  },
+  "recoveryPointLagSeconds": 508,
+  "providerProvisioningSeconds": 1,
+  "operationalRecoveryTimeSeconds": 301,
+  "verification": {
+    "migrationCommand": "node scripts/migrate.mjs",
+    "reconciliationCommand": "node scripts/reconcile.mjs",
+    "commandsExitedSuccessfully": true,
+    "publicTables": 28,
+    "users": 2,
+    "courses": 2,
+    "learningEvents": 55,
+    "appliedMigrations": 2,
+    "latestMigrationId": 2,
+    "masteryGroupsScanned": 30,
+    "masteryRows": 30,
+    "matched": 30,
+    "missing": 0,
+    "mismatched": 0,
+    "orphaned": 0
+  },
+  "cleanup": {
+    "required": true,
+    "completed": true,
+    "completedAt": "2026-07-12T22:27:28.4763289Z",
+    "automaticExpiryConfigured": true
+  }
+}

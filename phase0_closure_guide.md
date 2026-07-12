@@ -1,13 +1,13 @@
 # Phase 0 Closure Guide
 
-Phase 0 has passed its local implementation, logical restore and CI gates. Two
-operational proofs remain before Phase 0 can be marked complete and Phase 1
-production work can begin.
+**Status:** COMPLETE — all implementation, CI, recovery and production
+reliability gates passed on 12 July 2026 UTC. Phase 1 production work is
+unblocked.
 
 ## Current evidence
 
-- Commit: `9bb0938` on `main`
-- CI: [GitHub Actions CI #5](https://github.com/yasinjemal/BookQuest/actions/runs/29209648156)
+- Commit: `a4f0ba9` on `main`
+- CI: [GitHub Actions CI #6](https://github.com/yasinjemal/BookQuest/actions/runs/29210905776)
   passed on 12 July 2026
 - Logical restore: PostgreSQL 16 restored 28 tables, 2 rows and 203 schema
   objects, with both migrations present
@@ -20,6 +20,15 @@ Prepared reference (12 July 2026): project `purple-shadow-87152203`, production
 branch `br-raspy-tree-asm5dia2`, 24-hour history retention, selected recovery
 timestamp `2026-07-12T21:30:00Z`. The privacy-safe current-state reference is in
 `docs/evidence/phase0-pitr-reference-2026-07-12T220239Z.json`.
+
+Provider drill verification (12 July 2026): Neon created isolated branch
+`br-falling-wave-as7zt4ln` from provider-recorded timestamp
+`2026-07-12T22:11:50Z`. Provisioning took about 1 second; full migration,
+row-count and ledger-reconciliation verification completed in 301 seconds, for
+a recovery-point lag of 508 seconds. The scripts found 28 tables, both applied
+migrations and 30/30 matching mastery projections with zero drift. Evidence is
+in `docs/evidence/phase0-pitr-drill-2026-07-12T222519Z.json`. The temporary
+branch was deleted after verification; production was never modified.
 
 1. Confirm the production project's PITR entitlement and retention window.
 2. Choose a recoverable timestamp far enough in the past to prove time travel.
@@ -49,10 +58,11 @@ in the evidence record.
 
 **Owner:** deployment operator with production database access
 
-After the `9bb0938` deployment and migrations are confirmed, point
+After the `a4f0ba9` deployment and migrations are confirmed, point
 `DATABASE_URL` at production and run:
 
 ```powershell
+$env:RELIABILITY_HEALTH_WINDOW_START = "<deployment UTC timestamp>"
 npm run reliability:baseline
 ```
 
@@ -61,11 +71,15 @@ deployed commit and operator. The report is aggregate-only, but it should still
 be handled as operational evidence. A non-zero exit or `"healthy": false` means
 the baseline found projection drift, malformed evidence, answer-delivery
 failures, stalled generation or production errors. Investigate the reported
-groups and rerun the baseline before closing the gate.
+groups and rerun the baseline before closing the gate. The closing run at
+`2026-07-12T22:30:30Z` passed with two ready courses, no stalled generation,
+zero projection drift and zero errors/failures in the bounded post-deployment
+window. It retained the earlier 24-hour incident totals for auditability. See
+`docs/evidence/phase0-reliability-closing-2026-07-12T223030Z.json`.
 
 ## Final tracker update
 
-Once both gates pass, update `docs/PLATFORM_PHASE_TRACKER.md`:
+Both gates passed and `docs/PLATFORM_PHASE_TRACKER.md` was updated:
 
 1. Mark **Test backups and point-in-time recovery** complete and add the dated
    Neon drill evidence, measured RPO and measured RTO.
@@ -75,5 +89,5 @@ Once both gates pass, update `docs/PLATFORM_PHASE_TRACKER.md`:
 4. Change the current phase to Phase 1 and begin only the first gated vertical
    slice documented in the tracker.
 
-Phase 1 production implementation remains gated until these edits are supported
-by the real operational evidence.
+Phase 1 production implementation is now active, beginning with the first
+vertical slice documented in the tracker.

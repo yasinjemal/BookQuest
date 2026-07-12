@@ -2,6 +2,7 @@
 // Run after migrations and before/after each phase release; redirect the JSON to
 // an approved operational evidence store if a dated record is required.
 // Usage: node scripts/reliability-baseline.mjs
+// Optional: RELIABILITY_HEALTH_WINDOW_START=<deployment ISO timestamp>
 import { readFileSync } from "fs";
 import { pathToFileURL } from "url";
 import { resolve } from "path";
@@ -30,6 +31,20 @@ const { one, pool, ready } = await jiti.import(
   pathToFileURL(resolve(process.cwd(), "lib/pg.ts")).href
 );
 
+const measuredAt = new Date();
+const configuredHealthStart = process.env.RELIABILITY_HEALTH_WINDOW_START;
+const healthWindowStart = configuredHealthStart
+  ? new Date(configuredHealthStart)
+  : new Date(measuredAt.getTime() - 24 * 60 * 60 * 1000);
+if (
+  !Number.isFinite(healthWindowStart.getTime()) ||
+  healthWindowStart.getTime() > measuredAt.getTime()
+) {
+  throw new Error(
+    "RELIABILITY_HEALTH_WINDOW_START must be a valid, non-future ISO timestamp"
+  );
+}
+
 try {
   await ready();
   const [
@@ -40,6 +55,7 @@ try {
     generation,
     outbox,
     errorGroups,
+    healthWindow,
   ] =
     await Promise.all([
       learningLedgerHealth(),
@@ -96,11 +112,24 @@ try {
           LIMIT 10
         ) AS grouped
       `),
+      one(
+        `SELECT
+          COUNT(*) FILTER (WHERE severity = 'error')::int AS errors,
+          COUNT(*) FILTER (WHERE severity = 'warning')::int AS warnings,
+          COUNT(*) FILTER (WHERE event_type = 'learning.answer_failed')::int
+            AS answer_failures,
+          COUNT(*) FILTER (WHERE event_type = 'security.rate_limited')::int
+            AS rate_limited,
+          COUNT(*) FILTER (WHERE event_type = 'ai.failure')::int AS ai_failures
+        FROM operational_events
+        WHERE occurred_at::timestamptz >= $1`,
+        [healthWindowStart.toISOString()]
+      ),
     ]);
 
   const report = {
-    schemaVersion: 1,
-    measuredAt: new Date().toISOString(),
+    schemaVersion: 2,
+    measuredAt: measuredAt.toISOString(),
     ledger,
     reconciliation: {
       ok: reconciliation.ok,
@@ -145,13 +174,22 @@ try {
           ? Number(outbox?.drained ?? 0) / Number(outbox?.attempted)
           : null,
     },
+    healthWindow: {
+      start: healthWindowStart.toISOString(),
+      end: measuredAt.toISOString(),
+      errors: Number(healthWindow?.errors ?? 0),
+      warnings: Number(healthWindow?.warnings ?? 0),
+      answerFailures: Number(healthWindow?.answer_failures ?? 0),
+      rateLimited: Number(healthWindow?.rate_limited ?? 0),
+      aiFailures: Number(healthWindow?.ai_failures ?? 0),
+    },
   };
   report.healthy =
     report.reconciliation.ok &&
     Number(report.ledger.malformed ?? 0) === 0 &&
-    report.delivery.answerFailures24h === 0 &&
     report.generation.stalled === 0 &&
-    report.operations.errors24h === 0;
+    report.healthWindow.errors === 0 &&
+    report.healthWindow.answerFailures === 0;
   console.log(JSON.stringify(report, null, 2));
   process.exitCode = report.healthy ? 0 : 1;
 } finally {

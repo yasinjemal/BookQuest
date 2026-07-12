@@ -3,9 +3,9 @@
 **Purpose:** the single execution tracker for growing BookQuest from a
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
-**Last updated:** 12 July 2026  
-**Current phase:** Phase 0 — Evidence and reliability foundation  
-**Next product slice:** Phase 1 — Spaces, tenancy and permissions
+**Last updated:** 13 July 2026
+**Current phase:** Phase 1 — Spaces, tenancy and permissions
+**Next product slice:** Phase 2 — Course Studio, blocks and reusable recipes
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -106,8 +106,8 @@ and an institution operate securely. Its four primary experiences are:
 
 | Phase | Outcome | Status | Dependency |
 |---|---|---|---|
-| 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **IN PROGRESS** | — |
-| 1. Spaces and tenancy | Anyone can create a controlled learning space | Not started | Phase 0 gates |
+| 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **COMPLETE** | — |
+| 1. Spaces and tenancy | Anyone can create a controlled learning space | **IN PROGRESS** | Phase 0 gates passed |
 | 2. Course Studio and recipes | Creators can build, edit and reuse many course types | Not started | Phase 1 permissions |
 | 3. Institutional pilot | An organization completes an auditable training journey | Not started | Phases 1–2 |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | Not started | Phase 3 evidence |
@@ -122,7 +122,7 @@ protecting tenancy, privacy, evidence or versioning.
 
 ## Phase 0 — Evidence and reliability foundation
 
-**Status:** IN PROGRESS  
+**Status:** COMPLETE (12 July 2026 UTC)
 **Outcome:** BookQuest can prove what a learner answered, prevent replay from
 changing outcomes twice, and operate reliably enough for organizations.
 
@@ -147,7 +147,7 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [x] Rate-limit authentication, upload, generation and answer routes.
 - [x] Add abuse, unexpected-cost and production-error monitoring.
 - [x] Add email verification and password recovery.
-- [ ] Test backups and point-in-time recovery.
+- [x] Test backups and point-in-time recovery.
   (Logical backup restoration is automated in CI by
   `scripts/backup-restore-drill.mjs`: it restores a snapshot-consistent dump to a
   guarded disposable database and verifies tables, rows and schema objects.
@@ -155,7 +155,11 @@ changing outcomes twice, and operate reliably enough for organizations.
   The production project/branch, 24-hour retention window, selected historical
   timestamp and privacy-safe verification counts are prepared in
   `docs/evidence/phase0-pitr-reference-2026-07-12T220239Z.json`; the isolated
-  historical branch exercise is still pending.)
+  historical branch was subsequently created and verified successfully. Both
+  real scripts passed with zero projection drift; measured recovery-point lag
+  was 508 seconds and full operational recovery time was 301 seconds. Evidence
+  is in `docs/evidence/phase0-pitr-drill-2026-07-12T222519Z.json`. The temporary
+  branch was deleted after verification; production was never modified.)
 - [x] Run database integration tests in CI on a scratch database.
   (`.github/workflows/ci.yml` runs typecheck, build and `npm test` against a
   throwaway Postgres 16 service, so the gated integration tests execute for real.)
@@ -215,10 +219,12 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [x] A documented backup restoration succeeds.
   (12 July 2026 isolated PostgreSQL 16 drill: snapshot dump restored into a
   guarded disposable database; 28 tables, 2 rows, 203 schema objects and both
-  migrations matched. Provider-level Neon PITR remains a separate open item.)
+  migrations matched. Neon PITR then restored and verified an isolated
+  historical branch with measured recovery-point lag and operational recovery
+  time; `docs/evidence/phase0-pitr-drill-2026-07-12T222519Z.json`.)
 - [x] Type checking, tests and production build pass in CI.
-  ([GitHub Actions CI #5](https://github.com/yasinjemal/BookQuest/actions/runs/29209648156)
-  passed for commit `9bb0938` on 12 July 2026; the Postgres-backed typecheck,
+  ([GitHub Actions CI #6](https://github.com/yasinjemal/BookQuest/actions/runs/29210905776)
+  passed for commit `a4f0ba9` on 12 July 2026; the Postgres-backed typecheck,
   production build and test job completed successfully.)
 - [x] No known critical or high-severity security issue remains open.
   (`docs/PHASE_0_THREAT_MODEL.md` records the route/threat review and resolved
@@ -240,6 +246,7 @@ audit packs → Phase 3; adaptive learning → Phase 6.
 
 ## Phase 1 — Spaces, tenancy and permissions
 
+**Status:** IN PROGRESS
 **Outcome:** individuals, groups, schools, companies and departments use one
 Space model while retaining distinct privacy and access rules.
 
@@ -675,16 +682,13 @@ What should not be built yet:
 
 ## Immediate next actions
 
-Phase 0 closure ownership:
+Phase 0 closure proof:
 
-| Remaining proof | Owner role | Target |
+| Proof | Result | Evidence |
 |---|---|---|
-| Restore a historical production timestamp to a temporary Neon branch; record RPO/RTO | Deployment operator with Neon console/API access | 13 July 2026 |
-| Establish and store the production reliability baseline | Deployment operator with production database access | Immediately after deployment |
-
-Completed proof: commit `9bb0938` was pushed to `main` and
-[GitHub Actions CI #5](https://github.com/yasinjemal/BookQuest/actions/runs/29209648156)
-passed on 12 July 2026.
+| Provider PITR with measured recovery point/time | Passed | `docs/evidence/phase0-pitr-drill-2026-07-12T222519Z.json` |
+| Production reliability baseline after recovery | Passed | `docs/evidence/phase0-reliability-closing-2026-07-12T223030Z.json` |
+| Exact pushed state in CI and production | Passed | Commit `a4f0ba9`, GitHub Actions CI #6, Vercel production deployment |
 
 1. [x] Assign owners and target dates to the remaining Phase 0 gates.
 2. [x] Write the Space, membership, role and capability domain model.
@@ -704,7 +708,7 @@ passed on 12 July 2026.
 8. [x] Define five starter recipes using real source documents.
    (`docs/STARTER_RECIPE_RESEARCH.md` grounds five versioned research recipes in
    the four uploaded financial-literacy, AI and architecture-review sources.)
-9. [ ] Establish baseline values for Phase 0 reliability metrics.
+9. [x] Establish baseline values for Phase 0 reliability metrics.
    (`npm run reliability:baseline` now produces the aggregate record without
    identities or samples; authenticated browser beacons now supply aggregate
    queue age/depth and replay-drain counts. Run it against production after
@@ -717,8 +721,12 @@ passed on 12 July 2026.
    commit `a4f0ba9`; CI #6 passed and the first post-deploy observation recorded
    zero new errors, but the existing course has not yet exercised recovery and
    remains stalled. Evidence is in
-   `docs/evidence/phase0-reliability-postdeploy-2026-07-12T220851Z.json`. A
-   healthy post-recovery baseline must replace it before this item is checked.)
+   `docs/evidence/phase0-reliability-postdeploy-2026-07-12T220851Z.json`.
+   After protected recovery completed all 11 modules, the bounded deployment
+   health window recorded zero errors/failures, no stalled generation and zero
+   reconciliation drift while retaining the preceding 24-hour incident counts.
+   Closing evidence:
+   `docs/evidence/phase0-reliability-closing-2026-07-12T223030Z.json`.)
 
 The first Phase 1 vertical slice should be:
 

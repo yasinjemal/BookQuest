@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "measuredAt": "2026-07-12T22:30:30.040Z",
+  "deployedCommit": "a4f0ba9",
+  "healthWindow": {
+    "start": "2026-07-12T22:07:00.000Z",
+    "end": "2026-07-12T22:30:30.040Z",
+    "errors": 0,
+    "warnings": 0,
+    "answerFailures": 0,
+    "rateLimited": 0,
+    "aiFailures": 0
+  },
+  "ledger": {
+    "events": 55,
+    "events24h": 55,
+    "learners": 1,
+    "questionVersions": 44,
+    "malformed": 0
+  },
+  "reconciliation": {
+    "ok": true,
+    "scanned": 30,
+    "missing": 0,
+    "mismatched": 0,
+    "orphaned": 0
+  },
+  "delivery": {
+    "delayedEvents24h": 0,
+    "maxDelaySeconds": 2,
+    "answerFailures24h": 0
+  },
+  "generation": {
+    "courses": 2,
+    "ready": 2,
+    "failed": 0,
+    "active": 0,
+    "stalled": 0,
+    "oldestActiveHeartbeat": null
+  },
+  "operations24h": {
+    "total": 6156,
+    "errors": 6153,
+    "warnings": 0,
+    "rateLimited": 0,
+    "aiRequests": 3,
+    "aiFailures": 0,
+    "historicalIncidentRetained": true
+  },
+  "outbox": {
+    "reports24h": 0,
+    "oldestQueueSeconds": 0,
+    "maxQueueDepth": 0,
+    "attemptedDrains": 0,
+    "successfulDrains": 0,
+    "replayDrainRate": null
+  },
+  "healthy": true,
+  "closingDecision": "pass"
+}
