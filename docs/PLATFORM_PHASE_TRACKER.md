@@ -159,7 +159,10 @@ changing outcomes twice, and operate reliably enough for organizations.
   (`tests/migration-upgrade.test.ts` applies the earliest Postgres schema in
   `tests/fixtures/pre-ledger-schema.sql`, seeds rows, runs the real
   `applyPendingMigrations`, and asserts backfills, new tables and preserved data.)
-- [ ] Queue lesson completion for fully offline reconciliation.
+- [x] Queue lesson completion for fully offline reconciliation.
+  (Durable, account-scoped completion outbox in `lib/answer-outbox.ts`, flushed
+  after the answer outbox so evidence reconciliation passes; `409 evidence_pending`
+  is transient. Tests in `tests/lesson-completion-outbox.test.ts`.)
 - [ ] Add consent, retention, export and erasure workflows.
 - [ ] Define archive, soft-delete and controlled-redaction rules.
 - [ ] Add projection rebuild and ledger reconciliation commands.

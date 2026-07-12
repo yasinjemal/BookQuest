@@ -43,7 +43,7 @@ export function setAnswerOutboxAccount(accountId: number) {
   } catch {
     console.warn("Account scope will remain in memory for this session.");
   }
-  void flushAnswerOutbox();
+  void flushLearningOutbox();
 }
 
 export function clearAnswerOutboxAccount() {
@@ -57,19 +57,27 @@ export function clearAnswerOutboxAccount() {
   }
 }
 
-function readOutbox(accountId: number): OutboxItem[] {
+function readStoredList<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(localStorage.getItem(storageKey(accountId)) ?? "[]");
-    return Array.isArray(parsed) ? (parsed as OutboxItem[]) : [];
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
   } catch {
     return [];
   }
 }
 
-function writeOutbox(accountId: number, items: OutboxItem[]) {
+function writeStoredList<T>(key: string, items: T[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(storageKey(accountId), JSON.stringify(items));
+  localStorage.setItem(key, JSON.stringify(items));
+}
+
+function readOutbox(accountId: number): OutboxItem[] {
+  return readStoredList<OutboxItem>(storageKey(accountId));
+}
+
+function writeOutbox(accountId: number, items: OutboxItem[]) {
+  writeStoredList(storageKey(accountId), items);
 }
 
 function enqueue(accountId: number, body: AnswerOutboxPayload) {
@@ -164,13 +172,172 @@ export function flushAnswerOutbox(): Promise<void> {
 }
 
 export function startAnswerOutboxSync(): () => void {
-  void flushAnswerOutbox();
+  void flushLearningOutbox();
   if (listening || typeof window === "undefined") return () => undefined;
   listening = true;
-  const onOnline = () => void flushAnswerOutbox();
+  const onOnline = () => void flushLearningOutbox();
   window.addEventListener("online", onOnline);
   return () => {
     window.removeEventListener("online", onOnline);
     listening = false;
   };
+}
+
+// ---------- Lesson completion outbox ----------
+// A finished lesson is reconciled against its recorded answers on the server, so
+// a completion queued offline can only succeed once its answers have synced.
+// These entries are therefore flushed *after* the answer outbox, and a 409
+// ("evidence_pending") is treated as transient rather than a permanent failure.
+
+const COMPLETION_PREFIX = "bookquest.completion-outbox.v1";
+
+interface CompletionOutboxItem {
+  accountId: number;
+  lessonId: number;
+  answerSessionId: string;
+  queuedAt: string;
+}
+
+export interface LessonCompletionResult {
+  xp: number;
+  stats?: { streak: number; total_xp?: number };
+  certificate?: { id: string } | null;
+  duplicate?: boolean;
+}
+
+const completionFlushes = new Map<number, Promise<void>>();
+
+function completionKey(accountId: number): string {
+  return `${COMPLETION_PREFIX}.user-${accountId}`;
+}
+
+function readCompletions(accountId: number): CompletionOutboxItem[] {
+  return readStoredList<CompletionOutboxItem>(completionKey(accountId));
+}
+
+function writeCompletions(accountId: number, items: CompletionOutboxItem[]) {
+  writeStoredList(completionKey(accountId), items);
+}
+
+function enqueueCompletion(accountId: number, item: CompletionOutboxItem) {
+  const items = readCompletions(accountId);
+  // The answer-session id is unique per lesson attempt, so it dedupes replays.
+  if (items.some((queued) => queued.answerSessionId === item.answerSessionId)) return;
+  items.push(item);
+  writeCompletions(accountId, items);
+}
+
+function removeCompletion(accountId: number, answerSessionId: string) {
+  writeCompletions(
+    accountId,
+    readCompletions(accountId).filter(
+      (item) => item.answerSessionId !== answerSessionId
+    )
+  );
+}
+
+type CompletionDelivery =
+  | { done: true; data: LessonCompletionResult }
+  | { done: false; retry: boolean };
+
+async function deliverCompletion(
+  item: CompletionOutboxItem
+): Promise<CompletionDelivery> {
+  const response = await fetch(`/api/lessons/${item.lessonId}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answerSessionId: item.answerSessionId }),
+  });
+  // The server keys completion on the answer-session id, so a replay of an
+  // already-recorded completion returns 200 with duplicate: true — safe to drop.
+  if (response.ok) {
+    return { done: true, data: (await response.json()) as LessonCompletionResult };
+  }
+  // 409 = answers still syncing; 401/403/429 = auth/rate; 5xx = server. All
+  // recoverable by retrying once the queue drains or the app reconnects.
+  if (
+    response.status === 409 ||
+    [401, 403, 429].includes(response.status) ||
+    response.status >= 500
+  ) {
+    return { done: false, retry: true };
+  }
+  // Other 4xx (lesson gone, malformed) cannot be repaired by reconnecting.
+  console.warn("Discarding unreconcilable lesson completion", item.answerSessionId);
+  return { done: false, retry: false };
+}
+
+/**
+ * Record a finished lesson. Queues it durably first, then tries to deliver now:
+ * on success returns the server result for the celebration screen; otherwise it
+ * stays queued and reconciles on the next online flush (answers first).
+ */
+export async function submitLessonCompletion(input: {
+  lessonId: number;
+  answerSessionId: string;
+}): Promise<{ delivered: boolean; data?: LessonCompletionResult }> {
+  const accountId = currentAccountId();
+  if (!accountId) {
+    console.error("Lesson completion could not be queued without an account scope");
+    return { delivered: false };
+  }
+  const item: CompletionOutboxItem = {
+    accountId,
+    lessonId: input.lessonId,
+    answerSessionId: input.answerSessionId,
+    queuedAt: new Date().toISOString(),
+  };
+  try {
+    enqueueCompletion(accountId, item);
+  } catch (error) {
+    console.error("Lesson completion outbox storage failed", error);
+  }
+  try {
+    const result = await deliverCompletion(item);
+    if (result.done) {
+      removeCompletion(accountId, item.answerSessionId);
+      return { delivered: true, data: result.data };
+    }
+    // A permanent rejection must not linger in the queue forever.
+    if (!result.retry) removeCompletion(accountId, item.answerSessionId);
+    return { delivered: false };
+  } catch {
+    // Offline: the durable copy stays queued for the next online flush.
+    return { delivered: false };
+  }
+}
+
+export function flushCompletionOutbox(): Promise<void> {
+  const accountId = currentAccountId();
+  if (!accountId) return Promise.resolve();
+  const active = completionFlushes.get(accountId);
+  if (active) return active;
+  const flushing = (async () => {
+    for (const item of readCompletions(accountId)) {
+      if (item.accountId !== accountId) break;
+      try {
+        const result = await deliverCompletion(item);
+        // Delivered, or permanently rejected: drop it. Transient: stop and retry.
+        if (result.done || !result.retry) {
+          removeCompletion(accountId, item.answerSessionId);
+        } else {
+          break;
+        }
+      } catch {
+        break; // offline — stop; the queue persists for the next online flush
+      }
+    }
+  })().finally(() => {
+    completionFlushes.delete(accountId);
+  });
+  completionFlushes.set(accountId, flushing);
+  return flushing;
+}
+
+/**
+ * Flush answers first — so a queued lesson completion's evidence reconciliation
+ * can pass — then flush queued lesson completions.
+ */
+export function flushLearningOutbox(): Promise<void> {
+  return flushAnswerOutbox().then(() => flushCompletionOutbox());
 }

@@ -177,27 +177,28 @@ BookQuest still attempts immediate online delivery and reports the storage
 failure in diagnostics. Future work should expose outbox/dead-letter health to
 the learner and move the queue to IndexedDB for stronger durability and scale.
 
+The lesson-completion command has the same treatment through a second
+account-scoped queue. Finishing a lesson queues the completion durably, then
+tries to deliver it; if the learner is offline the credit is not lost. Because a
+completion is reconciled server-side against its recorded answers, the queues are
+flushed answers-first, and a `409 evidence_pending` is treated as transient (the
+answers have not synced yet) rather than a permanent failure. The server keys the
+completion on its answer-session id, so a replay is idempotent.
+
 Authenticated API responses are network-only in the service worker. This avoids
 serving one account's lesson or answer session to another account from a shared
 URL cache. Account-scoped offline course-content caching remains future work.
 
 ## Known gaps before compliance use
 
-- Add request rate limits and abuse monitoring.
 - Attribute organization, assignment, and enrollment from server-owned context.
 - Add immutable published course versions rather than only an incrementing course
   generation version.
-- Queue the lesson-completion command itself so progress can finish automatically
-  after a fully offline lesson; answer evidence already waits for reconciliation.
 - Add explicit consent, retention, export, and erasure workflows.
 - Define soft-delete, archival, and controlled redaction rules for private
   question snapshots retained after a source course is deleted.
 - Add a projection rebuild and reconciliation command.
-- Add generation-run tokens so a stale long-running generator can never write
-  into a newer retry version.
-- Add transactional, versioned schema migrations and an upgrade test using a
-  realistic pre-ledger database copy.
-- Add backup/restore and migration tests against realistic database copies.
+- Add backup/restore tests against realistic database copies.
 - Add an admin drill-down for delayed events, outbox failures, and question data
   quality.
 - Replace local storage with IndexedDB if answer volume requires it.

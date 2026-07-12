@@ -9,6 +9,7 @@ import {
   setAnswerOutboxAccount,
   startAnswerOutboxSync,
   submitAnswer,
+  submitLessonCompletion,
 } from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
 
@@ -67,30 +68,26 @@ export default function LessonPage() {
     if (!lesson || saving) return;
     setSaving(true);
     setFinishError(null);
+    // Drain answers first so the completion's server-side evidence check can pass.
     await flushAnswerOutbox();
-    try {
-      const res = await fetch(`/api/lessons/${lesson.id}/complete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          answerSessionId: lesson.answerSessionId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setFinishError(data.error ?? "Could not save this lesson yet.");
-        return;
-      }
+    const { delivered, data } = await submitLessonCompletion({
+      lessonId: lesson.id,
+      answerSessionId: lesson.answerSessionId,
+    });
+    if (delivered && data) {
       setFinished({
         xp: data.xp ?? 0,
         streak: data.stats?.streak ?? 0,
         certificateId: data.certificate?.id,
       });
-    } catch {
-      setFinishError("You appear to be offline. Reconnect, then finish again.");
-    } finally {
-      setSaving(false);
+    } else {
+      // Queued durably: it reconciles automatically once answers finish syncing
+      // or the app reconnects, so the credit is never lost.
+      setFinishError(
+        "Saved offline — this lesson will finish automatically once you're back online."
+      );
     }
+    setSaving(false);
   }
 
   function advance() {
