@@ -32,9 +32,15 @@ function tableExists(db: Database.Database, table: string) {
 }
 
 function createDb(): Database.Database {
-  const db = new Database(path.join(DATA_DIR, "app.db"));
+  const db = new Database(path.join(DATA_DIR, "app.db"), { timeout: 30_000 });
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON"); // required for ON DELETE CASCADE to work
+
+  // Next/Vercel may import route modules in many worker processes at once.
+  // BEGIN IMMEDIATE makes the entire inspect-and-migrate sequence one exclusive
+  // writer operation, so a waiting worker re-checks the finished schema instead
+  // of racing the first worker's ALTER TABLE statements.
+  const migrate = db.transaction(() => {
 
   // ---------- Base tables (v1) ----------
   db.exec(`
@@ -392,6 +398,8 @@ function createDb(): Database.Database {
       BEFORE DELETE ON question_versions
       BEGIN SELECT RAISE(ABORT, 'question versions are immutable'); END;
   `);
+  });
+  migrate.immediate();
 
   return db;
 }
