@@ -162,6 +162,11 @@ module is marked and the rest still complete).
      thresholds, defaulting to 100 AI requests and 50 denials in 24 hours.
    - *(optional)* `OPERATIONAL_EVENT_RETENTION_DAYS` — monitoring retention,
      clamped to 7–3650 days and defaulting to 90.
+   - `APP_URL` — the canonical HTTPS origin used in verification and password
+     reset links. Required for production account-security email.
+   - `RESEND_API_KEY` and `EMAIL_FROM` — transactional email credentials and a
+     sender on the exact domain/subdomain verified with Resend. When no key is
+     configured outside production, the UI exposes local-only preview links.
    - *(optional)* `FLW_SECRET_KEY` — enables live Flutterwave billing
 3. **Redeploy.** The schema auto-creates on the first request; no migration step
    is required.
@@ -213,10 +218,11 @@ Roughly in priority order.
    of short invocations (see "Durable course generation" above). A possible
    future refinement: a `vercel.json` cron as an extra resume safety net, and/or
    an external queue (QStash / Inngest) if generation volume grows.
-2. **Password reset / email verification.** There is currently no way to recover
-   an account. Add a token-based reset email (and optional verify-on-signup).
-3. **Rate limiting** on `/api/upload` and the auth routes to prevent abuse and
-   runaway API spend (e.g. Upstash Ratelimit).
+2. ✅ **Password reset / email verification — done.** One-time hashed tokens,
+   expiring links, Resend delivery, local previews, and reset-time session
+   invalidation are implemented.
+3. ✅ **Rate limiting — done.** Distributed Postgres limits protect auth,
+   uploads, generation, retries, fresh practice, and answer submission.
 
 ### Infrastructure hardening
 4. **CI with an ephemeral Neon branch.** Create a Neon branch per CI run, set it
@@ -224,8 +230,10 @@ Roughly in priority order.
 5. **Pin the SSL mode.** `pg` warns that `sslmode=require` is treated as
    `verify-full` today; make it explicit (`sslmode=verify-full`) to be
    future-proof, or set it consciously.
-6. **Observability.** Add server-side error reporting (e.g. Sentry) so 500s are
-   visible without the client having to surface them.
+6. ✅ **Baseline observability — done.** Privacy-safe operational events, global
+   request-error capture, AI/abuse signals, retention, thresholds, and admin
+   health summaries are implemented. An external alerting destination remains a
+   later enhancement.
 7. **Confirm backups / PITR** are enabled on the Neon project.
 
 ### Product (from the blueprint)

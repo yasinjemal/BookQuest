@@ -35,6 +35,9 @@ design baseline.
    BILLING_CURRENCY=USD             # optional, default USD
    RATE_LIMIT_SALT=random-secret    # recommended; hashes limiter identities
    OBSERVABILITY_SALT=random-secret # recommended; hashes monitoring subjects
+   RESEND_API_KEY=re_...             # production verification/reset email
+   EMAIL_FROM=BookQuest <account@your-verified-domain.example>
+   APP_URL=https://your-domain.example
    ```
 3. `npm run dev` → http://localhost:3000
 4. Register — your first account is the admin.
@@ -53,6 +56,8 @@ design baseline.
 - Postgres (`pg`) — Neon in production; schema created idempotently in `lib/pg.ts`
 - `@anthropic-ai/sdk` structured outputs (`zodOutputFormat` + `messages.parse`)
 - Cookie sessions + bcryptjs password hashing (`lib/auth.ts`)
+- One-time email-verification and password-reset links; reset invalidates every
+  active session and local development provides safe preview links
 - Distributed Postgres-backed rate limits on authentication, uploads, AI work,
   retries, and answer submission; identifiers are stored only as keyed hashes
 - Privacy-safe operational monitoring for AI volume, failures, abuse signals,

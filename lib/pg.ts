@@ -223,11 +223,41 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
 );
 
+-- Preserve existing accounts as verified when this column is introduced. On a
+-- fresh database the users table is empty here, so new registrations remain
+-- unverified until they confirm their address.
+DO $migration$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'users'
+      AND column_name = 'email_verified_at'
+  ) THEN
+    ALTER TABLE users ADD COLUMN email_verified_at TEXT;
+    UPDATE users SET email_verified_at = created_at;
+  END IF;
+END
+$migration$;
+
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS account_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK (purpose IN ('verify_email', 'reset_password')),
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX IF NOT EXISTS idx_account_tokens_user_purpose
+  ON account_tokens(user_id, purpose, created_at);
+CREATE INDEX IF NOT EXISTS idx_account_tokens_expiry
+  ON account_tokens(expires_at);
 
 CREATE TABLE IF NOT EXISTS rate_limit_buckets (
   bucket_key TEXT NOT NULL,

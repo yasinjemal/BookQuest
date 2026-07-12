@@ -36,7 +36,7 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
       learning_identities, answer_sessions, practice_sessions, concept_mastery,
       progress, user_stats, review_items, enrollments, certificates,
       classroom_assignments, classroom_members, classrooms, transactions,
-      sessions, lessons, modules, courses, users
+      account_tokens, sessions, lessons, modules, courses, users
       RESTART IDENTITY CASCADE`);
 
     const user = await data.createUser("ledger@example.com", "Ledger Learner", "hash");
@@ -253,5 +253,33 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
       sessionId: delayedSession.id,
     });
     expect(recorded.inserted).toBe(true);
+  });
+
+  it("consumes account tokens once and invalidates sessions after reset", async () => {
+    const verifyHash = "a".repeat(64);
+    await data.createAccountToken(
+      userId,
+      "verify_email",
+      verifyHash,
+      new Date(Date.now() + 60_000).toISOString()
+    );
+    expect(await data.verifyEmailWithToken(verifyHash)).toBe(true);
+    expect(await data.verifyEmailWithToken(verifyHash)).toBe(false);
+    expect((await data.getUserById(userId))?.email_verified_at).toBeTruthy();
+
+    await data.createSession(userId, "session_before_password_reset");
+    const resetHash = "b".repeat(64);
+    await data.createAccountToken(
+      userId,
+      "reset_password",
+      resetHash,
+      new Date(Date.now() + 60_000).toISOString()
+    );
+    expect(await data.resetPasswordWithToken(resetHash, "replacement-hash")).toBe(
+      userId
+    );
+    expect(await data.resetPasswordWithToken(resetHash, "another-hash")).toBeUndefined();
+    expect(await data.getSessionUser("session_before_password_reset")).toBeUndefined();
+    expect((await data.getUserById(userId))?.password_hash).toBe("replacement-hash");
   });
 });

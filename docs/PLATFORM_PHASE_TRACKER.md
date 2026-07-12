@@ -146,7 +146,7 @@ changing outcomes twice, and operate reliably enough for organizations.
 
 - [x] Rate-limit authentication, upload, generation and answer routes.
 - [x] Add abuse, unexpected-cost and production-error monitoring.
-- [ ] Add email verification and password recovery.
+- [x] Add email verification and password recovery.
 - [ ] Test backups and point-in-time recovery.
 - [ ] Run database integration tests in CI on a scratch database.
 - [ ] Add generation-run tokens to block stale worker writes.

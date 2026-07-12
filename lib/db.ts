@@ -35,6 +35,7 @@ export interface UserRow {
   role: "user" | "admin";
   credits: number;
   premium_until: string | null;
+  email_verified_at: string | null;
   created_at: string;
 }
 
@@ -135,6 +136,90 @@ export async function getSessionUser(token: string): Promise<UserRow | undefined
 
 export async function deleteSession(token: string) {
   await q("DELETE FROM sessions WHERE token = $1", [token]);
+}
+
+export type AccountTokenPurpose = "verify_email" | "reset_password";
+
+export async function createAccountToken(
+  userId: number,
+  purpose: AccountTokenPurpose,
+  tokenHash: string,
+  expiresAt: string
+) {
+  await tx(async (client) => {
+    // Only the newest live link for a purpose remains usable.
+    await client.query(
+      `UPDATE account_tokens SET used_at = $1
+       WHERE user_id = $2 AND purpose = $3 AND used_at IS NULL`,
+      [nowIso(), userId, purpose]
+    );
+    await client.query(
+      `INSERT INTO account_tokens (token_hash, user_id, purpose, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [tokenHash, userId, purpose, expiresAt]
+    );
+    await client.query(
+      "DELETE FROM account_tokens WHERE expires_at::timestamptz < now() - interval '1 day'"
+    );
+  });
+}
+
+export async function verifyEmailWithToken(tokenHash: string): Promise<boolean> {
+  return tx(async (client) => {
+    const row = (
+      await client.query(
+        `SELECT user_id FROM account_tokens
+         WHERE token_hash = $1 AND purpose = 'verify_email'
+           AND used_at IS NULL AND expires_at::timestamptz > now()
+         FOR UPDATE`,
+        [tokenHash]
+      )
+    ).rows[0] as { user_id: number } | undefined;
+    if (!row) return false;
+    const usedAt = nowIso();
+    await client.query(
+      "UPDATE users SET email_verified_at = COALESCE(email_verified_at, $1) WHERE id = $2",
+      [usedAt, row.user_id]
+    );
+    await client.query(
+      `UPDATE account_tokens SET used_at = $1
+       WHERE user_id = $2 AND purpose = 'verify_email' AND used_at IS NULL`,
+      [usedAt, row.user_id]
+    );
+    return true;
+  });
+}
+
+export async function resetPasswordWithToken(
+  tokenHash: string,
+  passwordHash: string
+): Promise<number | undefined> {
+  return tx(async (client) => {
+    const row = (
+      await client.query(
+        `SELECT user_id FROM account_tokens
+         WHERE token_hash = $1 AND purpose = 'reset_password'
+           AND used_at IS NULL AND expires_at::timestamptz > now()
+         FOR UPDATE`,
+        [tokenHash]
+      )
+    ).rows[0] as { user_id: number } | undefined;
+    if (!row) return undefined;
+    const usedAt = nowIso();
+    // Receiving the reset link also proves control of the email address.
+    await client.query(
+      `UPDATE users SET password_hash = $1,
+        email_verified_at = COALESCE(email_verified_at, $2)
+       WHERE id = $3`,
+      [passwordHash, usedAt, row.user_id]
+    );
+    await client.query("DELETE FROM sessions WHERE user_id = $1", [row.user_id]);
+    await client.query(
+      "UPDATE account_tokens SET used_at = $1 WHERE user_id = $2 AND used_at IS NULL",
+      [usedAt, row.user_id]
+    );
+    return row.user_id;
+  });
 }
 
 // ---------- Courses ----------

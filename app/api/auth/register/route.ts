@@ -7,6 +7,7 @@ import {
   requestIp,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { sendVerificationEmail } from "@/lib/account-security";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,13 @@ export async function POST(req: NextRequest) {
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  const res = NextResponse.json({ user: publicUser(result.user) });
-  await startSession(res, result.user.id);
-  return res;
+  const verification = await sendVerificationEmail(result.user.id, req.nextUrl.origin);
+  const responseBody = {
+    user: publicUser(result.user),
+    verificationSent: verification.sent,
+    ...(verification.previewUrl ? { previewUrl: verification.previewUrl } : {}),
+  };
+  const resWithVerification = NextResponse.json(responseBody);
+  await startSession(resWithVerification, result.user.id);
+  return resWithVerification;
 }

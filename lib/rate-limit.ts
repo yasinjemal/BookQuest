@@ -28,6 +28,31 @@ export const RATE_LIMITS = {
     limit: 3,
     windowSeconds: 60 * 60,
   },
+  verificationUser: {
+    scope: "auth.verification.user",
+    limit: 5,
+    windowSeconds: 60 * 60,
+  },
+  verificationConfirmIp: {
+    scope: "auth.verification.confirm.ip",
+    limit: 60,
+    windowSeconds: 60 * 60,
+  },
+  forgotPasswordIp: {
+    scope: "auth.password.forgot.ip",
+    limit: 10,
+    windowSeconds: 60 * 60,
+  },
+  forgotPasswordAccount: {
+    scope: "auth.password.forgot.account",
+    limit: 3,
+    windowSeconds: 60 * 60,
+  },
+  resetPasswordIp: {
+    scope: "auth.password.reset.ip",
+    limit: 20,
+    windowSeconds: 60 * 60,
+  },
   uploadUser: { scope: "course.upload.user", limit: 10, windowSeconds: 60 * 60 },
   uploadIp: { scope: "course.upload.ip", limit: 30, windowSeconds: 60 * 60 },
   courseRetryUser: {

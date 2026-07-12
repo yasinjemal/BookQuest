@@ -31,7 +31,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         return;
       }
       if (data.user?.id) setAnswerOutboxAccount(data.user.id);
-      router.push("/");
+      if (data.previewUrl && typeof window !== "undefined") {
+        sessionStorage.setItem("bookquest.verification-preview", data.previewUrl);
+      }
+      router.push(
+        data.user && !data.user.email_verified_at ? "/verify-email" : "/"
+      );
       router.refresh();
     } catch {
       setError("Network error — are you online?");
@@ -70,6 +75,13 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           autoComplete="email"
           className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
         />
+        {mode === "login" && (
+          <div className="text-right">
+            <Link href="/forgot-password" className="text-sm font-semibold text-primary-deep">
+              Forgot password?
+            </Link>
+          </div>
+        )}
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}

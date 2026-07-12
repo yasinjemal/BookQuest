@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import {
   createSession,
@@ -9,16 +8,11 @@ import {
   getUserByEmail,
   type UserRow,
 } from "./db";
+import { hashPassword, verifyPassword } from "./passwords";
+
+export { hashPassword, verifyPassword } from "./passwords";
 
 export const SESSION_COOKIE = "bq_session";
-
-export function hashPassword(password: string): string {
-  return bcrypt.hashSync(password, 10);
-}
-
-export function verifyPassword(password: string, hash: string): boolean {
-  return bcrypt.compareSync(password, hash);
-}
 
 export async function register(
   email: string,
@@ -86,5 +80,6 @@ export function publicUser(user: UserRow) {
     role: user.role,
     credits: user.credits,
     premium_until: user.premium_until,
+    email_verified_at: user.email_verified_at,
   };
 }
