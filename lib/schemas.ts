@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { BLOCK_SCHEMAS } from "./block-registry";
 
 // ---------- Card types (what the lesson player renders) ----------
 
@@ -73,13 +74,22 @@ export const RecapCard = z.object({
     .describe("2-4 bullet points summarizing the lesson's key takeaways"),
 });
 
-export const Card = z.discriminatedUnion("type", [
+export const Card = z.union([
   ConceptCard,
   ExampleCard,
   QuizMcqCard,
   QuizTrueFalseCard,
   QuizFillBlankCard,
   RecapCard,
+  BLOCK_SCHEMAS.image,
+  BLOCK_SCHEMAS.audio_video,
+  BLOCK_SCHEMAS.story,
+  BLOCK_SCHEMAS.flashcard,
+  BLOCK_SCHEMAS.scenario,
+  BLOCK_SCHEMAS.practical_task,
+  BLOCK_SCHEMAS.discussion,
+  BLOCK_SCHEMAS.survey,
+  BLOCK_SCHEMAS.attestation,
 ]);
 export type Card = z.infer<typeof Card>;
 
@@ -168,4 +178,5 @@ export interface LessonRow {
   cards: string; // JSON Card[]
   generator_model: string | null;
   prompt_version: string | null;
+  content_version: number;
 }

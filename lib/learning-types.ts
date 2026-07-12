@@ -27,4 +27,5 @@ export interface PracticeSessionItem {
   cardIndex?: number;
   generatorModel?: string | null;
   promptVersion?: string | null;
+  courseVersion?: number;
 }

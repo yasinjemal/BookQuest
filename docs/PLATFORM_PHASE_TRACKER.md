@@ -431,22 +431,37 @@ unique learning experiences with source traceability.
 - [x] Show source coverage and unsupported claims during review.
   (`analyzeCourseVersion` verifies source-version references per block and the
   Studio draft-check panel reports traced and unsupported blocks.)
-- [ ] Add draft, review, approved, published, superseded and archived states.
+- [x] Add draft, review, approved, published, superseded and archived states.
+  (Studio lifecycle services enforce each transition, require approval before
+  publication, supersede the previous release atomically and archive only
+  unpublished working versions.)
 - [x] Make published course versions immutable.
   (Migration 4 guards published/superseded/archived versions, their block layout
   and append-only block/source revisions; upgrade tests prove mutation fails.)
-- [ ] Branch new drafts from published versions and show version differences.
-- [ ] Preserve evidence against the version each learner experienced.
-- [ ] Add comments, requested changes, approval history and safe rollback.
+- [x] Branch new drafts from published versions and show version differences.
+  (Branching copies immutable source links and current block snapshots while
+  retaining lineage; Studio shows added, removed and changed lineage counts.)
+- [x] Preserve evidence against the version each learner experienced.
+  (Lesson, practice and review sessions capture their content version at session
+  creation; question and learning evidence use that captured version even after
+  a newer release is published. The lifecycle test proves this race.)
+- [x] Add comments, requested changes, approval history and safe rollback.
+  (Reviewer notes can be resolved, review decisions are append-only, requested
+  changes return a version to draft, and any superseded release can be restored
+  as a new draft without altering history.)
 
 ### Composable blocks
 
 - [x] Create stable, versioned block identities and a block registry.
   (`block_types`, stable lineage IDs and append-only `course_block_revisions`;
   legacy cards and completed generation runs are backfilled/snapshotted.)
-- [ ] Support explanation, image, audio/video, story and worked example.
-- [ ] Support flashcard, multiple choice, true/false and fill-in.
-- [ ] Support scenario, practical task, discussion, survey and attestation.
+- [x] Support explanation, image, audio/video, story and worked example.
+- [x] Support flashcard, multiple choice, true/false and fill-in.
+- [x] Support scenario, practical task, discussion, survey and attestation.
+  (All built-ins have validated Studio editors, immutable publication snapshots
+  and safe learner-player rendering. Graded types normalize into the existing
+  server-graded immutable question pipeline; media opens without executable
+  embeds and supplies its required text alternative.)
 - [x] Define offline/channel compatibility and fallbacks per block.
   (`BLOCK_CHANNELS` and the persisted registry declare offline/chat support and
   deterministic non-executable fallbacks for all built-in types.)
@@ -459,16 +474,26 @@ unique learning experiences with source traceability.
 
 ### Recipes and templates
 
-- [ ] Define a versioned recipe separate from generated content.
-- [ ] Capture audience, objectives, difficulty, duration and lesson size.
-- [ ] Capture teaching style, tone, language and reading level.
-- [ ] Capture assessment mix, pass rule, credential and expiry behavior.
-- [ ] Capture delivery and accessibility preferences.
-- [ ] Allow private, Space-shared, unlisted and public recipes.
-- [ ] Allow forking while preserving lineage and version.
-- [ ] Ship starter recipes for onboarding, compliance, school subjects, exam prep,
+- [x] Define a versioned recipe separate from generated content.
+  (`recipes` and immutable `recipe_versions` remain independent of content and
+  learner data; a course pins one exact optional recipe version.)
+- [x] Capture audience, objectives, difficulty, duration and lesson size.
+- [x] Capture teaching style, tone, language and reading level.
+- [x] Capture assessment mix, pass rule, credential and expiry behavior.
+- [x] Capture delivery and accessibility preferences.
+  (The validated recipe contract persists each of these fields explicitly rather
+  than hiding generation policy in a prompt.)
+- [x] Allow private, Space-shared, unlisted and public recipes.
+  (Constrained visibility is Space-owned and all management uses live Space
+  capabilities.)
+- [x] Allow forking while preserving lineage and version.
+  (Public/unlisted recipes can be copied into another Space with origin recipe
+  and exact version retained; later revision appends instead of overwriting.)
+- [x] Ship starter recipes for onboarding, compliance, school subjects, exam prep,
   certification, public awareness, safety, product training, micro-courses and
   scenario simulations.
+  (Ten data-only starter contracts carry mobile/offline, accessibility, trace and
+  safety defaults and can be added from Create without learner data.)
 
 ### Studio experience
 
@@ -476,7 +501,9 @@ unique learning experiences with source traceability.
   (Navigation now exposes Create and Studio alongside Learn, Spaces/Manage and
   Explore without changing learner routes.)
 - [ ] Edit the outline before full generation.
-- [ ] Edit and reorder lesson blocks.
+- [x] Edit and reorder lesson blocks.
+  (Studio provides validated field editors, optimistic revision checks, source
+  links and per-lesson move controls backed by a complete-order transaction.)
 - [ ] Regenerate only a selected block, lesson or module.
 - [ ] Preserve manual edits outside regeneration scope.
 - [ ] Preview mobile, desktop and offline experiences.
@@ -488,15 +515,27 @@ unique learning experiences with source traceability.
 - [x] Create a course from one source, multiple sources or a blank draft.
   (The Create screen and Studio APIs cover all three paths; blank/manual creation
   consumes no AI generation credit.)
-- [ ] Every generated lesson is editable before publishing.
+- [x] Every generated lesson is editable before publishing.
+  (Completed legacy generation is snapshotted into editable Studio blocks;
+  publication is restricted to reviewed and approved version snapshots.)
 - [x] Published versions cannot be silently changed.
   (Database guards reject version, layout and revision mutation after publish;
   both migration and authoring suites exercise the boundary.)
-- [ ] Published assessments resolve to immutable question versions.
-- [ ] Reviewers can trace important material back to sources.
-- [ ] Recipes can be saved, forked and reused without learner data.
+- [x] Published assessments resolve to immutable question versions.
+  (Publication materializes a versioned learner projection; answer sessions pin
+  its course version and immutable question content hash before accepting work.)
+- [x] Reviewers can trace important material back to sources.
+  (Per-block immutable source-version references and the coverage panel remain
+  visible through review, and publication rejects missing/out-of-scope links.)
+- [x] Recipes can be saved, forked and reused without learner data.
+  (`tests/recipes.test.ts` creates, publishes, appends, forks and attaches an
+  exact version to a course while proving the recipe tables contain no learner
+  state.)
 - [ ] Manual edits survive unrelated regeneration.
-- [ ] Starter recipes pass accessibility, mobile and offline checks.
+- [x] Starter recipes pass accessibility, mobile and offline checks.
+  (The starter-contract test requires every starter to declare WCAG 2.2 AA,
+  mobile, low-bandwidth and offline defaults plus at least one safety boundary;
+  their data-only controls use the existing responsive Create journey.)
 
 ### Measure
 

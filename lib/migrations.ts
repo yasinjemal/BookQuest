@@ -1403,6 +1403,24 @@ CREATE TRIGGER course_version_reviews_no_update
 CREATE OR REPLACE FUNCTION phase2_version_lifecycle_guard() RETURNS trigger AS $$
 BEGIN
   IF OLD.lifecycle_status IN ('published', 'superseded', 'archived') THEN
+    IF TG_OP = 'UPDATE'
+       AND OLD.lifecycle_status = 'published'
+       AND NEW.lifecycle_status = 'superseded'
+       AND NEW.superseded_at IS NOT NULL
+       AND ROW(NEW.id, NEW.course_id, NEW.version_number, NEW.parent_version_id,
+               NEW.title, NEW.description, NEW.source_collection_version_id,
+               NEW.recipe_version_id, NEW.outline_json, NEW.content_json,
+               NEW.content_hash, NEW.created_by_user_id, NEW.created_at,
+               NEW.updated_at, NEW.submitted_at, NEW.approved_at, NEW.published_at)
+           IS NOT DISTINCT FROM
+           ROW(OLD.id, OLD.course_id, OLD.version_number, OLD.parent_version_id,
+               OLD.title, OLD.description, OLD.source_collection_version_id,
+               OLD.recipe_version_id, OLD.outline_json, OLD.content_json,
+               OLD.content_hash, OLD.created_by_user_id, OLD.created_at,
+               OLD.updated_at, OLD.submitted_at, OLD.approved_at, OLD.published_at)
+    THEN
+      RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'Published course versions are immutable';
   END IF;
   RETURN NEW;

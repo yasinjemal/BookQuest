@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
   let context:
     | {
         courseId: number;
+        courseVersion?: number;
         lessonId?: number;
         cardIndex?: number;
         questionId: string;
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
     }
     context = {
       courseId: item.courseId,
+      courseVersion: item.courseVersion,
       lessonId: item.lessonId,
       cardIndex: item.cardIndex,
       questionId: item.questionId,
@@ -105,6 +107,7 @@ export async function POST(req: NextRequest) {
     }
     context = {
       courseId,
+      courseVersion: item.courseVersion,
       lessonId: item.lessonId,
       cardIndex: item.cardIndex,
       questionId: item.questionId,
@@ -133,6 +136,7 @@ export async function POST(req: NextRequest) {
     }
     context = {
       courseId: item.courseId,
+      courseVersion: item.courseVersion,
       lessonId: item.lessonId,
       cardIndex: item.cardIndex,
       questionId: item.questionId,

@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth";
 import { CATEGORIES } from "@/lib/categories";
 import { authorizeCourseAction } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
+import { publishApprovedCourseVersion, StudioConflictError } from "@/lib/studio";
+import { studioApiError } from "@/lib/studio-api";
 
 export const runtime = "nodejs";
 
@@ -33,6 +35,18 @@ export async function POST(
   const category = CATEGORIES.includes(body.category ?? "")
     ? (body.category as string)
     : course.category;
-  await setCoursePublished(course.id, !!body.published, category);
-  return NextResponse.json({ ok: true });
+  try {
+    if (!body.published) {
+      await setCoursePublished(course.id, false, category);
+      return NextResponse.json({ ok: true, published: false });
+    }
+    return NextResponse.json(await publishApprovedCourseVersion(user.id, course.id, category));
+  } catch (error) {
+    const response = studioApiError(error);
+    if (response) return response;
+    if (error instanceof StudioConflictError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
+  }
 }

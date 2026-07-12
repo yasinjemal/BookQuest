@@ -12,6 +12,12 @@ import {
   submitLessonCompletion,
 } from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
+import RichBlockCard, { type RichCard } from "@/components/RichBlockCard";
+import type { QuizCard as QuizCardType } from "@/lib/learning-types";
+
+function isQuizCard(card: Card): card is QuizCardType {
+  return card.type === "quiz_mcq" || card.type === "quiz_truefalse" || card.type === "quiz_fillblank";
+}
 
 interface LessonData {
   id: number;
@@ -206,7 +212,7 @@ export default function LessonPage() {
               ))}
             </ul>
           </div>
-        ) : (
+        ) : isQuizCard(card) ? (
           <QuizCard
             card={card}
             onAnswered={(result) => {
@@ -225,6 +231,8 @@ export default function LessonPage() {
               });
             }}
           />
+        ) : (
+          <RichBlockCard card={card as RichCard} />
         )}
       </div>
 

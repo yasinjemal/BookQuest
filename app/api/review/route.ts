@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       const quizCard = card as QuizCard;
       const sessionItem: AnswerSessionItem = {
         courseId: lesson.course_id,
+        courseVersion: lesson.content_version,
         lessonId: lesson.id,
         cardIndex: item.card_index,
         questionId: `lesson:${lesson.id}:card:${item.card_index}`,

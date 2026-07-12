@@ -244,7 +244,8 @@ export async function recordExtractedCourseSource(
 export async function createBlankCourseDraft(
   userId: number,
   spaceId: string,
-  titleInput: string
+  titleInput: string,
+  recipeVersionId?: string
 ): Promise<{ courseId: number; courseVersionId: string }> {
   const title = titleInput.trim();
   if (title.length < 2 || title.length > 120) {
@@ -252,6 +253,14 @@ export async function createBlankCourseDraft(
   }
   return tx(async (client) => {
     await authorizeStoredMembership(userId, spaceId, "content.create", client);
+    if (recipeVersionId) {
+      const recipe = await client.query(
+        `SELECT 1 FROM recipe_versions version JOIN recipes recipe ON recipe.id = version.recipe_id
+         WHERE version.id = $1 AND recipe.owning_space_id = $2`,
+        [recipeVersionId, spaceId]
+      );
+      if (recipe.rowCount !== 1) throw new StudioConflictError("Recipe version is unavailable in this Space");
+    }
     const generationRunId = newGenerationRunId();
     const course = (
       await client.query<{ id: number }>(
@@ -271,6 +280,12 @@ export async function createBlankCourseDraft(
       sourceFilename: "Manual draft",
       sourceKind: "manual",
     });
+    if (recipeVersionId) {
+      await client.query("UPDATE course_versions SET recipe_version_id = $2 WHERE id = $1", [
+        initialized.courseVersionId,
+        recipeVersionId,
+      ]);
+    }
     await recordExtractedCourseSource(client, {
       courseId: course.id,
       extractedContentJson: "[]",
@@ -779,7 +794,7 @@ export async function updateSourceGovernance(
 export async function createCourseDraftFromSources(
   userId: number,
   spaceId: string,
-  input: { title: string; sourceVersionIds: string[] }
+  input: { title: string; sourceVersionIds: string[]; recipeVersionId?: string }
 ): Promise<{ courseId: number; courseVersionId: string }> {
   const title = input.title.trim();
   const sourceVersionIds = [...new Set(input.sourceVersionIds)];
@@ -791,6 +806,14 @@ export async function createCourseDraftFromSources(
   }
   return tx(async (client) => {
     await authorizeStoredMembership(userId, spaceId, "content.create", client);
+    if (input.recipeVersionId) {
+      const recipe = await client.query(
+        `SELECT 1 FROM recipe_versions version JOIN recipes recipe ON recipe.id = version.recipe_id
+         WHERE version.id = $1 AND recipe.owning_space_id = $2`,
+        [input.recipeVersionId, spaceId]
+      );
+      if (recipe.rowCount !== 1) throw new StudioConflictError("Recipe version is unavailable in this Space");
+    }
     const sources = (
       await client.query<{
         id: string;
@@ -872,11 +895,11 @@ export async function createCourseDraftFromSources(
       await client.query<{ id: string }>(
         `INSERT INTO course_versions
           (course_id, version_number, lifecycle_status, title, description,
-           source_collection_version_id, outline_json, content_json,
+           source_collection_version_id, recipe_version_id, outline_json, content_json,
            content_hash, created_by_user_id)
-         VALUES ($1, 1, 'draft', $2, '', $3, '{}', $4, $5, $6)
+         VALUES ($1, 1, 'draft', $2, '', $3, $4, '{}', $5, $6, $7)
          RETURNING id`,
-        [course.id, title, collectionVersion.id, emptyContent, hash(emptyContent), userId]
+        [course.id, title, collectionVersion.id, input.recipeVersionId ?? null, emptyContent, hash(emptyContent), userId]
       )
     ).rows[0];
     for (let position = 0; position < ordered.length; position++) {
@@ -1011,7 +1034,45 @@ export async function getCourseStudio(userId: number, courseId: number) {
         [versionId]
       )
     ).rows;
-    return { course, version, sources, blocks: await readStudioBlocks(client, versionId) };
+    const versions = (
+      await client.query(
+        `SELECT id, version_number, parent_version_id, lifecycle_status,
+                created_at, submitted_at, approved_at, published_at, superseded_at
+         FROM course_versions WHERE course_id = $1 ORDER BY version_number DESC`,
+        [courseId]
+      )
+    ).rows;
+    const reviews = (
+      await client.query(
+        `SELECT review.id, review.course_version_id, review.reviewer_user_id,
+                review.decision, review.summary, review.checklist_json,
+                review.created_at, account.name AS reviewer_name
+         FROM course_version_reviews review
+         JOIN users account ON account.id = review.reviewer_user_id
+         WHERE review.course_version_id = $1 ORDER BY review.created_at`,
+        [versionId]
+      )
+    ).rows;
+    const comments = (
+      await client.query(
+        `SELECT comment.*, author.name AS author_name,
+                resolver.name AS resolver_name
+         FROM course_version_comments comment
+         JOIN users author ON author.id = comment.author_user_id
+         LEFT JOIN users resolver ON resolver.id = comment.resolved_by_user_id
+         WHERE comment.course_version_id = $1 ORDER BY comment.created_at`,
+        [versionId]
+      )
+    ).rows;
+    return {
+      course,
+      version,
+      versions,
+      reviews,
+      comments,
+      sources,
+      blocks: await readStudioBlocks(client, versionId),
+    };
   });
 }
 
@@ -1269,5 +1330,485 @@ export async function analyzeCourseVersion(
         .map((result) => result.blockId),
       blocks: results,
     };
+  });
+}
+
+export type CourseReviewDecision = "commented" | "changes_requested" | "approved";
+
+async function snapshotCourseVersion(exec: Queryable, versionId: string) {
+  const blocks = await readStudioBlocks(exec, versionId);
+  const modules = Array.from(
+    blocks.reduce((map, block) => {
+      const module = map.get(block.moduleKey) ?? {
+        key: block.moduleKey,
+        title: block.moduleTitle,
+        summary: block.moduleSummary,
+        position: block.modulePosition,
+        lessons: new Map<string, {
+          key: string;
+          title: string;
+          position: number;
+          blocks: StudioBlock[];
+        }>(),
+      };
+      const lesson = module.lessons.get(block.lessonKey) ?? {
+        key: block.lessonKey,
+        title: block.lessonTitle,
+        position: block.lessonPosition,
+        blocks: [],
+      };
+      lesson.blocks.push(block);
+      module.lessons.set(block.lessonKey, lesson);
+      map.set(block.moduleKey, module);
+      return map;
+    }, new Map<string, {
+      key: string;
+      title: string;
+      summary: string;
+      position: number;
+      lessons: Map<string, { key: string; title: string; position: number; blocks: StudioBlock[] }>;
+    }>()).values()
+  )
+    .sort((a, b) => a.position - b.position)
+    .map((module) => ({
+      ...module,
+      lessons: Array.from(module.lessons.values())
+        .sort((a, b) => a.position - b.position)
+        .map((lesson) => ({ ...lesson, blocks: lesson.blocks.sort((a, b) => a.position - b.position) })),
+    }));
+  const contentJson = JSON.stringify({ modules });
+  await exec.query(
+    `UPDATE course_versions SET outline_json = $2, content_json = $3,
+       content_hash = $4, updated_at = $5 WHERE id = $1`,
+    [
+      versionId,
+      JSON.stringify({
+        modules: modules.map((module) => ({
+          key: module.key,
+          title: module.title,
+          summary: module.summary,
+          position: module.position,
+          lessons: module.lessons.map((lesson) => ({
+            key: lesson.key,
+            title: lesson.title,
+            position: lesson.position,
+          })),
+        })),
+      }),
+      contentJson,
+      hash(contentJson),
+      nowIso(),
+    ]
+  );
+  return { blocks, modules, contentJson };
+}
+
+function toLearnerCard(block: StudioBlock): unknown {
+  const content = block.content as Record<string, unknown>;
+  if (content.type === "concept" || content.type === "example" || String(content.type).startsWith("quiz_") || content.type === "recap" && "title" in content) {
+    return content;
+  }
+  switch (block.blockType) {
+    case "explanation":
+      return { type: "concept", title: content.heading, body: content.body };
+    case "worked_example":
+      return {
+        type: "example",
+        title: content.title,
+        body: `${content.problem}\n\n${(content.steps as string[]).map((step, index) => `${index + 1}. ${step}`).join("\n")}\n\n${content.result}`,
+      };
+    case "multiple_choice":
+      return {
+        type: "quiz_mcq", concept: content.concept, question: content.question,
+        options: content.options, correct_index: content.correctIndex,
+        explanation: content.explanation,
+      };
+    case "true_false":
+      return {
+        type: "quiz_truefalse", concept: content.concept, statement: content.statement,
+        answer: content.answer, explanation: content.explanation,
+      };
+    case "fill_in":
+      return {
+        type: "quiz_fillblank", concept: content.concept, sentence: content.prompt,
+        answer: content.answer, accepted_answers: content.acceptedAnswers,
+        explanation: content.explanation,
+      };
+    case "recap":
+      return { type: "recap", title: content.heading, points: content.points };
+    default:
+      return content;
+  }
+}
+
+export async function submitCourseVersionForReview(userId: number, courseId: number) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("No draft is ready for review");
+    const version = (
+      await client.query<{ lifecycle_status: string }>(
+        "SELECT lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (version?.lifecycle_status !== "draft") {
+      throw new StudioConflictError("Only a draft can be submitted for review");
+    }
+    const snapshot = await snapshotCourseVersion(client, course.current_draft_version_id);
+    if (snapshot.blocks.length === 0) throw new StudioConflictError("Add at least one block before review");
+    const at = nowIso();
+    await client.query(
+      "UPDATE course_versions SET lifecycle_status = 'review', submitted_at = $2, updated_at = $2 WHERE id = $1",
+      [course.current_draft_version_id, at]
+    );
+    await client.query(
+      "UPDATE courses SET authoring_status = 'review' WHERE id = $1",
+      [courseId]
+    );
+    return { versionId: course.current_draft_version_id, status: "review" as const };
+  });
+}
+
+export async function reviewCourseVersion(
+  userId: number,
+  courseId: number,
+  input: { decision: CourseReviewDecision; summary?: string; checklist?: Record<string, unknown> }
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.review");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Course review version not found");
+    const version = (
+      await client.query<{ lifecycle_status: string }>(
+        "SELECT lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (version?.lifecycle_status !== "review") {
+      throw new StudioConflictError("This version is not awaiting review");
+    }
+    const at = nowIso();
+    await client.query(
+      `INSERT INTO course_version_reviews
+        (course_version_id, reviewer_user_id, decision, summary, checklist_json, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        course.current_draft_version_id,
+        userId,
+        input.decision,
+        input.summary?.trim() ?? "",
+        JSON.stringify(input.checklist ?? {}),
+        at,
+      ]
+    );
+    const status = input.decision === "approved" ? "approved" : input.decision === "changes_requested" ? "draft" : "review";
+    await client.query(
+      `UPDATE course_versions SET lifecycle_status = $2,
+         approved_at = CASE WHEN $2 = 'approved' THEN $3 ELSE approved_at END,
+         updated_at = $3 WHERE id = $1`,
+      [course.current_draft_version_id, status, at]
+    );
+    await client.query("UPDATE courses SET authoring_status = $2 WHERE id = $1", [courseId, status]);
+    return { versionId: course.current_draft_version_id, status };
+  });
+}
+
+export async function addCourseVersionComment(
+  userId: number,
+  courseId: number,
+  input: { body: string; blockLineageId?: string | null }
+) {
+  const body = input.body.trim();
+  if (!body) throw new StudioConflictError("Comment cannot be empty");
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.review");
+    const versionId = course.current_draft_version_id ?? course.published_version_id;
+    if (!versionId) throw new StudioConflictError("Course version not found");
+    if (input.blockLineageId) {
+      const exists = await client.query(
+        "SELECT 1 FROM course_blocks WHERE course_version_id = $1 AND lineage_id = $2",
+        [versionId, input.blockLineageId]
+      );
+      if (exists.rowCount !== 1) throw new StudioConflictError("Comment block is outside this version");
+    }
+    return (
+      await client.query(
+        `INSERT INTO course_version_comments
+          (course_version_id, block_lineage_id, author_user_id, body)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [versionId, input.blockLineageId ?? null, userId, body]
+      )
+    ).rows[0];
+  });
+}
+
+export async function resolveCourseVersionComment(
+  userId: number,
+  courseId: number,
+  commentId: string
+) {
+  return tx(async (client) => {
+    await authorizeCourseStudio(client, userId, courseId, "content.review");
+    const at = nowIso();
+    const comment = (
+      await client.query(
+        `UPDATE course_version_comments comment
+         SET status = 'resolved', resolved_at = $3, resolved_by_user_id = $2
+         FROM course_versions version
+         WHERE comment.id = $1 AND comment.course_version_id = version.id
+           AND version.course_id = $4 AND comment.status = 'open'
+         RETURNING comment.*`,
+        [commentId, userId, at, courseId]
+      )
+    ).rows[0];
+    if (!comment) throw new StudioConflictError("Open comment not found");
+    return comment;
+  });
+}
+
+export async function branchPublishedCourseVersion(
+  userId: number,
+  courseId: number,
+  fromVersionId?: string
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (course.current_draft_version_id) {
+      const current = (
+        await client.query<{ lifecycle_status: string }>(
+          "SELECT lifecycle_status FROM course_versions WHERE id = $1",
+          [course.current_draft_version_id]
+        )
+      ).rows[0];
+      if (current && ["draft", "review", "approved"].includes(current.lifecycle_status)) {
+        throw new StudioConflictError("Finish or archive the current draft before branching");
+      }
+    }
+    const sourceVersionId = fromVersionId ?? course.published_version_id;
+    if (!sourceVersionId) throw new StudioConflictError("Publish a version before branching");
+    const parent = (
+      await client.query<{
+        version_number: number;
+        title: string;
+        description: string;
+        source_collection_version_id: string | null;
+        recipe_version_id: string | null;
+        outline_json: string;
+        content_json: string;
+        content_hash: string;
+      }>(
+        `SELECT * FROM course_versions
+         WHERE id = $1 AND course_id = $2
+           AND lifecycle_status IN ('published', 'superseded') FOR UPDATE`,
+        [sourceVersionId, courseId]
+      )
+    ).rows[0];
+    if (!parent) throw new StudioConflictError("Published history version not found");
+    const nextVersion = Number(
+      (
+        await client.query<{ version: number }>(
+          "SELECT COALESCE(MAX(version_number), 0) + 1 AS version FROM course_versions WHERE course_id = $1",
+          [courseId]
+        )
+      ).rows[0].version
+    );
+    const draft = (
+      await client.query<{ id: string }>(
+        `INSERT INTO course_versions
+          (course_id, version_number, parent_version_id, lifecycle_status, title,
+           description, source_collection_version_id, recipe_version_id, outline_json,
+           content_json, content_hash, created_by_user_id)
+         VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING id`,
+        [
+          courseId, nextVersion, sourceVersionId, parent.title, parent.description,
+          parent.source_collection_version_id, parent.recipe_version_id, parent.outline_json,
+          parent.content_json, parent.content_hash, userId,
+        ]
+      )
+    ).rows[0];
+    await client.query(
+      `INSERT INTO course_version_sources (course_version_id, source_version_id, position, coverage_json)
+       SELECT $1, source_version_id, position, coverage_json
+       FROM course_version_sources WHERE course_version_id = $2`,
+      [draft.id, sourceVersionId]
+    );
+    const parentBlocks = await readStudioBlocks(client, sourceVersionId);
+    for (const block of parentBlocks) {
+      const copy = (
+        await client.query<{ id: string }>(
+          `INSERT INTO course_blocks
+            (course_version_id, lineage_id, module_key, module_title, module_summary,
+             lesson_key, lesson_title, module_position, lesson_position, position,
+             block_type, current_revision)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1) RETURNING id`,
+          [
+            draft.id, block.lineageId, block.moduleKey, block.moduleTitle, block.moduleSummary,
+            block.lessonKey, block.lessonTitle, block.modulePosition, block.lessonPosition,
+            block.position, block.blockType,
+          ]
+        )
+      ).rows[0];
+      await client.query(
+        `INSERT INTO course_block_revisions
+          (block_id, revision, content_json, source_refs_json, accessibility_json,
+           provenance_json, edit_origin, created_by_user_id)
+         VALUES ($1,1,$2,$3,$4,$5,'imported',$6)`,
+        [
+          copy.id, JSON.stringify(block.content), JSON.stringify(block.sourceRefs),
+          JSON.stringify(block.accessibility),
+          JSON.stringify({ branchedFromVersionId: sourceVersionId, branchedFromBlockId: block.id }),
+          userId,
+        ]
+      );
+    }
+    await client.query(
+      "UPDATE courses SET current_draft_version_id = $2, authoring_status = 'draft' WHERE id = $1",
+      [courseId, draft.id]
+    );
+    return { versionId: draft.id, versionNumber: nextVersion, parentVersionId: sourceVersionId };
+  });
+}
+
+export async function archiveCourseDraftVersion(userId: number, courseId: number) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Draft version not found");
+    const version = (
+      await client.query<{ lifecycle_status: string }>(
+        "SELECT lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (!version || !["draft", "review", "approved"].includes(version.lifecycle_status)) {
+      throw new StudioConflictError("Only an unpublished working version can be archived");
+    }
+    await client.query(
+      "UPDATE course_versions SET lifecycle_status = 'archived', updated_at = $2 WHERE id = $1",
+      [course.current_draft_version_id, nowIso()]
+    );
+    await client.query(
+      `UPDATE courses SET current_draft_version_id = NULL,
+         authoring_status = CASE WHEN published_version_id IS NULL THEN 'archived' ELSE 'published' END
+       WHERE id = $1`,
+      [courseId]
+    );
+    return { versionId: course.current_draft_version_id, status: "archived" as const };
+  });
+}
+
+export async function diffCourseVersions(userId: number, courseId: number, baseId: string, compareId: string) {
+  return tx(async (client) => {
+    await authorizeCourseStudio(client, userId, courseId, "content.read");
+    const versions = await client.query<{ id: string }>(
+      "SELECT id FROM course_versions WHERE course_id = $1 AND id = ANY($2::text[])",
+      [courseId, [baseId, compareId]]
+    );
+    if (versions.rowCount !== 2 || baseId === compareId) throw new StudioConflictError("Choose two versions from this course");
+    const base = await readStudioBlocks(client, baseId);
+    const compare = await readStudioBlocks(client, compareId);
+    const before = new Map(base.map((block) => [block.lineageId, block]));
+    const after = new Map(compare.map((block) => [block.lineageId, block]));
+    const added = compare.filter((block) => !before.has(block.lineageId));
+    const removed = base.filter((block) => !after.has(block.lineageId));
+    const changed = compare.filter((block) => {
+      const previous = before.get(block.lineageId);
+      return previous && JSON.stringify({ content: previous.content, position: previous.position, lesson: previous.lessonKey }) !==
+        JSON.stringify({ content: block.content, position: block.position, lesson: block.lessonKey });
+    });
+    return {
+      baseVersionId: baseId,
+      compareVersionId: compareId,
+      added: added.map((block) => block.lineageId),
+      removed: removed.map((block) => block.lineageId),
+      changed: changed.map((block) => block.lineageId),
+    };
+  });
+}
+
+export async function publishApprovedCourseVersion(
+  userId: number,
+  courseId: number,
+  category: string
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.publish");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Approved version not found");
+    const version = (
+      await client.query<{ id: string; version_number: number; lifecycle_status: string; title: string; description: string }>(
+        "SELECT id, version_number, lifecycle_status, title, description FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (version?.lifecycle_status !== "approved") {
+      throw new StudioConflictError("The course must be approved before publishing");
+    }
+    const openComments = (
+      await client.query<{ count: number }>(
+        "SELECT COUNT(*)::int AS count FROM course_version_comments WHERE course_version_id = $1 AND status = 'open'",
+        [version.id]
+      )
+    ).rows[0].count;
+    if (openComments > 0) throw new StudioConflictError("Resolve open review comments before publishing");
+    const snapshot = await snapshotCourseVersion(client, version.id);
+    if (snapshot.blocks.some((block) => validateBlockContent(block.blockType, block.content).valid === false)) {
+      throw new StudioConflictError("Fix accessibility or block validation issues before publishing");
+    }
+    const sourceRows = await client.query<{ source_version_id: string }>(
+      "SELECT source_version_id FROM course_version_sources WHERE course_version_id = $1",
+      [version.id]
+    );
+    const allowedSources = new Set(sourceRows.rows.map((row) => row.source_version_id));
+    const unsupported = snapshot.blocks.filter((block) => {
+      const refs = block.sourceRefs
+        .map((ref) => ref && typeof ref === "object" && "sourceVersionId" in ref
+          ? String((ref as { sourceVersionId: unknown }).sourceVersionId) : null)
+        .filter((id): id is string => !!id);
+      return refs.length === 0 || refs.some((id) => !allowedSources.has(id));
+    });
+    if (unsupported.length > 0) throw new StudioConflictError("Every block needs a valid source reference before publishing");
+
+    for (const module of snapshot.modules) {
+      const moduleRow = (
+        await client.query<{ id: number }>(
+          `INSERT INTO modules
+            (course_id, title, summary, position, status, chapter_indexes, content_version)
+           VALUES ($1,$2,$3,$4,'ready','[]',$5) RETURNING id`,
+          [courseId, module.title, module.summary, module.position, version.version_number]
+        )
+      ).rows[0];
+      for (const lesson of module.lessons) {
+        await client.query(
+          `INSERT INTO lessons
+            (module_id, title, position, cards, generator_model, prompt_version, content_version)
+           VALUES ($1,$2,$3,$4,NULL,'studio-publish-v1',$5)`,
+          [
+            moduleRow.id,
+            lesson.title,
+            lesson.position,
+            JSON.stringify(lesson.blocks.map(toLearnerCard)),
+            version.version_number,
+          ]
+        );
+      }
+    }
+    const at = nowIso();
+    if (course.published_version_id && course.published_version_id !== version.id) {
+      await client.query(
+        "UPDATE course_versions SET lifecycle_status = 'superseded', superseded_at = $2 WHERE id = $1",
+        [course.published_version_id, at]
+      );
+    }
+    await client.query(
+      "UPDATE course_versions SET lifecycle_status = 'published', published_at = $2, updated_at = $2 WHERE id = $1",
+      [version.id, at]
+    );
+    await client.query(
+      `UPDATE courses SET title = $2, description = $3, category = $4,
+         content_version = $5, published = 1, authoring_status = 'published',
+         published_version_id = $6, current_draft_version_id = NULL, status = 'ready'
+       WHERE id = $1`,
+      [courseId, version.title, version.description, category, version.version_number, version.id]
+    );
+    return { versionId: version.id, versionNumber: version.version_number, publishedAt: at };
   });
 }

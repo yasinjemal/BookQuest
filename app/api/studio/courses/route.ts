@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
     spaceId?: string;
     title?: string;
     sourceVersionIds?: string[];
+    recipeVersionId?: string;
   };
   if (!body.spaceId || !body.title) {
     return NextResponse.json({ error: "Space and title are required" }, { status: 400 });
@@ -23,8 +24,9 @@ export async function POST(req: NextRequest) {
       ? await createCourseDraftFromSources(user.id, body.spaceId, {
           title: body.title,
           sourceVersionIds: body.sourceVersionIds ?? [],
+          recipeVersionId: body.recipeVersionId,
         })
-      : await createBlankCourseDraft(user.id, body.spaceId, body.title);
+      : await createBlankCourseDraft(user.id, body.spaceId, body.title, body.recipeVersionId);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     const response = studioApiError(error);

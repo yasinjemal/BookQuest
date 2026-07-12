@@ -13,6 +13,8 @@ interface SourceOption {
   kind: string;
   source_version_id: string;
 }
+interface RecipeOption { id: string; title: string; recipe_version_id: string; status: string }
+interface StarterOption { id: string; title: string }
 
 export default function CreatePage() {
   const router = useRouter();
@@ -20,6 +22,10 @@ export default function CreatePage() {
   const [spaceId, setSpaceId] = useState("");
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
+  const [recipes, setRecipes] = useState<RecipeOption[]>([]);
+  const [starters, setStarters] = useState<StarterOption[]>([]);
+  const [recipeVersionId, setRecipeVersionId] = useState("");
+  const [starterId, setStarterId] = useState("onboarding");
   const [title, setTitle] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [sourceKind, setSourceKind] = useState("manual");
@@ -37,6 +43,16 @@ export default function CreatePage() {
     setSelected([]);
   }, []);
 
+  const loadRecipes = useCallback(async (chosenSpace: string) => {
+    if (!chosenSpace) return setRecipes([]);
+    const response = await fetch(`/api/studio/recipes?spaceId=${encodeURIComponent(chosenSpace)}`);
+    if (!response.ok) return;
+    const data = await response.json();
+    setRecipes(data.recipes ?? []);
+    setStarters(data.starters ?? []);
+    setRecipeVersionId("");
+  }, []);
+
   useEffect(() => {
     void fetch("/api/spaces").then(async (response) => {
       if (response.status === 401) return router.push("/login");
@@ -45,9 +61,20 @@ export default function CreatePage() {
       setSpaces(available);
       const first = available[0]?.space.id ?? "";
       setSpaceId(first);
-      await loadSources(first);
+      await Promise.all([loadSources(first), loadRecipes(first)]);
     });
-  }, [loadSources, router]);
+  }, [loadRecipes, loadSources, router]);
+
+  async function addStarterRecipe() {
+    const response = await fetch("/api/studio/recipes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "starter", spaceId, starterId, visibility: "private" }),
+    });
+    const data = await response.json();
+    if (!response.ok) return setError(data.error ?? "Could not add starter recipe");
+    await loadRecipes(spaceId);
+    setRecipeVersionId(data.recipeVersionId);
+  }
 
   async function addSource(event: FormEvent) {
     event.preventDefault();
@@ -84,6 +111,7 @@ export default function CreatePage() {
           spaceId,
           title,
           sourceVersionIds: selected,
+          recipeVersionId: recipeVersionId || undefined,
         }),
       });
       const data = await response.json();
@@ -103,7 +131,7 @@ export default function CreatePage() {
 
       <section className="rounded-2xl bg-card border border-line p-4 space-y-3">
         <label className="block text-sm font-bold">Create inside</label>
-        <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); void loadSources(event.target.value); }} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5">
+        <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5">
           {spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name} · {space.type}</option>)}
         </select>
       </section>
@@ -118,6 +146,14 @@ export default function CreatePage() {
         <textarea value={sourceContent} onChange={(event) => setSourceContent(event.target.value)} placeholder="Paste source text" rows={5} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5" />
         <button disabled={!spaceId || sourceTitle.trim().length < 2 || !sourceContent.trim()} className="w-full rounded-xl bg-teal text-white font-bold py-2.5 disabled:opacity-40">Add to Source Library</button>
       </form>
+
+      <section className="rounded-2xl bg-card border border-line p-4 space-y-3">
+        <div><h2 className="font-bold">Teaching recipe</h2><p className="text-xs text-ink-soft">Optional. A recipe controls audience, style, assessment, delivery and accessibility without containing learner data.</p></div>
+        <select value={recipeVersionId} onChange={(event) => setRecipeVersionId(event.target.value)} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5">
+          <option value="">No recipe</option>{recipes.map((recipe) => <option key={recipe.recipe_version_id} value={recipe.recipe_version_id}>{recipe.title} · {recipe.status}</option>)}
+        </select>
+        <div className="flex gap-2"><select value={starterId} onChange={(event) => setStarterId(event.target.value)} className="min-w-0 flex-1 rounded-xl border-2 border-line bg-paper px-3 py-2.5">{starters.map((starter) => <option key={starter.id} value={starter.id}>{starter.title}</option>)}</select><button type="button" onClick={() => void addStarterRecipe()} className="rounded-xl bg-teal text-white font-bold px-4">Add starter</button></div>
+      </section>
 
       <form onSubmit={createCourse} className="rounded-2xl bg-card border border-line p-4 space-y-3">
         <div><h2 className="font-bold">New course draft</h2><p className="text-xs text-ink-soft">Select none for a blank course, or choose up to 20 sources.</p></div>

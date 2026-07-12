@@ -1099,6 +1099,7 @@ export async function getLearnerKey(
 
 interface QuestionContext {
   courseId: number;
+  courseVersion?: number;
   lessonId?: number;
   cardIndex?: number;
   questionId: string;
@@ -1138,6 +1139,7 @@ async function ensureQuestionVersion(context: QuestionContext, exec?: Queryable)
 
   const course = await getCourse(context.courseId, exec);
   if (!course) throw new Error("Course not found");
+  const courseVersion = context.courseVersion ?? course.content_version;
   const privacyScope = course.published ? "public_course" : "private_course";
 
   await q(
@@ -1160,7 +1162,7 @@ async function ensureQuestionVersion(context: QuestionContext, exec?: Queryable)
       version.questionId,
       version.contentHash,
       context.courseId,
-      course.content_version,
+      courseVersion,
       context.lessonId ?? null,
       context.cardIndex ?? null,
       conceptId,
@@ -1178,7 +1180,7 @@ async function ensureQuestionVersion(context: QuestionContext, exec?: Queryable)
     questionVersionId: version.id,
     conceptId,
     conceptLabel,
-    courseVersion: course.content_version,
+    courseVersion,
     privacyScope,
   };
 }
@@ -1463,6 +1465,7 @@ async function createAnswerSession(
       await ensureQuestionVersion(
         {
           courseId: item.courseId,
+          courseVersion: item.courseVersion,
           lessonId: item.lessonId,
           cardIndex: item.cardIndex,
           questionId: item.questionId,
@@ -1521,6 +1524,7 @@ export async function createLessonAnswerSession(
     const quizCard = card as QuizCard;
     items.push({
       courseId: lesson.course_id,
+      courseVersion: lesson.content_version,
       lessonId: lesson.id,
       cardIndex,
       questionId: `lesson:${lesson.id}:card:${cardIndex}`,
@@ -1592,6 +1596,14 @@ export async function createPracticeSession(
   await tx(async (c) => {
     const context = await resolveCourseLearningContext(userId, courseId, c);
     if (!context) throw new CourseParticipationRevokedError();
+    const course = (
+      await c.query<{ content_version: number }>(
+        "SELECT content_version FROM courses WHERE id = $1",
+        [courseId]
+      )
+    ).rows[0];
+    if (!course) throw new Error("Course not found");
+    for (const item of sessionItems) item.courseVersion ??= course.content_version;
     await c.query(
       `INSERT INTO practice_sessions
         (id, user_id, course_id, fresh, items_json, generator_model,
@@ -1617,6 +1629,7 @@ export async function createPracticeSession(
       await ensureQuestionVersion(
         {
           courseId,
+          courseVersion: item.courseVersion,
           lessonId: item.lessonId,
           cardIndex: item.cardIndex,
           questionId: item.questionId,
