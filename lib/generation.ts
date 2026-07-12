@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { withCourseGenerationLock } from "./pg";
 import { runGenerationUntilBudget } from "./generator";
+import { StaleGenerationRunError } from "./db";
 import {
   operationalSubject,
   recordOperationalError,
@@ -41,17 +42,24 @@ export function verifyGenerationSecret(req: NextRequest): boolean {
 }
 
 /** Fire a fresh generation invocation for a course (fire-and-forget trigger). */
-export async function kickGeneration(courseId: number, baseUrl: string): Promise<void> {
+export async function kickGeneration(
+  courseId: number,
+  generationRunId: string,
+  baseUrl: string
+): Promise<void> {
   try {
-    await fetch(`${baseUrl}${INTERNAL_GENERATE_PATH}`, {
+    const response = await fetch(`${baseUrl}${INTERNAL_GENERATE_PATH}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-generation-secret": process.env.GENERATION_SECRET ?? "",
       },
-      body: JSON.stringify({ courseId }),
+      body: JSON.stringify({ courseId, generationRunId }),
       cache: "no-store",
     });
+    if (!response.ok) {
+      throw new Error(`Generation trigger returned ${response.status}`);
+    }
   } catch (err) {
     console.error(`Failed to kick generation for course ${courseId}:`, err);
     await recordOperationalError({
@@ -68,14 +76,20 @@ export async function kickGeneration(courseId: number, baseUrl: string): Promise
  * invocation if work remains. Acquires the per-course lock first; if another
  * chain already holds it, this returns immediately (that chain will continue).
  */
-export async function runAndChain(courseId: number, baseUrl: string): Promise<void> {
+export async function runAndChain(
+  courseId: number,
+  generationRunId: string,
+  baseUrl: string
+): Promise<void> {
   const finished = await withCourseGenerationLock(courseId, async () => {
     try {
       return await runGenerationUntilBudget(
         courseId,
+        generationRunId,
         Date.now() + GENERATION_STEP_BUDGET_MS
       );
     } catch (err) {
+      if (err instanceof StaleGenerationRunError) return true;
       console.error(`Generation chain error for course ${courseId}:`, err);
       await recordOperationalError({
         eventType: "generation.chain_failed",
@@ -88,5 +102,5 @@ export async function runAndChain(courseId: number, baseUrl: string): Promise<vo
   });
   // undefined → another chain holds the lock (it will continue on its own).
   // false    → budget spent but work remains → continue in a fresh invocation.
-  if (finished === false) await kickGeneration(courseId, baseUrl);
+  if (finished === false) await kickGeneration(courseId, generationRunId, baseUrl);
 }

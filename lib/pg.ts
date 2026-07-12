@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS courses (
   category TEXT NOT NULL DEFAULT 'General',
   price_cents INTEGER NOT NULL DEFAULT 0,
   content_version INTEGER NOT NULL DEFAULT 1,
+  generation_run_id TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text),
   generation_heartbeat TEXT,
   generation_attempts INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
@@ -193,14 +194,17 @@ CREATE TABLE IF NOT EXISTS modules (
   position INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   chapter_indexes TEXT,
-  attempts INTEGER NOT NULL DEFAULT 0
+  attempts INTEGER NOT NULL DEFAULT 0,
+  generation_run_id TEXT
 );
 
 -- Columns added after the initial deploy (idempotent for already-created tables).
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS generation_heartbeat TEXT;
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS generation_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS generation_run_id TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text);
 ALTER TABLE modules ADD COLUMN IF NOT EXISTS chapter_indexes TEXT;
 ALTER TABLE modules ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE modules ADD COLUMN IF NOT EXISTS generation_run_id TEXT;
 
 CREATE TABLE IF NOT EXISTS lessons (
   id SERIAL PRIMARY KEY,
@@ -209,8 +213,16 @@ CREATE TABLE IF NOT EXISTS lessons (
   position INTEGER NOT NULL,
   cards TEXT NOT NULL,
   generator_model TEXT,
-  prompt_version TEXT
+  prompt_version TEXT,
+  generation_run_id TEXT
 );
+ALTER TABLE lessons ADD COLUMN IF NOT EXISTS generation_run_id TEXT;
+UPDATE modules m SET generation_run_id = c.generation_run_id
+  FROM courses c
+  WHERE m.course_id = c.id AND m.generation_run_id IS NULL;
+UPDATE lessons l SET generation_run_id = m.generation_run_id
+  FROM modules m
+  WHERE l.module_id = m.id AND l.generation_run_id IS NULL;
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,

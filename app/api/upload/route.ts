@@ -64,7 +64,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "File too large (max 50 MB)." }, { status: 400 });
   }
 
-  const courseId = await createCourse(user.id, file.name);
+  const createdCourse = await createCourse(user.id, file.name);
+  const courseId = createdCourse.id;
   const buffer = Buffer.from(await file.arrayBuffer());
 
   try {
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
     // Durable, resumable generation that survives the serverless time limit by
     // chaining fresh invocations. `after` triggers the first one post-response.
     const baseUrl = resolveBaseUrl(req);
-    after(() => runAndChain(courseId, baseUrl));
+    after(() => runAndChain(courseId, createdCourse.generationRunId, baseUrl));
     return NextResponse.json({ courseId, chapters: chapters.length });
   } catch (err) {
     await recordOperationalError({

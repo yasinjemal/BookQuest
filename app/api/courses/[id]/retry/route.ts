@@ -49,7 +49,8 @@ export async function POST(
   }
 
   // Retrying a failed generation is free — the credit was already spent.
-  if (!(await prepareCourseRetry(course.id))) {
+  const generationRunId = await prepareCourseRetry(course.id);
+  if (!generationRunId) {
     return NextResponse.json(
       { error: "This course is already being generated." },
       { status: 409 }
@@ -57,6 +58,6 @@ export async function POST(
   }
 
   const baseUrl = resolveBaseUrl(req);
-  after(() => runAndChain(course.id, baseUrl));
+  after(() => runAndChain(course.id, generationRunId, baseUrl));
   return NextResponse.json({ ok: true });
 }

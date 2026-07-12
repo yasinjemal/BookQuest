@@ -110,6 +110,10 @@ take longer than a serverless function's 300s limit. Generation is therefore a
 - `courses.generation_heartbeat` — touched at each step; a stale heartbeat means
   the chain died.
 - `courses.generation_attempts` — bounds outline retries.
+- `courses.generation_run_id` — the active run identity. Every generated module,
+  lesson, heartbeat, status and metadata write must match it. Retrying rotates
+  the identity atomically, so delayed workers from the previous run terminate
+  without changing or chaining into the new run.
 
 **One step = one unit of work** ([`runGenerationStep`](../lib/generator.ts)),
 derived purely from DB state: create the outline's modules, generate the next
@@ -135,10 +139,11 @@ broken chain recovers the next time the user looks at their courses — no cron
 required (works on any Vercel plan). A `vercel.json` cron hitting the same
 resume path could be added as an extra safety net on Pro.
 
-Because module generation is idempotent and claim-guarded, retries and
-overlapping triggers are safe: a module is generated once, and a partially
-generated course is already usable (finished modules show lessons; a failed
-module is marked and the rest still complete).
+Because module generation is idempotent, claim-guarded and run-isolated, retries
+and overlapping triggers are safe: a module is generated once, stale workers
+cannot cross a retry boundary, and a partially generated course is already
+usable (finished modules show lessons; a failed module is marked and the rest
+still complete).
 
 ---
 

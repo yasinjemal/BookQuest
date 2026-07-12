@@ -149,7 +149,7 @@ changing outcomes twice, and operate reliably enough for organizations.
 - [x] Add email verification and password recovery.
 - [ ] Test backups and point-in-time recovery.
 - [ ] Run database integration tests in CI on a scratch database.
-- [ ] Add generation-run tokens to block stale worker writes.
+- [x] Add generation-run tokens to block stale worker writes.
 - [ ] Replace lazy schema evolution with versioned transactional migrations.
 - [ ] Test upgrades using a realistic pre-ledger database copy.
 - [ ] Queue lesson completion for fully offline reconciliation.

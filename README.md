@@ -60,6 +60,8 @@ design baseline.
   active session and local development provides safe preview links
 - Distributed Postgres-backed rate limits on authentication, uploads, AI work,
   retries, and answer submission; identifiers are stored only as keyed hashes
+- Generation-run isolation prevents delayed AI workers from writing into a
+  newer retry of the same course
 - Privacy-safe operational monitoring for AI volume, failures, abuse signals,
   and server errors, summarized in the admin dashboard
 - Service worker: cached app shell; authenticated APIs stay network-only to

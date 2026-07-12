@@ -7,6 +7,8 @@ import {
   rateLimitSubject,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { getGenerationCourse } from "@/lib/db";
+import { isGenerationRunId } from "@/lib/generation-run";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -22,14 +24,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let courseId: number;
+  let generationRunId: string;
   try {
-    const body = (await req.json()) as { courseId?: number };
+    const body = (await req.json()) as {
+      courseId?: number;
+      generationRunId?: string;
+    };
     courseId = Number(body.courseId);
+    generationRunId = body.generationRunId ?? "";
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   if (!Number.isInteger(courseId) || courseId <= 0) {
     return NextResponse.json({ error: "Invalid courseId" }, { status: 400 });
+  }
+  if (!isGenerationRunId(generationRunId)) {
+    return NextResponse.json({ error: "Invalid generationRunId" }, { status: 400 });
+  }
+  const course = await getGenerationCourse(courseId);
+  if (!course || course.generation_run_id !== generationRunId) {
+    return NextResponse.json({ error: "Stale generation run" }, { status: 409 });
   }
   const limit = await consumeRateLimit(
     RATE_LIMITS.internalGenerationCourse,
@@ -38,6 +52,6 @@ export async function POST(req: NextRequest) {
   if (!limit.allowed) return tooManyRequests(limit);
 
   const baseUrl = resolveBaseUrl(req);
-  after(() => runAndChain(courseId, baseUrl));
+  after(() => runAndChain(courseId, generationRunId, baseUrl));
   return NextResponse.json({ ok: true }, { status: 202 });
 }

@@ -12,6 +12,7 @@ import {
   setCourseMeta,
   setCourseStatus,
   setModuleStatus,
+  StaleGenerationRunError,
   touchGenerationHeartbeat,
 } from "./db";
 import type { Chapter } from "./extract";
@@ -89,19 +90,27 @@ export type GenerationStep = "continue" | "done";
  * (create the modules), one module's lessons, or finalizing the course. Callers
  * must hold the course's generation lock so only one chain runs at a time.
  */
-export async function runGenerationStep(courseId: number): Promise<GenerationStep> {
+export async function runGenerationStep(
+  courseId: number,
+  generationRunId: string
+): Promise<GenerationStep> {
   const course = await getGenerationCourse(courseId);
-  if (!course || course.status === "ready" || course.status === "error") return "done";
+  if (
+    !course ||
+    course.generation_run_id !== generationRunId ||
+    course.status === "ready" ||
+    course.status === "error"
+  ) return "done";
   // Still extracting (or no stored source yet) — not ready to generate.
   if (!course.source_json) return "done";
 
-  await touchGenerationHeartbeat(courseId);
+  await touchGenerationHeartbeat(courseId, generationRunId);
   const chapters = JSON.parse(course.source_json) as Chapter[];
 
   // ---- Step 1: outline → create modules ----
-  if ((await countModules(courseId)) === 0) {
+  if ((await countModules(courseId, generationRunId)) === 0) {
     try {
-      await setCourseStatus(courseId, "outlining");
+      await setCourseStatus(courseId, "outlining", undefined, generationRunId);
       await recordOperationalEvent({
         eventType: "ai.request",
         severity: "info",
@@ -110,14 +119,22 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
         metadata: { model: GENERATOR_MODEL, prompt_version: "course-outline-v1" },
       });
       const outline = await generateOutline(chapters);
-      await setCourseMeta(courseId, outline.title, outline.description);
+      await setCourseMeta(courseId, outline.title, outline.description, generationRunId);
       for (let i = 0; i < outline.modules.length; i++) {
         const m = outline.modules[i];
-        await createModule(courseId, m.title, m.summary, i, m.chapter_indexes);
+        await createModule(
+          courseId,
+          m.title,
+          m.summary,
+          i,
+          m.chapter_indexes,
+          generationRunId
+        );
       }
-      await setCourseStatus(courseId, "generating");
+      await setCourseStatus(courseId, "generating", undefined, generationRunId);
       return "continue";
     } catch (err) {
+      if (err instanceof StaleGenerationRunError) return "done";
       console.error(`Course ${courseId} outline failed:`, err);
       await recordOperationalError({
         eventType: "ai.failure",
@@ -126,12 +143,13 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
         subjectKey: operationalSubject("course", courseId),
         metadata: { model: GENERATOR_MODEL },
       });
-      const attempts = await bumpCourseGenerationAttempts(courseId);
+      const attempts = await bumpCourseGenerationAttempts(courseId, generationRunId);
       if (attempts >= MAX_OUTLINE_ATTEMPTS) {
         await setCourseStatus(
           courseId,
           "error",
-          apiKeyMessage(err instanceof Error ? err.message : String(err))
+          apiKeyMessage(err instanceof Error ? err.message : String(err)),
+          generationRunId
         );
         return "done";
       }
@@ -140,7 +158,11 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
   }
 
   // ---- Step 2: generate the next pending module ----
-  const claimed = await claimNextModule(courseId, MAX_MODULE_ATTEMPTS);
+  const claimed = await claimNextModule(
+    courseId,
+    MAX_MODULE_ATTEMPTS,
+    generationRunId
+  );
   if (claimed) {
     try {
       const sourceText = moduleSourceText(chapters, claimed.chapter_indexes);
@@ -154,9 +176,15 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
           prompt_version: COURSE_LESSON_PROMPT_VERSION,
         },
       });
-      await generateModuleLessons(claimed.id, claimed.title, sourceText);
-      await setModuleStatus(claimed.id, "ready");
+      await generateModuleLessons(
+        claimed.id,
+        claimed.title,
+        sourceText,
+        generationRunId
+      );
+      await setModuleStatus(claimed.id, "ready", generationRunId);
     } catch (err) {
+      if (err instanceof StaleGenerationRunError) return "done";
       console.error(`Module ${claimed.id} generation failed:`, err);
       await recordOperationalError({
         eventType: "ai.failure",
@@ -168,18 +196,19 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
       // Give up on this module after its final attempt; otherwise release it.
       await setModuleStatus(
         claimed.id,
-        claimed.attempts >= MAX_MODULE_ATTEMPTS ? "error" : "pending"
+        claimed.attempts >= MAX_MODULE_ATTEMPTS ? "error" : "pending",
+        generationRunId
       );
     }
-    await touchGenerationHeartbeat(courseId);
+    await touchGenerationHeartbeat(courseId, generationRunId);
     return "continue";
   }
 
   // ---- Step 3: finalize ----
   // Nothing left to claim. If no modules are unfinished, the course is ready
   // (even if some modules ended in 'error' — a partial course is still usable).
-  if ((await countUnfinishedModules(courseId)) === 0) {
-    await setCourseStatus(courseId, "ready");
+  if ((await countUnfinishedModules(courseId, generationRunId)) === 0) {
+    await setCourseStatus(courseId, "ready", undefined, generationRunId);
     return "done";
   }
   return "continue";
@@ -192,11 +221,17 @@ export async function runGenerationStep(courseId: number): Promise<GenerationSte
  */
 export async function runGenerationUntilBudget(
   courseId: number,
+  generationRunId: string,
   deadlineMs: number
 ): Promise<boolean> {
-  await recoverStuckModules(courseId, MAX_MODULE_ATTEMPTS);
+  try {
+    await recoverStuckModules(courseId, MAX_MODULE_ATTEMPTS, generationRunId);
+  } catch (error) {
+    if (error instanceof StaleGenerationRunError) return true;
+    throw error;
+  }
   while (Date.now() < deadlineMs) {
-    const step = await runGenerationStep(courseId);
+    const step = await runGenerationStep(courseId, generationRunId);
     if (step === "done") return true;
   }
   return false;
@@ -232,7 +267,8 @@ export async function generatePracticeQuiz(
 async function generateModuleLessons(
   moduleId: number,
   moduleTitle: string,
-  sourceText: string
+  sourceText: string,
+  generationRunId: string
 ) {
   const resp = await client.messages.parse({
     model: GENERATOR_MODEL,
@@ -259,6 +295,7 @@ async function generateModuleLessons(
       await createLesson(moduleId, lesson.title, idx, JSON.stringify(cards), {
         generatorModel: GENERATOR_MODEL,
         promptVersion: COURSE_LESSON_PROMPT_VERSION,
+        generationRunId,
       });
     }
   }

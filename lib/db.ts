@@ -13,6 +13,7 @@ import {
 } from "./learning";
 import type { PoolClient } from "pg";
 import { many, one, q, tx, type Queryable } from "./pg";
+import { newGenerationRunId } from "./generation-run";
 
 /**
  * Data layer, backed by Neon Postgres (see ./pg for the connection + schema).
@@ -224,15 +225,23 @@ export async function resetPasswordWithToken(
 
 // ---------- Courses ----------
 
+export interface CreatedCourse {
+  id: number;
+  generationRunId: string;
+}
+
 export async function createCourse(
   ownerId: number,
   sourceFilename: string
-): Promise<number> {
+): Promise<CreatedCourse> {
+  const generationRunId = newGenerationRunId();
   const row = (await one(
-    "INSERT INTO courses (owner_id, title, source_filename, status) VALUES ($1, $2, $3, 'extracting') RETURNING id",
-    [ownerId, sourceFilename, sourceFilename]
+    `INSERT INTO courses
+      (owner_id, title, source_filename, status, generation_run_id)
+     VALUES ($1, $2, $3, 'extracting', $4) RETURNING id`,
+    [ownerId, sourceFilename, sourceFilename, generationRunId]
   )) as { id: number };
-  return Number(row.id);
+  return { id: Number(row.id), generationRunId };
 }
 
 /** Persist the extracted chapters so retries regenerate without the original file. */
@@ -250,21 +259,29 @@ export async function getCourseSource(id: number): Promise<string | null> {
 export async function setCourseStatus(
   id: number,
   status: CourseStatus,
-  error?: string
+  error?: string,
+  generationRunId?: string
 ) {
-  await q("UPDATE courses SET status = $1, error = $2 WHERE id = $3", [
-    status,
-    error ?? null,
-    id,
-  ]);
+  const result = await q(
+    `UPDATE courses SET status = $1, error = $2
+     WHERE id = $3 AND ($4::text IS NULL OR generation_run_id = $4)`,
+    [status, error ?? null, id, generationRunId ?? null]
+  );
+  if (generationRunId && result.rowCount !== 1) throw new StaleGenerationRunError();
 }
 
-export async function setCourseMeta(id: number, title: string, description: string) {
-  await q("UPDATE courses SET title = $1, description = $2 WHERE id = $3", [
-    title,
-    description,
-    id,
-  ]);
+export async function setCourseMeta(
+  id: number,
+  title: string,
+  description: string,
+  generationRunId?: string
+) {
+  const result = await q(
+    `UPDATE courses SET title = $1, description = $2
+     WHERE id = $3 AND ($4::text IS NULL OR generation_run_id = $4)`,
+    [title, description, id, generationRunId ?? null]
+  );
+  if (generationRunId && result.rowCount !== 1) throw new StaleGenerationRunError();
 }
 
 export async function setCoursePublished(
@@ -294,6 +311,7 @@ export interface PlatformCourseCols {
   category: string;
   price_cents: number;
   content_version: number;
+  generation_run_id: string;
 }
 
 export async function listOwnedCourses(
@@ -344,20 +362,22 @@ export async function deleteCourse(id: number) {
   await q("DELETE FROM courses WHERE id = $1", [id]);
 }
 
-/** Claim a failed course for one retry and clear old generated content atomically. */
-export async function prepareCourseRetry(id: number): Promise<boolean> {
+/** Claim a failed course for a new isolated generation run. */
+export async function prepareCourseRetry(id: number): Promise<string | undefined> {
   return tx(async (c) => {
+    const generationRunId = newGenerationRunId();
     const claimed = await c.query(
       `UPDATE courses
        SET content_version = content_version + 1,
            status = 'outlining', error = NULL,
-           generation_attempts = 0, generation_heartbeat = NULL
+           generation_attempts = 0, generation_heartbeat = NULL,
+           generation_run_id = $2
        WHERE id = $1 AND status = 'error'`,
-      [id]
+      [id, generationRunId]
     );
-    if (claimed.rowCount !== 1) return false;
+    if (claimed.rowCount !== 1) return undefined;
     await c.query("DELETE FROM modules WHERE course_id = $1", [id]);
-    return true;
+    return generationRunId;
   });
 }
 
@@ -402,26 +422,61 @@ export async function createModule(
   title: string,
   summary: string,
   position: number,
-  chapterIndexes?: number[]
+  chapterIndexes?: number[],
+  generationRunId?: string
 ): Promise<number> {
-  const row = (await one(
-    "INSERT INTO modules (course_id, title, summary, position, chapter_indexes) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    [
-      courseId,
-      title,
-      summary,
-      position,
-      chapterIndexes ? JSON.stringify(chapterIndexes) : null,
-    ]
-  )) as { id: number };
+  const args = [
+    courseId,
+    title,
+    summary,
+    position,
+    chapterIndexes ? JSON.stringify(chapterIndexes) : null,
+  ];
+  const row = generationRunId
+    ? ((await one(
+        `INSERT INTO modules
+          (course_id, title, summary, position, chapter_indexes, generation_run_id)
+         SELECT id, $2, $3, $4, $5, $6 FROM courses
+         WHERE id = $1 AND generation_run_id = $6
+         RETURNING id`,
+        [...args, generationRunId]
+      )) as { id: number } | undefined)
+    : ((await one(
+        `INSERT INTO modules
+          (course_id, title, summary, position, chapter_indexes)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        args
+      )) as { id: number });
+  if (!row) throw new StaleGenerationRunError();
   return Number(row.id);
 }
 
-export async function setModuleStatus(id: number, status: ModuleRow["status"]) {
-  await q("UPDATE modules SET status = $1 WHERE id = $2", [status, id]);
+export async function setModuleStatus(
+  id: number,
+  status: ModuleRow["status"],
+  generationRunId?: string
+) {
+  const result = await q(
+    `UPDATE modules m SET status = $1
+     WHERE m.id = $2 AND ($3::text IS NULL OR (
+       m.generation_run_id = $3 AND EXISTS (
+         SELECT 1 FROM courses c
+         WHERE c.id = m.course_id AND c.generation_run_id = $3
+       )
+     ))`,
+    [status, id, generationRunId ?? null]
+  );
+  if (generationRunId && result.rowCount !== 1) throw new StaleGenerationRunError();
 }
 
 // ---------- Durable generation ----------
+
+export class StaleGenerationRunError extends Error {
+  constructor() {
+    super("Generation run is no longer active");
+    this.name = "StaleGenerationRunError";
+  }
+}
 
 export interface GenerationCourse {
   id: number;
@@ -429,6 +484,7 @@ export interface GenerationCourse {
   source_json: string | null;
   content_version: number;
   published: number;
+  generation_run_id: string;
 }
 
 /** The fields the generation pipeline needs to resume a course from DB state. */
@@ -436,39 +492,57 @@ export async function getGenerationCourse(
   courseId: number
 ): Promise<GenerationCourse | undefined> {
   return (await one(
-    "SELECT id, status, source_json, content_version, published FROM courses WHERE id = $1",
+    `SELECT id, status, source_json, content_version, published, generation_run_id
+     FROM courses WHERE id = $1`,
     [courseId]
   )) as GenerationCourse | undefined;
 }
 
 /** Mark that a generation chain is actively working on this course, now. */
-export async function touchGenerationHeartbeat(courseId: number) {
-  await q("UPDATE courses SET generation_heartbeat = $1 WHERE id = $2", [
-    nowIso(),
-    courseId,
-  ]);
+export async function touchGenerationHeartbeat(courseId: number, generationRunId: string) {
+  const result = await q(
+    `UPDATE courses SET generation_heartbeat = $1
+     WHERE id = $2 AND generation_run_id = $3`,
+    [nowIso(), courseId, generationRunId]
+  );
+  if (result.rowCount !== 1) throw new StaleGenerationRunError();
 }
 
-export async function bumpCourseGenerationAttempts(courseId: number): Promise<number> {
+export async function bumpCourseGenerationAttempts(
+  courseId: number,
+  generationRunId: string
+): Promise<number> {
   const row = (await one(
-    "UPDATE courses SET generation_attempts = generation_attempts + 1 WHERE id = $1 RETURNING generation_attempts",
-    [courseId]
-  )) as { generation_attempts: number };
+    `UPDATE courses SET generation_attempts = generation_attempts + 1
+     WHERE id = $1 AND generation_run_id = $2 RETURNING generation_attempts`,
+    [courseId, generationRunId]
+  )) as { generation_attempts: number } | undefined;
+  if (!row) throw new StaleGenerationRunError();
   return row.generation_attempts;
 }
 
-export async function countModules(courseId: number): Promise<number> {
-  const r = (await one("SELECT COUNT(*)::int AS n FROM modules WHERE course_id = $1", [
-    courseId,
-  ])) as { n: number };
+export async function countModules(
+  courseId: number,
+  generationRunId?: string
+): Promise<number> {
+  const r = (await one(
+    `SELECT COUNT(*)::int AS n FROM modules
+     WHERE course_id = $1 AND ($2::text IS NULL OR generation_run_id = $2)`,
+    [courseId, generationRunId ?? null]
+  )) as { n: number };
   return r.n;
 }
 
 /** Modules that are not yet finished (still to generate or in flight). */
-export async function countUnfinishedModules(courseId: number): Promise<number> {
+export async function countUnfinishedModules(
+  courseId: number,
+  generationRunId?: string
+): Promise<number> {
   const r = (await one(
-    "SELECT COUNT(*)::int AS n FROM modules WHERE course_id = $1 AND status IN ('pending', 'generating')",
-    [courseId]
+    `SELECT COUNT(*)::int AS n FROM modules
+     WHERE course_id = $1 AND status IN ('pending', 'generating')
+       AND ($2::text IS NULL OR generation_run_id = $2)`,
+    [courseId, generationRunId ?? null]
   )) as { n: number };
   return r.n;
 }
@@ -487,12 +561,18 @@ export interface ClaimedModule {
  */
 export async function claimNextModule(
   courseId: number,
-  maxAttempts: number
+  maxAttempts: number,
+  generationRunId: string
 ): Promise<ClaimedModule | undefined> {
   const row = (await one(
     `WITH next AS (
        SELECT id FROM modules
        WHERE course_id = $1 AND status = 'pending' AND attempts < $2
+         AND generation_run_id = $3
+         AND EXISTS (
+           SELECT 1 FROM courses c
+           WHERE c.id = $1 AND c.generation_run_id = $3
+         )
        ORDER BY position
        FOR UPDATE SKIP LOCKED
        LIMIT 1
@@ -500,7 +580,7 @@ export async function claimNextModule(
      UPDATE modules m SET status = 'generating', attempts = m.attempts + 1
      FROM next WHERE m.id = next.id
      RETURNING m.id, m.title, m.chapter_indexes, m.attempts`,
-    [courseId, maxAttempts]
+    [courseId, maxAttempts, generationRunId]
   )) as
     | { id: number; title: string; chapter_indexes: string | null; attempts: number }
     | undefined;
@@ -520,14 +600,26 @@ export async function claimNextModule(
  * caller holds the per-course generation lock, so no other chain is mid-module:
  * ones with attempts left return to 'pending'; exhausted ones become 'error'.
  */
-export async function recoverStuckModules(courseId: number, maxAttempts: number) {
+export async function recoverStuckModules(
+  courseId: number,
+  maxAttempts: number,
+  generationRunId: string
+) {
+  const active = await getGenerationCourse(courseId);
+  if (!active || active.generation_run_id !== generationRunId) {
+    throw new StaleGenerationRunError();
+  }
   await q(
-    "UPDATE modules SET status = 'error' WHERE course_id = $1 AND status = 'generating' AND attempts >= $2",
-    [courseId, maxAttempts]
+    `UPDATE modules SET status = 'error'
+     WHERE course_id = $1 AND status = 'generating' AND attempts >= $2
+       AND generation_run_id = $3`,
+    [courseId, maxAttempts, generationRunId]
   );
   await q(
-    "UPDATE modules SET status = 'pending' WHERE course_id = $1 AND status = 'generating' AND attempts < $2",
-    [courseId, maxAttempts]
+    `UPDATE modules SET status = 'pending'
+     WHERE course_id = $1 AND status = 'generating' AND attempts < $2
+       AND generation_run_id = $3`,
+    [courseId, maxAttempts, generationRunId]
   );
 }
 
@@ -535,14 +627,14 @@ export async function recoverStuckModules(courseId: number, maxAttempts: number)
 export async function listStalledCourses(
   ownerId: number,
   staleBeforeIso: string
-): Promise<{ id: number }[]> {
+): Promise<{ id: number; generation_run_id: string }[]> {
   return (await many(
-    `SELECT id FROM courses
+    `SELECT id, generation_run_id FROM courses
      WHERE owner_id = $1
        AND status IN ('outlining', 'generating')
        AND (generation_heartbeat IS NULL OR generation_heartbeat < $2)`,
     [ownerId, staleBeforeIso]
-  )) as { id: number }[];
+  )) as { id: number; generation_run_id: string }[];
 }
 
 export async function listModules(courseId: number): Promise<ModuleRow[]> {
@@ -557,21 +649,40 @@ export async function createLesson(
   title: string,
   position: number,
   cardsJson: string,
-  provenance?: { generatorModel?: string; promptVersion?: string }
+  provenance?: {
+    generatorModel?: string;
+    promptVersion?: string;
+    generationRunId?: string;
+  }
 ): Promise<number> {
-  const row = (await one(
-    `INSERT INTO lessons
-      (module_id, title, position, cards, generator_model, prompt_version)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [
-      moduleId,
-      title,
-      position,
-      cardsJson,
-      provenance?.generatorModel ?? null,
-      provenance?.promptVersion ?? null,
-    ]
-  )) as { id: number };
+  const args = [
+    moduleId,
+    title,
+    position,
+    cardsJson,
+    provenance?.generatorModel ?? null,
+    provenance?.promptVersion ?? null,
+  ];
+  const generationRunId = provenance?.generationRunId;
+  const row = generationRunId
+    ? ((await one(
+        `INSERT INTO lessons
+          (module_id, title, position, cards, generator_model, prompt_version,
+           generation_run_id)
+         SELECT m.id, $2, $3, $4, $5, $6, $7
+         FROM modules m JOIN courses c ON c.id = m.course_id
+         WHERE m.id = $1 AND m.generation_run_id = $7
+           AND c.generation_run_id = $7
+         RETURNING id`,
+        [...args, generationRunId]
+      )) as { id: number } | undefined)
+    : ((await one(
+        `INSERT INTO lessons
+          (module_id, title, position, cards, generator_model, prompt_version)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        args
+      )) as { id: number });
+  if (!row) throw new StaleGenerationRunError();
   return Number(row.id);
 }
 

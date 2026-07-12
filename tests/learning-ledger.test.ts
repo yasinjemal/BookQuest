@@ -41,7 +41,7 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
 
     const user = await data.createUser("ledger@example.com", "Ledger Learner", "hash");
     userId = user.id;
-    courseId = await data.createCourse(userId, "finance.pdf");
+    courseId = (await data.createCourse(userId, "finance.pdf")).id;
     const moduleId = await data.createModule(courseId, "Finance", "Core ideas", 0);
     lessonId = await data.createLesson(
       moduleId,
@@ -281,5 +281,56 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
     expect(await data.resetPasswordWithToken(resetHash, "another-hash")).toBeUndefined();
     expect(await data.getSessionUser("session_before_password_reset")).toBeUndefined();
     expect((await data.getUserById(userId))?.password_hash).toBe("replacement-hash");
+  });
+
+  it("rejects every stale generation write after a retry rotates the run", async () => {
+    const created = await data.createCourse(userId, "stale-worker.pdf");
+    await data.setCourseStatus(
+      created.id,
+      "error",
+      "retry test",
+      created.generationRunId
+    );
+    const nextRunId = await data.prepareCourseRetry(created.id);
+    expect(nextRunId).toBeTruthy();
+    expect(nextRunId).not.toBe(created.generationRunId);
+
+    await expect(
+      data.touchGenerationHeartbeat(created.id, created.generationRunId)
+    ).rejects.toThrow(data.StaleGenerationRunError);
+    await expect(
+      data.setCourseMeta(
+        created.id,
+        "Stale title",
+        "Stale description",
+        created.generationRunId
+      )
+    ).rejects.toThrow(data.StaleGenerationRunError);
+    await expect(
+      data.createModule(
+        created.id,
+        "Stale module",
+        "Must not be inserted",
+        0,
+        [],
+        created.generationRunId
+      )
+    ).rejects.toThrow(data.StaleGenerationRunError);
+
+    await expect(
+      data.touchGenerationHeartbeat(created.id, nextRunId!)
+    ).resolves.toBeUndefined();
+    const moduleId = await data.createModule(
+      created.id,
+      "Current module",
+      "Allowed",
+      0,
+      [],
+      nextRunId
+    );
+    const module = (await pg.one("SELECT generation_run_id FROM modules WHERE id = $1", [
+      moduleId,
+    ])) as { generation_run_id: string };
+    expect(module.generation_run_id).toBe(nextRunId);
   });
 });

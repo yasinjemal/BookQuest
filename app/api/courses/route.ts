@@ -59,7 +59,9 @@ export async function GET(req: NextRequest) {
   if (stalled.length > 0) {
     const baseUrl = resolveBaseUrl(req);
     after(() =>
-      Promise.all(stalled.map((c) => kickGeneration(c.id, baseUrl)))
+      Promise.all(
+        stalled.map((c) => kickGeneration(c.id, c.generation_run_id, baseUrl))
+      )
     );
   }
 
