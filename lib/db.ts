@@ -301,11 +301,24 @@ export async function createCourse(
 }
 
 /** Persist the extracted chapters so retries regenerate without the original file. */
-export async function setCourseSource(id: number, sourceJson: string) {
+export async function setCourseSource(
+  id: number,
+  sourceJson: string,
+  provenance?: {
+    mimeType?: string | null;
+    extractorVersion?: string;
+    extractionModel?: string | null;
+    metadata?: Record<string, unknown>;
+  }
+) {
   await tx(async (client) => {
     await recordExtractedCourseSource(client, {
       courseId: id,
       extractedContentJson: sourceJson,
+      mimeType: provenance?.mimeType,
+      extractorVersion: provenance?.extractorVersion,
+      extractionModel: provenance?.extractionModel,
+      provenance: provenance?.metadata,
     });
   });
 }

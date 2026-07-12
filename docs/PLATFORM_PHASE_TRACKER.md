@@ -405,22 +405,33 @@ unique learning experiences with source traceability.
 
 ### Source Library and lifecycle
 
-- [ ] Store versioned, Space-owned source records.
-- [ ] Retain PDF, DOCX, Markdown and text support.
+- [x] Store versioned, Space-owned source records.
+  (Migration 4 backfills every legacy upload into `source_assets` and immutable
+  `source_versions`; new upload/manual paths initialize them transactionally in
+  `lib/studio.ts`.)
+- [x] Retain PDF, DOCX, Markdown and text support.
+  (The existing byte-stream extractors remain active and now append their output
+  to the versioned Source Library.)
 - [ ] Add PowerPoint, webpage, transcript and manual sources.
 - [ ] Combine multiple sources into a controlled collection.
-- [ ] Record extraction, source and processing provenance.
+- [x] Record extraction, source and processing provenance.
+  (Source versions persist SHA-256 content hash, MIME type, extractor version,
+  optional model, file extension/size, chapter count and structured provenance.)
 - [ ] Add source-level permissions, replacement and retention rules.
 - [ ] Show source coverage and unsupported claims during review.
 - [ ] Add draft, review, approved, published, superseded and archived states.
-- [ ] Make published course versions immutable.
+- [x] Make published course versions immutable.
+  (Migration 4 guards published/superseded/archived versions, their block layout
+  and append-only block/source revisions; upgrade tests prove mutation fails.)
 - [ ] Branch new drafts from published versions and show version differences.
 - [ ] Preserve evidence against the version each learner experienced.
 - [ ] Add comments, requested changes, approval history and safe rollback.
 
 ### Composable blocks
 
-- [ ] Create stable, versioned block identities and a block registry.
+- [x] Create stable, versioned block identities and a block registry.
+  (`block_types`, stable lineage IDs and append-only `course_block_revisions`;
+  legacy cards and completed generation runs are backfilled/snapshotted.)
 - [ ] Support explanation, image, audio/video, story and worked example.
 - [ ] Support flashcard, multiple choice, true/false and fill-in.
 - [ ] Support scenario, practical task, discussion, survey and attestation.

@@ -72,7 +72,15 @@ export async function POST(req: NextRequest) {
     const { chapters } = await extractDocument(buffer, file.name);
     // Persist the extracted chapters so a retry can regenerate without the
     // original file (there is no durable filesystem on serverless).
-    await setCourseSource(courseId, JSON.stringify(chapters));
+    await setCourseSource(courseId, JSON.stringify(chapters), {
+      mimeType: file.type || null,
+      extractorVersion: "bookquest-extract-v2",
+      metadata: {
+        file_extension: ext,
+        file_size_bytes: file.size,
+        chapter_count: chapters.length,
+      },
+    });
     // Charge only after extraction succeeds; a failed generation can be
     // retried free of charge from the course card.
     if (!isAdmin) await adjustCredits(user.id, -1);
