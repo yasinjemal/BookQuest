@@ -1,0 +1,81 @@
+# Phase 3 institutional evidence architecture
+
+Last updated: 2026-07-13
+
+## Proven local slice
+
+The institutional evidence model is anchored to immutable versions:
+
+`Space -> course version -> completion-rule version -> assignment version -> participation attempt -> evidence events -> completion event -> credential lifecycle`
+
+Migration 6 creates versioned completion rules and assignments, audience snapshots,
+participation attempts, scheduled deliveries, attestations, assignment-scoped lesson
+completion, practical submissions and reviews, completion decisions, credentials,
+credential status events and audit-pack manifests. Evidence tables reject updates and
+deletes. Projection rows may change status, but every consequential transition also
+appends an event.
+
+The older Space assignment service now creates the same default rule, assignment
+version, audience, participation and event records. It no longer creates assignments
+that bypass the institutional evidence chain.
+
+## Completion and credential decisions
+
+Completion evaluation locks the learner participation and evaluates only the exact
+assigned course version and published rule version. It records:
+
+- the latest immutable completion for every required lesson key;
+- the latest exact-statement attestation for every required block lineage;
+- the latest submission and manager review for every required practical lineage;
+- the aggregate score and threshold decision;
+- the evidence IDs and a canonical SHA-256 evidence hash.
+
+A satisfied decision changes the participation projection once and may issue one
+credential. Credentials have a non-enumerable verification token, a separate display
+code, configured expiry and append-only issue/renew/revoke/expire status events.
+Public verification is rate limited and the display code alone cannot retrieve learner
+data. Revocation is reflected immediately.
+
+## Assignment operations
+
+Assignments can target individual memberships, teams or all current learners in a
+Space, with start, due and expiry dates. Attempt limits are enforced during
+reassignment. Reminders and escalations are scheduled per attempt, claimed with
+`FOR UPDATE SKIP LOCKED`, sent with idempotency keys and cancelled when the attempt is
+revoked or exempted. Space membership removal appends audience and participation
+events before access is removed.
+
+## Audit pack
+
+Authorized owners, administrators, managers and read-only auditors can generate a
+CSV and readable PDF for one immutable assignment version. The pack contains report
+scope, course/rule/assignment versions, attempts, evidence counts and IDs, scores,
+credential expiry/revocation, generation time, report-format version and manifest /
+artifact hashes. The PDF states its interpretation limits and makes no universal
+compliance claim.
+
+The visually inspected local sample is:
+
+- `output/pdf/phase3-audit-pack-sample.pdf`
+- `output/pdf/phase3-audit-pack-sample.csv`
+
+## Verification
+
+- TypeScript: pass
+- PostgreSQL integration: 126 tests pass sequentially, including 17 Phase 3 and
+  migration-upgrade checks
+- Production build: pass
+- PDF visual QA: four rendered pages inspected; clipping and page-label alignment
+  corrected
+
+## Still required before Phase 3 can close
+
+- MFA and pilot-selected OIDC or SAML; SCIM only if pilot volume justifies it;
+- versioned organization password, session, retention and legal-hold policies;
+- bulk invitations, role dashboards and remaining branding controls;
+- security/dependency evidence, external penetration test and updated institutional
+  security materials;
+- full-journey WCAG 2.2 AA test and published remediation process;
+- production migration, CI and deployment evidence;
+- one to three real design partners, an observed no-database journey and named
+  stakeholder acceptance of the pack.

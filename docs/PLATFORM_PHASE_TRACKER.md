@@ -614,18 +614,18 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 
 ### Build checklist
 
-- [ ] Assign individuals, teams or a Space with start/due dates and expiry.
-- [ ] Add reminders, escalations, reassignment and attempt policies.
-- [ ] Add versioned completion rules, thresholds and attestations.
-- [ ] Add manager-approved practical tasks where needed.
-- [ ] Preserve assignment history through membership and version changes.
-- [ ] Link completion to assignment, course version and evidence IDs.
-- [ ] Issue expiring, revocable, evidence-linked certificates.
-- [ ] Add privacy-preserving certificate verification.
-- [ ] Export completion data as CSV and a readable PDF audit pack.
-- [ ] Include report scope, rule versions, attempts, attestations, revocations,
+- [x] Assign individuals, teams or a Space with start/due dates and expiry.
+- [x] Add reminders, escalations, reassignment and attempt policies.
+- [x] Add versioned completion rules, thresholds and attestations.
+- [x] Add manager-approved practical tasks where needed.
+- [x] Preserve assignment history through membership and version changes.
+- [x] Link completion to assignment, course version and evidence IDs.
+- [x] Issue expiring, revocable, evidence-linked certificates.
+- [x] Add privacy-preserving certificate verification.
+- [x] Export completion data as CSV and a readable PDF audit pack.
+- [x] Include report scope, rule versions, attempts, attestations, revocations,
   generator time and report-format version.
-- [ ] Give auditors read-only evidence/report access.
+- [x] Give auditors read-only evidence/report access.
 - [ ] Add MFA and pilot-driven OIDC/SAML; add SCIM when volume justifies it.
 - [ ] Add organization password, session, retention and legal-hold policies.
 - [ ] Document regional residency, continuity, recovery and incident response.

@@ -1502,6 +1502,362 @@ END;
 $$ LANGUAGE plpgsql;
 `;
 
+const INSTITUTIONAL_EVIDENCE_FOUNDATION_SQL = `
+CREATE TABLE completion_rule_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
+  rule_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  published_at TEXT,
+  UNIQUE (space_id, course_id, version)
+);
+CREATE INDEX idx_completion_rules_space_course
+  ON completion_rule_versions(space_id, course_id, version DESC);
+
+CREATE TABLE assignment_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  assignment_id TEXT NOT NULL REFERENCES space_assignments(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','superseded','archived')),
+  course_version INTEGER NOT NULL CHECK (course_version > 0),
+  completion_rule_version_id TEXT NOT NULL REFERENCES completion_rule_versions(id) ON DELETE RESTRICT,
+  start_at TEXT,
+  due_at TEXT,
+  expires_at TEXT,
+  attempt_policy_json TEXT NOT NULL DEFAULT '{"max_attempts":null}',
+  reminder_policy_json TEXT NOT NULL DEFAULT '{}',
+  escalation_policy_json TEXT NOT NULL DEFAULT '{}',
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  activated_at TEXT,
+  superseded_at TEXT,
+  UNIQUE (assignment_id, version)
+);
+CREATE INDEX idx_assignment_versions_assignment
+  ON assignment_versions(assignment_id, version DESC);
+
+ALTER TABLE space_assignments
+  ADD COLUMN current_version_id TEXT REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  ADD COLUMN start_at TEXT,
+  ADD COLUMN expires_at TEXT;
+
+INSERT INTO completion_rule_versions
+  (space_id, course_id, version, status, rule_json, content_hash,
+   created_by_user_id, created_at, published_at)
+SELECT assignment.space_id, assignment.course_id, 1, 'published',
+       '{"required_lessons":"all","minimum_score_percent":0,"required_attestations":[],"required_practical_reviews":[]}',
+       md5('{"required_lessons":"all","minimum_score_percent":0,"required_attestations":[],"required_practical_reviews":[]}'),
+       MIN(assignment.assigned_by_user_id), MIN(assignment.created_at), MIN(assignment.created_at)
+FROM space_assignments assignment
+GROUP BY assignment.space_id, assignment.course_id;
+
+INSERT INTO assignment_versions
+  (assignment_id, version, status, course_version, completion_rule_version_id,
+   due_at, created_by_user_id, created_at, activated_at)
+SELECT assignment.id, 1,
+       CASE WHEN assignment.status = 'active' THEN 'active' ELSE 'archived' END,
+       assignment.course_version, rule.id, assignment.due_at,
+       assignment.assigned_by_user_id, assignment.created_at,
+       CASE WHEN assignment.status = 'active' THEN assignment.created_at ELSE NULL END
+FROM space_assignments assignment
+JOIN completion_rule_versions rule
+  ON rule.space_id = assignment.space_id AND rule.course_id = assignment.course_id
+ AND rule.version = 1;
+
+UPDATE space_assignments assignment
+SET current_version_id = version.id,
+    start_at = version.start_at,
+    expires_at = version.expires_at
+FROM assignment_versions version
+WHERE version.assignment_id = assignment.id AND version.version = 1;
+
+CREATE TABLE assignment_targets (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('space','team','membership')),
+  team_id TEXT REFERENCES space_teams(id) ON DELETE RESTRICT,
+  membership_id TEXT REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  CHECK (
+    (target_type = 'space' AND team_id IS NULL AND membership_id IS NULL) OR
+    (target_type = 'team' AND team_id IS NOT NULL AND membership_id IS NULL) OR
+    (target_type = 'membership' AND team_id IS NULL AND membership_id IS NOT NULL)
+  )
+);
+CREATE UNIQUE INDEX idx_assignment_target_space
+  ON assignment_targets(assignment_version_id) WHERE target_type = 'space';
+CREATE UNIQUE INDEX idx_assignment_target_team
+  ON assignment_targets(assignment_version_id, team_id) WHERE target_type = 'team';
+CREATE UNIQUE INDEX idx_assignment_target_membership
+  ON assignment_targets(assignment_version_id, membership_id) WHERE target_type = 'membership';
+
+CREATE TABLE assignment_audience_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  membership_id TEXT NOT NULL REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('assigned','removed','reassigned','exempted')),
+  reason TEXT NOT NULL DEFAULT '',
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_assignment_audience_membership
+  ON assignment_audience_events(membership_id, occurred_at);
+
+INSERT INTO assignment_targets (assignment_version_id, target_type, membership_id, created_at)
+SELECT version.id, 'membership', member.membership_id, member.assigned_at
+FROM space_assignment_members member
+JOIN assignment_versions version ON version.assignment_id = member.assignment_id;
+
+INSERT INTO assignment_audience_events
+  (assignment_version_id, membership_id, event_type, actor_user_id, occurred_at)
+SELECT version.id, member.membership_id, 'assigned', assignment.assigned_by_user_id,
+       member.assigned_at
+FROM space_assignment_members member
+JOIN assignment_versions version ON version.assignment_id = member.assignment_id
+JOIN space_assignments assignment ON assignment.id = member.assignment_id;
+
+CREATE TABLE assignment_participations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  membership_id TEXT NOT NULL REFERENCES space_memberships(id) ON DELETE RESTRICT,
+  attempt_number INTEGER NOT NULL DEFAULT 1 CHECK (attempt_number > 0),
+  status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN (
+    'assigned','started','submitted','completed','expired','exempted','revoked'
+  )),
+  assigned_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  started_at TEXT,
+  submitted_at TEXT,
+  completed_at TEXT,
+  expired_at TEXT,
+  UNIQUE (assignment_version_id, membership_id, attempt_number)
+);
+CREATE INDEX idx_assignment_participations_member_status
+  ON assignment_participations(membership_id, status, assigned_at);
+
+INSERT INTO assignment_participations
+  (assignment_version_id, membership_id, status, assigned_at)
+SELECT version.id, member.membership_id, 'assigned', member.assigned_at
+FROM space_assignment_members member
+JOIN assignment_versions version ON version.assignment_id = member.assignment_id;
+
+CREATE TABLE assignment_participation_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'assigned','started','submitted','completed','expired','exempted','revoked'
+  )),
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_assignment_participation_events
+  ON assignment_participation_events(participation_id, occurred_at);
+
+INSERT INTO assignment_participation_events
+  (participation_id, event_type, actor_user_id, occurred_at)
+SELECT participation.id, 'assigned', assignment.assigned_by_user_id, participation.assigned_at
+FROM assignment_participations participation
+JOIN assignment_versions version ON version.id = participation.assignment_version_id
+JOIN space_assignments assignment ON assignment.id = version.assignment_id;
+
+CREATE TABLE assignment_delivery_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  kind TEXT NOT NULL CHECK (kind IN ('reminder','escalation','reassignment')),
+  sequence INTEGER NOT NULL DEFAULT 1 CHECK (sequence > 0),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','sending','sent','cancelled','failed')),
+  scheduled_at TEXT NOT NULL,
+  sent_at TEXT,
+  channel TEXT NOT NULL DEFAULT 'email',
+  provider_message_id TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (participation_id, kind, sequence)
+);
+CREATE INDEX idx_assignment_delivery_due
+  ON assignment_delivery_events(status, scheduled_at);
+
+CREATE TABLE attestation_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  learner_key TEXT NOT NULL,
+  block_lineage_id TEXT NOT NULL,
+  statement_hash TEXT NOT NULL,
+  accepted SMALLINT NOT NULL CHECK (accepted IN (0,1)),
+  occurred_at TEXT NOT NULL,
+  recorded_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (participation_id, block_lineage_id, occurred_at)
+);
+
+CREATE TABLE assignment_lesson_completion_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  learner_key TEXT NOT NULL,
+  lesson_key TEXT NOT NULL,
+  score INTEGER NOT NULL CHECK (score >= 0),
+  total INTEGER NOT NULL CHECK (total > 0 AND score <= total),
+  source_completion_event_id TEXT REFERENCES lesson_completion_events(answer_session_id) ON DELETE RESTRICT,
+  completed_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  recorded_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (participation_id, lesson_key, completed_at)
+);
+CREATE INDEX idx_assignment_lesson_completion
+  ON assignment_lesson_completion_events(participation_id, lesson_key, completed_at);
+
+CREATE TABLE practical_task_submissions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  block_lineage_id TEXT NOT NULL,
+  submission_version INTEGER NOT NULL CHECK (submission_version > 0),
+  response_json TEXT NOT NULL,
+  artifact_hash TEXT,
+  submitted_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  submitted_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (participation_id, block_lineage_id, submission_version)
+);
+
+CREATE TABLE practical_task_reviews (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  submission_id TEXT NOT NULL REFERENCES practical_task_submissions(id) ON DELETE RESTRICT,
+  reviewer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  decision TEXT NOT NULL CHECK (decision IN ('approved','changes_requested','rejected')),
+  rubric_json TEXT NOT NULL DEFAULT '{}',
+  summary TEXT NOT NULL DEFAULT '',
+  reviewed_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE TABLE assignment_completion_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  completion_rule_version_id TEXT NOT NULL REFERENCES completion_rule_versions(id) ON DELETE RESTRICT,
+  learner_key TEXT NOT NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('not_met','completed','revoked')),
+  score_percent DOUBLE PRECISION,
+  rule_evaluation_json TEXT NOT NULL,
+  evidence_manifest_json TEXT NOT NULL,
+  evidence_hash TEXT NOT NULL,
+  evaluated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_assignment_completion_participation
+  ON assignment_completion_events(participation_id, evaluated_at);
+
+CREATE TABLE credential_records (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  legacy_certificate_id TEXT UNIQUE REFERENCES certificates(id) ON DELETE SET NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  learner_key TEXT NOT NULL,
+  assignment_version_id TEXT REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  participation_id TEXT REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  course_version INTEGER NOT NULL CHECK (course_version > 0),
+  completion_rule_version_id TEXT REFERENCES completion_rule_versions(id) ON DELETE RESTRICT,
+  completion_event_id TEXT UNIQUE REFERENCES assignment_completion_events(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked','expired')),
+  evidence_hash TEXT NOT NULL,
+  verification_token_hash TEXT NOT NULL UNIQUE,
+  display_code TEXT NOT NULL UNIQUE,
+  issued_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  expires_at TEXT,
+  revoked_at TEXT,
+  revocation_reason TEXT
+);
+CREATE INDEX idx_credential_records_user_status ON credential_records(user_id, status, issued_at);
+
+CREATE TABLE credential_status_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  credential_id TEXT NOT NULL REFERENCES credential_records(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('issued','renewed','revoked','expired')),
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  reason TEXT NOT NULL DEFAULT '',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE TABLE audit_packs (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  report_format_version TEXT NOT NULL,
+  scope_json TEXT NOT NULL,
+  manifest_json TEXT NOT NULL,
+  artifact_hash TEXT NOT NULL,
+  storage_key TEXT,
+  status TEXT NOT NULL DEFAULT 'generated' CHECK (status IN ('generated','invalidated')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE OR REPLACE FUNCTION phase3_append_only_guard() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'Phase 3 evidence history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER completion_rule_versions_no_delete
+  BEFORE DELETE ON completion_rule_versions FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER assignment_audience_events_no_write
+  BEFORE UPDATE OR DELETE ON assignment_audience_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER assignment_participation_events_no_write
+  BEFORE UPDATE OR DELETE ON assignment_participation_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER attestation_events_no_write
+  BEFORE UPDATE OR DELETE ON attestation_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER assignment_lesson_completion_events_no_write
+  BEFORE UPDATE OR DELETE ON assignment_lesson_completion_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER practical_task_submissions_no_write
+  BEFORE UPDATE OR DELETE ON practical_task_submissions FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER practical_task_reviews_no_write
+  BEFORE UPDATE OR DELETE ON practical_task_reviews FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER assignment_completion_events_no_write
+  BEFORE UPDATE OR DELETE ON assignment_completion_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER credential_status_events_no_write
+  BEFORE UPDATE OR DELETE ON credential_status_events FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER audit_packs_no_write
+  BEFORE UPDATE OR DELETE ON audit_packs FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+
+CREATE OR REPLACE FUNCTION phase3_completion_rule_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status IN ('published','archived') THEN
+    RAISE EXCEPTION 'Published completion rules are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER completion_rule_versions_locked
+  BEFORE UPDATE ON completion_rule_versions FOR EACH ROW EXECUTE FUNCTION phase3_completion_rule_guard();
+
+CREATE OR REPLACE FUNCTION phase3_assignment_version_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status IN ('active','superseded','archived') THEN
+    IF TG_OP = 'UPDATE' AND OLD.status = 'active' AND NEW.status = 'superseded'
+       AND NEW.superseded_at IS NOT NULL
+       AND ROW(NEW.id,NEW.assignment_id,NEW.version,NEW.course_version,
+               NEW.completion_rule_version_id,NEW.start_at,NEW.due_at,NEW.expires_at,
+               NEW.attempt_policy_json,NEW.reminder_policy_json,NEW.escalation_policy_json,
+               NEW.created_by_user_id,NEW.created_at,NEW.activated_at)
+           IS NOT DISTINCT FROM
+           ROW(OLD.id,OLD.assignment_id,OLD.version,OLD.course_version,
+               OLD.completion_rule_version_id,OLD.start_at,OLD.due_at,OLD.expires_at,
+               OLD.attempt_policy_json,OLD.reminder_policy_json,OLD.escalation_policy_json,
+               OLD.created_by_user_id,OLD.created_at,OLD.activated_at)
+    THEN RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Active assignment versions are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER assignment_versions_locked
+  BEFORE UPDATE OR DELETE ON assignment_versions FOR EACH ROW EXECUTE FUNCTION phase3_assignment_version_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -1512,6 +1868,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 3, name: "spaces_tenancy", sql: SPACES_TENANCY_SQL },
   { id: 4, name: "course_studio_foundation", sql: COURSE_STUDIO_FOUNDATION_SQL },
   { id: 5, name: "phase2_lifecycle_hardening", sql: PHASE2_LIFECYCLE_HARDENING_SQL },
+  { id: 6, name: "institutional_evidence_foundation", sql: INSTITUTIONAL_EVIDENCE_FOUNDATION_SQL },
 ];
 
 /**

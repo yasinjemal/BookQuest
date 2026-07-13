@@ -76,6 +76,9 @@ export interface SpaceAssignmentRow {
   assigned_by_user_id: number;
   policy_version: number;
   due_at: string | null;
+  current_version_id?: string | null;
+  start_at?: string | null;
+  expires_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -339,11 +342,74 @@ export async function addSpaceTeamMember(
       )
     ).rows[0];
     if (!row) throw new SpaceAccessError("wrong_space");
-    await client.query(
+    const added = await client.query(
       `INSERT INTO space_team_members (team_id, membership_id, added_by_user_id)
        VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
       [row.team_id, row.membership_id, actorUserId]
     );
+    if (added.rowCount === 1) {
+      const assignments = (await client.query<{
+        assignment_id: string;
+        assignment_version_id: string;
+        due_at: string | null;
+        reminder_policy_json: string;
+        escalation_policy_json: string;
+      }>(
+        `SELECT assignment.id AS assignment_id, version.id AS assignment_version_id,
+                version.due_at, version.reminder_policy_json, version.escalation_policy_json
+         FROM assignment_targets target
+         JOIN assignment_versions version ON version.id=target.assignment_version_id
+         JOIN space_assignments assignment ON assignment.current_version_id=version.id
+         WHERE target.target_type='team' AND target.team_id=$1
+           AND assignment.status='active'
+           AND NOT EXISTS (
+             SELECT 1 FROM assignment_participations participation
+             WHERE participation.assignment_version_id=version.id
+               AND participation.membership_id=$2
+           )`,
+        [teamId, row.membership_id]
+      )).rows;
+      for (const assignment of assignments) {
+        const at = nowIso();
+        await client.query(
+          `INSERT INTO space_assignment_members (assignment_id,membership_id,assigned_at)
+           VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+          [assignment.assignment_id, row.membership_id, at]
+        );
+        await client.query(
+          `INSERT INTO assignment_audience_events
+            (assignment_version_id,membership_id,event_type,reason,actor_user_id,occurred_at)
+           VALUES ($1,$2,'assigned','Added to targeted team',$3,$4)`,
+          [assignment.assignment_version_id, row.membership_id, actorUserId, at]
+        );
+        const participation = (await client.query<{ id: string }>(
+          `INSERT INTO assignment_participations
+            (assignment_version_id,membership_id,status,assigned_at)
+           VALUES ($1,$2,'assigned',$3) RETURNING id`,
+          [assignment.assignment_version_id, row.membership_id, at]
+        )).rows[0];
+        await client.query(
+          `INSERT INTO assignment_participation_events
+            (participation_id,event_type,actor_user_id,metadata_json,occurred_at)
+           VALUES ($1,'assigned',$2,$3,$4)`,
+          [participation.id, actorUserId, JSON.stringify({ reason: "Added to targeted team" }), at]
+        );
+        if (assignment.due_at) {
+          const reminders = (JSON.parse(assignment.reminder_policy_json) as { hours_before_due?: number[] }).hours_before_due ?? [];
+          const escalations = (JSON.parse(assignment.escalation_policy_json) as { hours_after_due?: number[] }).hours_after_due ?? [];
+          for (const [index, hours] of reminders.entries()) await client.query(
+            `INSERT INTO assignment_delivery_events (participation_id,kind,sequence,scheduled_at)
+             VALUES ($1,'reminder',$2,$3)`,
+            [participation.id, index + 1, new Date(Date.parse(assignment.due_at) - hours * 3_600_000).toISOString()]
+          );
+          for (const [index, hours] of escalations.entries()) await client.query(
+            `INSERT INTO assignment_delivery_events (participation_id,kind,sequence,scheduled_at)
+             VALUES ($1,'escalation',$2,$3)`,
+            [participation.id, index + 1, new Date(Date.parse(assignment.due_at) + hours * 3_600_000).toISOString()]
+          );
+        }
+      }
+    }
     await recordSpaceAudit(client, {
       eventType: "team.member_added",
       space,
@@ -374,6 +440,62 @@ export async function removeSpaceTeamMember(
       )
     ).rows[0];
     if (!removed) throw new SpaceAccessError("wrong_space");
+    const noLongerTargeted = (await client.query<{
+      assignment_id: string;
+      assignment_version_id: string;
+      participation_id: string;
+      participation_status: string;
+    }>(
+      `SELECT assignment.id AS assignment_id, version.id AS assignment_version_id,
+              participation.id AS participation_id, participation.status AS participation_status
+       FROM assignment_targets removed_target
+       JOIN assignment_versions version ON version.id=removed_target.assignment_version_id
+       JOIN space_assignments assignment ON assignment.current_version_id=version.id
+       JOIN assignment_participations participation
+         ON participation.assignment_version_id=version.id
+        AND participation.membership_id=$2
+       WHERE removed_target.target_type='team' AND removed_target.team_id=$1
+         AND assignment.status='active'
+         AND NOT EXISTS (
+           SELECT 1 FROM assignment_targets target
+           WHERE target.assignment_version_id=version.id AND (
+             target.target_type='space' OR
+             (target.target_type='membership' AND target.membership_id=$2) OR
+             (target.target_type='team' AND target.team_id<>$1 AND EXISTS (
+               SELECT 1 FROM space_team_members remaining
+               WHERE remaining.team_id=target.team_id AND remaining.membership_id=$2
+             ))
+           )
+         )`,
+      [teamId, removed.membership_id]
+    )).rows;
+    for (const assignment of noLongerTargeted) {
+      const at = nowIso();
+      await client.query(
+        `INSERT INTO assignment_audience_events
+          (assignment_version_id,membership_id,event_type,reason,actor_user_id,occurred_at)
+         VALUES ($1,$2,'removed','Removed from targeted team',$3,$4)`,
+        [assignment.assignment_version_id, removed.membership_id, actorUserId, at]
+      );
+      if (["assigned", "started", "submitted"].includes(assignment.participation_status)) {
+        await client.query("UPDATE assignment_participations SET status='revoked' WHERE id=$1", [assignment.participation_id]);
+        await client.query(
+          `INSERT INTO assignment_participation_events
+            (participation_id,event_type,actor_user_id,metadata_json,occurred_at)
+           VALUES ($1,'revoked',$2,$3,$4)`,
+          [assignment.participation_id, actorUserId, JSON.stringify({ reason: "Removed from targeted team" }), at]
+        );
+        await client.query(
+          `UPDATE assignment_delivery_events SET status='cancelled'
+           WHERE participation_id=$1 AND status IN ('scheduled','sending')`,
+          [assignment.participation_id]
+        );
+      }
+      await client.query(
+        "DELETE FROM space_assignment_members WHERE assignment_id=$1 AND membership_id=$2",
+        [assignment.assignment_id, removed.membership_id]
+      );
+    }
     await recordSpaceAudit(client, {
       eventType: "team.member_removed",
       space,
@@ -873,12 +995,58 @@ export async function removeSpaceMember(
       throw new SpaceConflictError("The Space owner cannot be removed");
     }
     const removedAt = nowIso();
+    const assignmentHistory = (await client.query<{
+      assignment_id: string;
+      assignment_version_id: string;
+      participation_id: string;
+      participation_status: string;
+    }>(
+      `SELECT assignment.id AS assignment_id, version.id AS assignment_version_id,
+              participation.id AS participation_id,
+              participation.status AS participation_status
+       FROM space_assignments assignment
+       JOIN assignment_versions version ON version.id=assignment.current_version_id
+       JOIN assignment_participations participation
+         ON participation.assignment_version_id=version.id
+       WHERE assignment.space_id=$1 AND participation.membership_id=$2`,
+      [spaceId, target.id]
+    )).rows;
     await client.query(
       `UPDATE space_memberships
        SET status = 'removed', removed_at = $3, expires_at = NULL, updated_at = $3
        WHERE space_id = $1 AND user_id = $2`,
       [spaceId, subjectUserId, removedAt]
     );
+    for (const history of assignmentHistory) {
+      await client.query(
+        `INSERT INTO assignment_audience_events
+          (assignment_version_id,membership_id,event_type,reason,actor_user_id,occurred_at)
+         VALUES ($1,$2,'removed','Space membership removed',$3,$4)`,
+        [history.assignment_version_id, target.id, actorUserId, removedAt]
+      );
+      if (["assigned", "started", "submitted"].includes(history.participation_status)) {
+        await client.query(
+          "UPDATE assignment_participations SET status='revoked' WHERE id=$1",
+          [history.participation_id]
+        );
+        await client.query(
+          `INSERT INTO assignment_participation_events
+            (participation_id,event_type,actor_user_id,metadata_json,occurred_at)
+           VALUES ($1,'revoked',$2,$3,$4)`,
+          [history.participation_id, actorUserId,
+           JSON.stringify({ reason: "Space membership removed" }), removedAt]
+        );
+        await client.query(
+          `UPDATE assignment_delivery_events SET status='cancelled'
+           WHERE participation_id=$1 AND status IN ('scheduled','sending')`,
+          [history.participation_id]
+        );
+      }
+      await client.query(
+        "DELETE FROM space_assignment_members WHERE assignment_id=$1 AND membership_id=$2",
+        [history.assignment_id, target.id]
+      );
+    }
     await recordSpaceAudit(client, {
       eventType: "membership.removed",
       space,
@@ -1259,6 +1427,32 @@ export async function createSpaceAssignment(
       )
     ).rows[0];
     if (!attached) throw new SpaceAccessError("wrong_space");
+    await client.query("SELECT id FROM spaces WHERE id=$1 FOR UPDATE", [spaceId]);
+    const defaultRuleJson = JSON.stringify({
+      required_lessons: "all",
+      minimum_score_percent: 0,
+      required_attestations: [],
+      required_practical_reviews: [],
+      allow_manager_override: false,
+      credential: { enabled: false },
+    });
+    let completionRule = (await client.query<{ id: string }>(
+      `SELECT id FROM completion_rule_versions
+       WHERE space_id=$1 AND course_id=$2 AND status='published'
+       ORDER BY version DESC LIMIT 1`,
+      [spaceId, courseId]
+    )).rows[0];
+    if (!completionRule) {
+      completionRule = (await client.query<{ id: string }>(
+        `INSERT INTO completion_rule_versions
+          (space_id,course_id,version,status,rule_json,content_hash,
+           created_by_user_id,published_at)
+         VALUES ($1,$2,1,'published',$3,$4,$5,$6) RETURNING id`,
+        [spaceId, courseId, defaultRuleJson,
+         crypto.createHash("sha256").update(defaultRuleJson).digest("hex"),
+         actorUserId, nowIso()]
+      )).rows[0];
+    }
     const assignment = (
       await client.query<SpaceAssignmentRow>(
         `INSERT INTO space_assignments
@@ -1276,6 +1470,22 @@ export async function createSpaceAssignment(
         ]
       )
     ).rows[0];
+    const assignmentVersion = (await client.query<{ id: string }>(
+      `INSERT INTO assignment_versions
+        (assignment_id,version,status,course_version,completion_rule_version_id,
+         due_at,created_by_user_id,activated_at)
+       VALUES ($1,1,'active',$2,$3,$4,$5,$6) RETURNING id`,
+      [assignment.id, attached.content_version, completionRule.id,
+       dueAt ?? null, actorUserId, nowIso()]
+    )).rows[0];
+    await client.query(
+      "UPDATE space_assignments SET current_version_id=$2 WHERE id=$1",
+      [assignment.id, assignmentVersion.id]
+    );
+    await client.query(
+      "INSERT INTO assignment_targets (assignment_version_id,target_type) VALUES ($1,'space')",
+      [assignmentVersion.id]
+    );
     await client.query(
       `INSERT INTO space_assignment_members (assignment_id, membership_id)
        SELECT $1, id FROM space_memberships
@@ -1284,6 +1494,27 @@ export async function createSpaceAssignment(
        ON CONFLICT DO NOTHING`,
       [assignment.id, spaceId]
     );
+    await client.query(
+      `INSERT INTO assignment_audience_events
+        (assignment_version_id,membership_id,event_type,actor_user_id)
+       SELECT $1,membership_id,'assigned',$2 FROM space_assignment_members
+       WHERE assignment_id=$3`,
+      [assignmentVersion.id, actorUserId, assignment.id]
+    );
+    await client.query(
+      `INSERT INTO assignment_participations
+        (assignment_version_id,membership_id,status)
+       SELECT $1,membership_id,'assigned' FROM space_assignment_members
+       WHERE assignment_id=$2`,
+      [assignmentVersion.id, assignment.id]
+    );
+    await client.query(
+      `INSERT INTO assignment_participation_events
+        (participation_id,event_type,actor_user_id)
+       SELECT id,'assigned',$2 FROM assignment_participations
+       WHERE assignment_version_id=$1`,
+      [assignmentVersion.id, actorUserId]
+    );
     await recordSpaceAudit(client, {
       eventType: "assignment.created",
       space,
@@ -1291,7 +1522,7 @@ export async function createSpaceAssignment(
       courseId,
       assignmentId: assignment.id,
     });
-    return assignment;
+    return { ...assignment, current_version_id: assignmentVersion.id };
   });
 }
 

@@ -106,6 +106,11 @@ export const RATE_LIMITS = {
     limit: 240,
     windowSeconds: 60 * 60,
   },
+  credentialVerifyIp: {
+    scope: "credential.verify.ip",
+    limit: 120,
+    windowSeconds: 60 * 60,
+  },
   outboxTelemetryUser: {
     scope: "telemetry.outbox.user",
     limit: 120,
