@@ -2137,6 +2137,13 @@ ALTER TABLE course_versions
   ADD COLUMN appearance_json TEXT NOT NULL DEFAULT '{}';
 `;
 
+const STUDIO_REVERSIBLE_AUTHORING_SQL = `
+ALTER TABLE course_blocks ADD COLUMN deleted_at TEXT;
+CREATE INDEX idx_course_blocks_active_lesson
+  ON course_blocks(course_version_id, lesson_key, position)
+  WHERE deleted_at IS NULL;
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2152,6 +2159,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 8, name: "institutional_pilot_evidence", sql: INSTITUTIONAL_PILOT_EVIDENCE_SQL },
   { id: 9, name: "pilot_password_sign_in", sql: PILOT_PASSWORD_SIGN_IN_SQL },
   { id: 10, name: "versioned_course_appearance", sql: COURSE_APPEARANCE_SQL },
+  { id: 11, name: "studio_reversible_authoring", sql: STUDIO_REVERSIBLE_AUTHORING_SQL },
 ];
 
 /**

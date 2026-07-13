@@ -1,0 +1,44 @@
+{
+  "recordedAt": "2026-07-13T23:38:00.000Z",
+  "scope": "Pre-Phase 4 production Studio rebuild and end-to-end sample verification",
+  "result": "pass",
+  "capabilities": [
+    "searchable categorized block library",
+    "structured list, assessment, rubric and survey editing",
+    "automatic save with explicit state and optimistic conflict handling",
+    "local undo, duplicate, ordered movement and history-preserving soft delete",
+    "authorized extracted-document reader with search",
+    "source-version and section-level block traceability",
+    "real learner-component preview for phone, desktop and offline modes",
+    "quality and release checklists",
+    "immutable draft-review-approval-publication workflow"
+  ],
+  "sample": {
+    "title": "Blacksteel Shop Onboarding",
+    "source": "Blacksteel Employee Onboarding & Shop Procedures",
+    "lesson": "Start Every Shift Right",
+    "blocks": ["explanation", "multiple_choice", "attestation"],
+    "workflow": ["source created", "course created", "lesson authored", "source section linked", "learner previewed", "submitted", "approved", "published"]
+  },
+  "browserChecks": {
+    "desktop": "1440x1000 three-panel Studio",
+    "compact": "707x945 responsive panel navigation",
+    "phone": "390x844 authoring and learner preview",
+    "issuesFoundAndFixed": [
+      "duplicate autosave request after parent save-state rerender",
+      "compact Studio navigation hidden beneath the wrapped sticky header",
+      "preview action did not return compact layouts to the canvas",
+      "published block controls appeared editable"
+    ]
+  },
+  "verification": {
+    "tests": "28 files passed; 142 tests passed",
+    "focusedStudioTests": "11 passed",
+    "migrationUpgradeTests": "11 passed",
+    "typecheck": "pass",
+    "productionBuild": "pass; 43 static pages generated",
+    "productionDependencyAudit": "0 vulnerabilities"
+  },
+  "research": "docs/STUDIO_PRODUCT_RESEARCH.md",
+  "scopeLimit": "This strengthens the existing Phase 0-3 product and does not start Phase 4 or close the real Blacksteel pilot. The reader displays the normalized extracted source; original-binary fidelity remains dependent on a future encrypted object-storage pipeline. Independent Phase 3 accessibility and security gates remain external."
+}

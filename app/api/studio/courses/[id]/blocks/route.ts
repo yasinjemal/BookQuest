@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, tooManyRequests } from "@/lib/rate-limit";
 import { studioApiError } from "@/lib/studio-api";
-import { addCourseBlock, reorderLessonBlocks, updateCourseOutline } from "@/lib/studio";
+import { addCourseBlock, duplicateCourseBlock, reorderLessonBlocks, updateCourseOutline } from "@/lib/studio";
 import type { BlockType } from "@/lib/block-registry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,7 +12,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!limit.allowed) return tooManyRequests(limit);
   const courseId = Number((await params).id);
   const body = (await req.json()) as {
-    action?: "add" | "reorder" | "outline";
+    action?: "add" | "duplicate" | "reorder" | "outline";
+    blockId?: string;
     lessonKey?: string;
     orderedBlockIds?: string[];
     moduleKey?: string;
@@ -26,6 +27,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     sourceRefs?: unknown[];
   };
   try {
+    if (body.action === "duplicate" && body.blockId) {
+      return NextResponse.json({ block: await duplicateCourseBlock(user.id, courseId, body.blockId) }, { status: 201 });
+    }
     if (body.action === "reorder" && body.lessonKey && body.orderedBlockIds) {
       await reorderLessonBlocks(user.id, courseId, body.lessonKey, body.orderedBlockIds);
       return NextResponse.json({ ok: true });

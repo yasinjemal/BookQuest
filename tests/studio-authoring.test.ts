@@ -176,9 +176,33 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
     await studio.reorderLessonBlocks(ownerId, courseId, "lesson:first", [recap.id, explanation.id]);
     const reordered = (await studio.getCourseStudio(ownerId, courseId)).blocks;
     expect(reordered.map((block) => block.id)).toEqual([recap.id, explanation.id]);
+
+    const duplicate = await studio.duplicateCourseBlock(ownerId, courseId, explanation.id);
+    expect(duplicate).toMatchObject({
+      lessonKey: "lesson:first",
+      blockType: "explanation",
+      content: { body: "A manual edit survives." },
+    });
+    expect((await studio.getCourseStudio(ownerId, courseId)).blocks).toHaveLength(3);
+    await studio.deleteCourseBlock(ownerId, courseId, duplicate.id);
+    expect((await studio.getCourseStudio(ownerId, courseId)).blocks).toHaveLength(2);
+    await expect(studio.deleteCourseBlock(outsiderId, courseId, explanation.id)).rejects.toMatchObject({
+      reason: "membership_required",
+    });
     await expect(studio.getCourseStudio(outsiderId, courseId)).rejects.toMatchObject({
       reason: "membership_required",
     });
+  });
+
+  it("opens the normalized source document only inside its authorized course", async () => {
+    const studioData = await studio.getCourseStudio(ownerId, courseId);
+    const sourceVersionId = String((studioData.sources[0] as { source_version_id: string }).source_version_id);
+    const document = await studio.getCourseSourceDocument(ownerId, courseId, sourceVersionId);
+    expect(document).toMatchObject({ sourceVersionId, version: 2 });
+    expect(document.chapters[0]).toMatchObject({ title: "Policy", text: "Updated policy" });
+    await expect(
+      studio.getCourseSourceDocument(outsiderId, courseId, sourceVersionId)
+    ).rejects.toMatchObject({ reason: "membership_required" });
   });
 
   it("edits the outline and regenerates only the selected scope", async () => {

@@ -989,7 +989,7 @@ async function readStudioBlocks(exec: Queryable, versionId: string): Promise<Stu
        FROM course_blocks block
        JOIN course_block_revisions revision
          ON revision.block_id = block.id AND revision.revision = block.current_revision
-       WHERE block.course_version_id = $1
+       WHERE block.course_version_id = $1 AND block.deleted_at IS NULL
        ORDER BY block.module_position, block.lesson_position, block.position`,
       [versionId]
     )
@@ -1083,6 +1083,94 @@ export async function getCourseStudio(userId: number, courseId: number) {
   });
 }
 
+export interface StudioSourceDocument {
+  sourceId: string;
+  sourceVersionId: string;
+  title: string;
+  kind: SourceKind;
+  version: number;
+  originalFilename: string | null;
+  mimeType: string | null;
+  contentHash: string;
+  provenance: Record<string, unknown>;
+  chapters: Array<{ title: string; text: string }>;
+}
+
+function readableSourceChapters(content: unknown): Array<{ title: string; text: string }> {
+  if (Array.isArray(content)) {
+    return content.map((item, index) => {
+      if (item && typeof item === "object") {
+        const value = item as Record<string, unknown>;
+        const title = String(value.title ?? value.heading ?? `Section ${index + 1}`);
+        const textValue = value.text ?? value.body ?? value.content ?? value.transcript ?? value;
+        return {
+          title,
+          text: typeof textValue === "string" ? textValue : JSON.stringify(textValue, null, 2),
+        };
+      }
+      return { title: `Section ${index + 1}`, text: String(item ?? "") };
+    });
+  }
+  if (content && typeof content === "object") {
+    return Object.entries(content as Record<string, unknown>).map(([title, value]) => ({
+      title,
+      text: typeof value === "string" ? value : JSON.stringify(value, null, 2),
+    }));
+  }
+  return [{ title: "Document", text: String(content ?? "") }];
+}
+
+export async function getCourseSourceDocument(
+  userId: number,
+  courseId: number,
+  sourceVersionId: string
+): Promise<StudioSourceDocument> {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.read");
+    const versionId = course.current_draft_version_id ?? course.published_version_id;
+    if (!versionId) throw new StudioConflictError("Course version not found");
+    const row = (
+      await client.query<{
+        source_id: string;
+        source_version_id: string;
+        title: string;
+        kind: SourceKind;
+        version: number;
+        original_filename: string | null;
+        mime_type: string | null;
+        content_hash: string;
+        extracted_content_json: string | null;
+        provenance_json: string;
+      }>(
+        `SELECT source.id AS source_id, source_version.id AS source_version_id,
+                source.title, source.kind, source_version.version,
+                source_version.original_filename, source_version.mime_type,
+                source_version.content_hash, source_version.extracted_content_json,
+                source_version.provenance_json
+         FROM course_version_sources link
+         JOIN source_versions source_version ON source_version.id = link.source_version_id
+         JOIN source_assets source ON source.id = source_version.source_id
+         WHERE link.course_version_id = $1 AND source_version.id = $2`,
+        [versionId, sourceVersionId]
+      )
+    ).rows[0];
+    if (!row) throw new StudioConflictError("Source is not attached to this course version");
+    const parsed = row.extracted_content_json ? JSON.parse(row.extracted_content_json) : [];
+    return {
+      sourceId: row.source_id,
+      sourceVersionId: row.source_version_id,
+      title: row.title,
+      kind: row.kind,
+      version: row.version,
+      originalFilename: row.original_filename,
+      mimeType: row.mime_type,
+      contentHash: row.content_hash,
+      provenance: JSON.parse(row.provenance_json || "{}"),
+      chapters: readableSourceChapters(parsed),
+    };
+  });
+}
+
 export async function updateCourseAppearance(
   userId: number,
   courseId: number,
@@ -1164,7 +1252,7 @@ export async function updateCourseBlock(
          FROM course_blocks block
          JOIN course_versions version ON version.id = block.course_version_id
          WHERE block.id = $1 AND block.course_version_id = $2
-           AND version.lifecycle_status = 'draft'
+           AND version.lifecycle_status = 'draft' AND block.deleted_at IS NULL
          FOR UPDATE OF block`,
         [blockId, course.current_draft_version_id]
       )
@@ -1238,7 +1326,8 @@ export async function addCourseBlock(
       (
         await client.query<{ position: number }>(
           `SELECT COALESCE(MAX(position), -1) + 1 AS position
-           FROM course_blocks WHERE course_version_id = $1 AND lesson_key = $2`,
+           FROM course_blocks WHERE course_version_id = $1 AND lesson_key = $2
+             AND deleted_at IS NULL`,
           [course.current_draft_version_id, input.lessonKey]
         )
       ).rows[0]?.position ?? 0
@@ -1286,6 +1375,102 @@ export async function addCourseBlock(
   });
 }
 
+export async function duplicateCourseBlock(
+  userId: number,
+  courseId: number,
+  blockId: string
+): Promise<StudioBlock> {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Branch a draft before editing");
+    const source = (
+      await client.query<{
+        id: string; module_key: string; module_title: string; module_summary: string;
+        lesson_key: string; lesson_title: string; module_position: number;
+        lesson_position: number; position: number; block_type: BlockType;
+        content_json: string; source_refs_json: string; accessibility_json: string;
+      }>(
+        `SELECT block.*, revision.content_json, revision.source_refs_json,
+                revision.accessibility_json
+         FROM course_blocks block
+         JOIN course_block_revisions revision
+           ON revision.block_id = block.id AND revision.revision = block.current_revision
+         JOIN course_versions version ON version.id = block.course_version_id
+         WHERE block.id = $1 AND block.course_version_id = $2
+           AND version.lifecycle_status = 'draft' AND block.deleted_at IS NULL
+         FOR UPDATE OF block`,
+        [blockId, course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (!source) throw new StudioConflictError("Editable block not found");
+    await client.query(
+      `UPDATE course_blocks SET position = position + 1
+       WHERE course_version_id = $1 AND lesson_key = $2 AND position > $3
+         AND deleted_at IS NULL`,
+      [course.current_draft_version_id, source.lesson_key, source.position]
+    );
+    const copy = (
+      await client.query<{ id: string }>(
+        `INSERT INTO course_blocks
+          (course_version_id, lineage_id, module_key, module_title, module_summary,
+           lesson_key, lesson_title, module_position, lesson_position, position,
+           block_type, current_revision)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1) RETURNING id`,
+        [course.current_draft_version_id, crypto.randomUUID(), source.module_key,
+         source.module_title, source.module_summary, source.lesson_key, source.lesson_title,
+         source.module_position, source.lesson_position, source.position + 1, source.block_type]
+      )
+    ).rows[0];
+    await client.query(
+      `INSERT INTO course_block_revisions
+        (block_id, revision, content_json, source_refs_json, accessibility_json,
+         provenance_json, edit_origin, created_by_user_id)
+       VALUES ($1,1,$2,$3,$4,$5,'manual',$6)`,
+      [copy.id, source.content_json, source.source_refs_json, source.accessibility_json,
+       JSON.stringify({ editor: "studio-v2", duplicatedFrom: blockId }), userId]
+    );
+    await snapshotCourseVersion(client, course.current_draft_version_id);
+    return (await readStudioBlocks(client, course.current_draft_version_id)).find(
+      (candidate) => candidate.id === copy.id
+    )!;
+  });
+}
+
+export async function deleteCourseBlock(
+  userId: number,
+  courseId: number,
+  blockId: string
+): Promise<void> {
+  await tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Branch a draft before editing");
+    const block = (
+      await client.query<{ lesson_key: string }>(
+        `SELECT block.lesson_key FROM course_blocks block
+         JOIN course_versions version ON version.id = block.course_version_id
+         WHERE block.id = $1 AND block.course_version_id = $2
+           AND version.lifecycle_status = 'draft' AND block.deleted_at IS NULL
+         FOR UPDATE OF block`,
+        [blockId, course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (!block) throw new StudioConflictError("Editable block not found");
+    await client.query("UPDATE course_blocks SET deleted_at = $2, updated_at = $2 WHERE id = $1", [blockId, nowIso()]);
+    const remaining = (
+      await client.query<{ id: string }>(
+        `SELECT id FROM course_blocks WHERE course_version_id = $1 AND lesson_key = $2
+           AND deleted_at IS NULL
+         ORDER BY position`,
+        [course.current_draft_version_id, block.lesson_key]
+      )
+    ).rows;
+    for (let position = 0; position < remaining.length; position++) {
+      await client.query("UPDATE course_blocks SET position = $2 WHERE id = $1", [remaining[position].id, position]);
+    }
+    await snapshotCourseVersion(client, course.current_draft_version_id);
+  });
+}
+
 export async function reorderLessonBlocks(
   userId: number,
   courseId: number,
@@ -1298,7 +1483,7 @@ export async function reorderLessonBlocks(
     const rows = (
       await client.query<{ id: string }>(
         `SELECT id FROM course_blocks
-         WHERE course_version_id = $1 AND lesson_key = $2
+         WHERE course_version_id = $1 AND lesson_key = $2 AND deleted_at IS NULL
          ORDER BY position FOR UPDATE`,
         [course.current_draft_version_id, lessonKey]
       )
@@ -1313,7 +1498,7 @@ export async function reorderLessonBlocks(
     }
     await client.query(
       `UPDATE course_blocks SET position = position + 1000000
-       WHERE course_version_id = $1 AND lesson_key = $2`,
+       WHERE course_version_id = $1 AND lesson_key = $2 AND deleted_at IS NULL`,
       [course.current_draft_version_id, lessonKey]
     );
     for (let position = 0; position < orderedBlockIds.length; position++) {
@@ -1355,7 +1540,8 @@ export async function updateCourseOutline(
       `UPDATE course_blocks SET module_title = $4, module_summary = $5,
          module_position = COALESCE($6, module_position), lesson_title = $7,
          lesson_position = COALESCE($8, lesson_position), updated_at = $9
-       WHERE course_version_id = $1 AND module_key = $2 AND lesson_key = $3`,
+       WHERE course_version_id = $1 AND module_key = $2 AND lesson_key = $3
+         AND deleted_at IS NULL`,
       [
         course.current_draft_version_id,
         input.moduleKey,
@@ -1415,7 +1601,7 @@ export async function beginScopedRegeneration(
                 revision.content_json, revision.source_refs_json
          FROM course_blocks block JOIN course_block_revisions revision
            ON revision.block_id = block.id AND revision.revision = block.current_revision
-         WHERE block.course_version_id = $1 AND ${predicate}
+         WHERE block.course_version_id = $1 AND block.deleted_at IS NULL AND ${predicate}
          ORDER BY block.module_position, block.lesson_position, block.position
          FOR UPDATE OF block`,
         [course.current_draft_version_id, scope.key]
@@ -1488,7 +1674,7 @@ export async function applyScopedRegeneration(
     for (const replacement of replacements) {
       const block = (
         await client.query<{ id: string; block_type: BlockType; current_revision: number; lesson_key: string; module_key: string }>(
-          "SELECT id, block_type, current_revision, lesson_key, module_key FROM course_blocks WHERE id = $1 AND course_version_id = $2 FOR UPDATE",
+          "SELECT id, block_type, current_revision, lesson_key, module_key FROM course_blocks WHERE id = $1 AND course_version_id = $2 AND deleted_at IS NULL FOR UPDATE",
           [replacement.blockId, job.course_version_id]
         )
       ).rows[0];
@@ -1802,7 +1988,7 @@ export async function addCourseVersionComment(
     if (!versionId) throw new StudioConflictError("Course version not found");
     if (input.blockLineageId) {
       const exists = await client.query(
-        "SELECT 1 FROM course_blocks WHERE course_version_id = $1 AND lineage_id = $2",
+        "SELECT 1 FROM course_blocks WHERE course_version_id = $1 AND lineage_id = $2 AND deleted_at IS NULL",
         [versionId, input.blockLineageId]
       );
       if (exists.rowCount !== 1) throw new StudioConflictError("Comment block is outside this version");

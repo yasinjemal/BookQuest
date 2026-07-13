@@ -4,8 +4,8 @@
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
 **Last updated:** 13 July 2026
-**Current phase:** Phase 2 — Course Studio, blocks and reusable recipes
-**Next product slice:** versioned Source Library and immutable course drafts
+**Current phase:** Phase 3 — Institutional and government-ready pilot
+**Next product slice:** close the real Blacksteel pilot gates before Phase 4
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -774,12 +774,23 @@ architecture.
   layered course sheets, and meaningful restrained motion.
 - [x] Remove the signed-in home request loop discovered during visual QA so account
   and course data settle after the initial load instead of refetching continuously.
+- [x] Rebuild Studio around one understandable authoring path: visible outline,
+  lesson canvas, searchable block library, automatic saving, structured editors,
+  reversible block actions, in-product source reading and section links, real
+  learner preview, quality coaching, and a guided release desk.
+- [x] Create, review and publish a realistic Blacksteel onboarding sample through
+  the rebuilt Studio. Desktop, tablet-width and phone browser checks cover source
+  reading, autosave, assessment editing, attestation, preview and publication;
+  28/28 test files and 142/142 tests pass, the production build completes and the
+  production dependency audit reports zero vulnerabilities.
 
 The design principles and information architecture are recorded in
 `docs/UX_FOUNDATION.md`. This work improves the existing Phase 0-3 experience and
 does not start Phase 4. Dated local evidence is stored in
 `docs/evidence/pre-phase4-usability-local-2026-07-13T154352Z.json` and
-`docs/evidence/pre-phase4-premium-design-local-2026-07-13T163121Z.json`.
+`docs/evidence/pre-phase4-premium-design-local-2026-07-13T163121Z.json`, with the
+Studio rebuild recorded in
+`docs/evidence/pre-phase4-studio-rebuild-local-2026-07-13T233800Z.json`.
 
 ---
 

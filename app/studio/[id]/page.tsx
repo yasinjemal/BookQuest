@@ -4,307 +4,163 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
-import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
-import CourseWorld from "@/components/CourseWorld";
-import { BLOCK_CHANNELS, type BlockType } from "@/lib/block-registry";
-import {
-  COURSE_ACCENT_HEX,
-  DEFAULT_COURSE_APPEARANCE,
-  type CourseAppearance,
-} from "@/lib/course-appearance";
+import StudioBlockFields from "@/components/studio/StudioBlockFields";
+import StudioLessonPreview from "@/components/studio/StudioLessonPreview";
+import StudioSourceReader, { type StudioSourceSummary } from "@/components/studio/StudioSourceReader";
+import { type BlockType } from "@/lib/block-registry";
+import type { CourseAppearance } from "@/lib/course-appearance";
 
-interface SourceItem { source_version_id: string; title: string; kind: string }
 interface BlockItem {
   id: string; lineageId: string; moduleKey: string; moduleTitle: string; moduleSummary: string;
   lessonKey: string; lessonTitle: string; modulePosition: number; lessonPosition: number;
   position: number; blockType: BlockType; revision: number; content: Record<string, unknown>;
-  sourceRefs: Array<{ sourceVersionId?: string }>; editOrigin: string;
+  sourceRefs: Array<{ sourceVersionId?: string; locator?: { section?: string } }>;
+  accessibility: Record<string, unknown>; editOrigin: string;
 }
 interface StudioData {
   version: { id: string; version_number: number; parent_version_id: string | null; lifecycle_status: string; title: string; description: string; appearance: CourseAppearance };
-  versions: Array<{ id: string; version_number: number; parent_version_id: string | null; lifecycle_status: string }>;
+  versions: Array<{ id: string; version_number: number; lifecycle_status: string }>;
   reviews: Array<{ id: string; decision: string; summary: string; reviewer_name: string; created_at: string }>;
   comments: Array<{ id: string; body: string; status: string; author_name: string }>;
-  sources: SourceItem[];
+  sources: StudioSourceSummary[];
   blocks: BlockItem[];
 }
+interface Analysis { totalBlocks: number; tracedBlocks: number; unsupportedBlockIds: string[]; accessibilityIssueBlockIds: string[]; estimatedDurationMinutes: number; estimatedLessonMinutes: number }
 
-const LABELS: Record<BlockType, string> = {
-  explanation: "Explanation", image: "Image", audio_video: "Audio or video", story: "Story",
-  worked_example: "Worked example", flashcard: "Flashcard", multiple_choice: "Multiple choice",
-  true_false: "True or false", fill_in: "Fill in", scenario: "Scenario", practical_task: "Practical task",
-  discussion: "Discussion", survey: "Survey", attestation: "Attestation", recap: "Recap",
-};
+const BLOCKS: Array<{ type: BlockType; label: string; description: string; group: "Teach" | "Engage" | "Assess" }> = [
+  { type: "explanation", label: "Explanation", description: "Teach one clear idea", group: "Teach" },
+  { type: "story", label: "Story", description: "Add a memorable narrative", group: "Teach" },
+  { type: "worked_example", label: "Worked example", description: "Show how a task is done", group: "Teach" },
+  { type: "image", label: "Image", description: "Add a visual with alt text", group: "Teach" },
+  { type: "audio_video", label: "Audio or video", description: "Embed media and transcript", group: "Teach" },
+  { type: "flashcard", label: "Flashcard", description: "Reveal a short answer", group: "Engage" },
+  { type: "scenario", label: "Scenario", description: "Practice a workplace decision", group: "Engage" },
+  { type: "practical_task", label: "Practical task", description: "Ask learners to demonstrate a skill", group: "Engage" },
+  { type: "discussion", label: "Discussion", description: "Prompt group or private reflection", group: "Engage" },
+  { type: "multiple_choice", label: "Multiple choice", description: "Check understanding with options", group: "Assess" },
+  { type: "true_false", label: "True or false", description: "Check one precise statement", group: "Assess" },
+  { type: "fill_in", label: "Fill in the blank", description: "Recall a word or phrase", group: "Assess" },
+  { type: "survey", label: "Survey", description: "Collect learner feedback", group: "Assess" },
+  { type: "attestation", label: "Attestation", description: "Capture formal confirmation", group: "Assess" },
+  { type: "recap", label: "Recap", description: "Close with key takeaways", group: "Assess" },
+];
+const LABELS = Object.fromEntries(BLOCKS.map((item) => [item.type, item.label])) as Record<BlockType, string>;
 
 function template(type: BlockType): Record<string, unknown> {
   const values: Record<BlockType, Record<string, unknown>> = {
-    explanation: { type, heading: "New idea", body: "Explain this idea clearly." },
-    image: { type, url: "", altText: "", decorative: false, caption: "" },
-    audio_video: { type, url: "", title: "Media", transcript: "" },
-    story: { type, title: "Story", body: "Tell the story." },
-    worked_example: { type, title: "Example", problem: "Problem", steps: ["First step"], result: "Result" },
-    flashcard: { type, front: "Question", back: "Answer", frontLabel: "Question", backLabel: "Answer" },
-    multiple_choice: { type, question: "Question?", options: ["Option A", "Option B"], correctIndex: 0, explanation: "Explain the answer." },
-    true_false: { type, statement: "Statement", answer: true, explanation: "Explain why." },
-    fill_in: { type, prompt: "Complete ___", answer: "answer", acceptedAnswers: [], explanation: "Explain why." },
-    scenario: { type, context: "Situation", decisionPrompt: "What should you do?" },
-    practical_task: { type, title: "Task", instructions: ["Complete the task"], submissionAlternative: "Describe what you did", rubric: [] },
-    discussion: { type, prompt: "Discuss this idea", privateAlternative: "Reflect privately instead" },
-    survey: { type, title: "Survey", questions: [{ id: "q1", label: "Your response", responseType: "text" }] },
-    attestation: { type, statement: "I completed this activity", consentLabel: "Confirm", required: true },
-    recap: { type, heading: "Recap", points: ["Key point"] },
+    explanation: { type, heading: "A clear idea", body: "Explain the idea in plain language." },
+    image: { type, url: "https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=1200&q=80", altText: "Clothing arranged on a retail rail", decorative: false, caption: "" },
+    audio_video: { type, url: "https://example.com/training-video", title: "Training media", transcript: "Add the spoken content here." },
+    story: { type, title: "A moment at work", body: "Tell a short, relevant story." },
+    worked_example: { type, title: "See it done", problem: "Describe the task.", steps: ["First step", "Second step"], result: "Describe the correct result." },
+    flashcard: { type, front: "What should you remember?", back: "The answer", frontLabel: "Question", backLabel: "Answer" },
+    multiple_choice: { type, question: "What is the correct action?", options: ["First option", "Second option", "Third option"], correctIndex: 0, explanation: "Explain why this answer is correct." },
+    true_false: { type, statement: "This statement is correct.", answer: true, explanation: "Explain why." },
+    fill_in: { type, prompt: "Complete this sentence: ___", answer: "answer", acceptedAnswers: [], explanation: "Explain why." },
+    scenario: { type, context: "Describe a realistic workplace situation.", decisionPrompt: "What should the learner do?", options: ["First action", "Second action"], guidance: "Explain the best approach." },
+    practical_task: { type, title: "Practice the procedure", instructions: ["Complete the first step", "Check your work"], submissionAlternative: "Describe what you did in writing.", rubric: ["Procedure followed", "Result checked"] },
+    discussion: { type, prompt: "What would you do in this situation?", privateAlternative: "Write a private reflection instead." },
+    survey: { type, title: "Quick feedback", questions: [{ id: "q1", label: "How confident do you feel?", responseType: "scale" }] },
+    attestation: { type, statement: "I have read and understood this procedure.", consentLabel: "I confirm", required: true },
+    recap: { type, heading: "Remember", points: ["First key point", "Second key point"] },
   };
   return values[type];
 }
 
-function FieldEditor({ content, onChange }: { content: Record<string, unknown>; onChange: (next: Record<string, unknown>) => void }) {
-  return <div className="space-y-2">{Object.entries(content).filter(([key]) => key !== "type").map(([key, value]) => {
-    const label = key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
-    if (typeof value === "boolean") return <label key={key} className="flex gap-2 text-sm"><input type="checkbox" checked={value} onChange={(event) => onChange({ ...content, [key]: event.target.checked })} />{label}</label>;
-    if (typeof value === "number") return <label key={key} className="block text-xs font-semibold">{label}<input type="number" value={value} onChange={(event) => onChange({ ...content, [key]: Number(event.target.value) })} className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2" /></label>;
-    if (Array.isArray(value) && value.every((item) => typeof item === "string")) return <label key={key} className="block text-xs font-semibold">{label}<textarea value={value.join("\n")} onChange={(event) => onChange({ ...content, [key]: event.target.value.split("\n").filter(Boolean) })} rows={3} className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2" /></label>;
-    if (typeof value === "string") return <label key={key} className="block text-xs font-semibold">{label}<textarea value={value} onChange={(event) => onChange({ ...content, [key]: event.target.value })} rows={value.length > 80 ? 4 : 2} className="mt-1 w-full rounded-lg border border-line bg-paper px-3 py-2" /></label>;
-    return <p key={key} className="text-xs text-ink-soft">{label} is preserved in its structured format.</p>;
-  })}</div>;
+function SaveState({ state }: { state: "saved" | "saving" | "unsaved" | "error" }) {
+  const label = state === "saved" ? "All changes saved" : state === "saving" ? "Saving…" : state === "unsaved" ? "Unsaved changes" : "Save needs attention";
+  return <span className={`inline-flex items-center gap-2 text-xs font-semibold ${state === "error" ? "text-no" : "text-ink-soft"}`}><span className={`h-2 w-2 rounded-full ${state === "saved" ? "bg-go" : state === "error" ? "bg-no" : "bg-amber"}`} />{label}</span>;
 }
 
-function BlockEditor({ block, sources, onSaved }: { block: BlockItem; sources: SourceItem[]; onSaved: () => Promise<void> }) {
-  const [content, setContent] = useState(block.content);
-  const [refs, setRefs] = useState(block.sourceRefs.map((ref) => ref.sourceVersionId).filter(Boolean) as string[]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => { setContent(block.content); }, [block.content]);
-  async function save() {
-    setSaving(true); setError("");
-    try {
-      const result = await fetch(window.location.pathname.replace("/studio/", "/api/studio/courses/") + `/blocks/${block.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expectedRevision: block.revision, content, sourceRefs: refs.map((sourceVersionId) => ({ sourceVersionId })) }),
-      });
-      const data = await result.json();
-      if (!result.ok) return setError(data.error ?? "Could not save block");
-      await onSaved();
-    } finally { setSaving(false); }
-  }
-  return <article id={`block-${block.id}`} className="scroll-mt-28 space-y-5 rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal">{LABELS[block.blockType]} · revision {block.revision}</p><h3 className="display mt-2 text-3xl">{block.lessonTitle}</h3></div>{block.editOrigin === "manual" && <span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-go-deep">Edited by a human</span>}</div><FieldEditor content={content} onChange={setContent} />{sources.length > 0 && <fieldset className="rounded-xl bg-paper/65 p-4"><legend className="px-1 text-xs font-semibold">Source traceability</legend><div className="mt-2 space-y-2">{sources.map((source) => <label key={source.source_version_id} className="flex min-h-9 items-start gap-2 text-xs"><input type="checkbox" checked={refs.includes(source.source_version_id)} onChange={(event) => setRefs((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} className="mt-0.5" /><span>{source.title}</span></label>)}</div></fieldset>}<button onClick={() => void save()} disabled={saving} className="btn-primary w-full">{saving ? "Saving this block…" : "Save block"}</button>{error && <p role="alert" className="text-xs font-semibold text-no">{error}</p>}</article>;
-}
-
-function OutlineEditor({ section, onSaved, onRegenerate }: {
-  section: BlockItem;
-  onSaved: () => Promise<void>;
-  onRegenerate: (scope: "lesson" | "module", key: string) => Promise<void>;
+function BlockEditor({ block, editable, selected, onSelect, onUpdated, onAction, onSaving }: {
+  block: BlockItem; editable: boolean; selected: boolean; onSelect: () => void;
+  onUpdated: (block: BlockItem) => void;
+  onAction: (action: "duplicate" | "delete" | "up" | "down" | "regenerate", block: BlockItem) => Promise<void>;
+  onSaving: (state: "saved" | "saving" | "unsaved" | "error") => void;
 }) {
-  const [moduleTitle, setModuleTitle] = useState(section.moduleTitle);
-  const [moduleSummary, setModuleSummary] = useState(section.moduleSummary);
-  const [lessonTitle, setLessonTitle] = useState(section.lessonTitle);
-  const [saving, setSaving] = useState(false);
-  async function save() {
-    setSaving(true);
-    const courseId = window.location.pathname.split("/").pop();
-    const response = await fetch(`/api/studio/courses/${courseId}/blocks`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "outline", moduleKey: section.moduleKey, moduleTitle, moduleSummary,
-        modulePosition: section.modulePosition, lessonKey: section.lessonKey,
-        lessonTitle, lessonPosition: section.lessonPosition,
-      }),
+  const [content, setContent] = useState(block.content);
+  const [revision, setRevision] = useState(block.revision);
+  const [lastSaved, setLastSaved] = useState(block.content);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => { setContent(block.content); setRevision(block.revision); setLastSaved(block.content); setDirty(false); }, [block.id, block.revision, block.content]);
+  const save = useCallback(async () => {
+    if (!dirty || !editable) return;
+    setDirty(false);
+    onSaving("saving"); setError("");
+    const response = await fetch(`/api/studio/courses/${window.location.pathname.split("/").pop()}/blocks/${block.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedRevision: revision, content, sourceRefs: block.sourceRefs }),
     });
-    setSaving(false);
-    if (response.ok) await onSaved();
-  }
-  return <article className="rounded-2xl bg-card border border-line p-4 space-y-3">
-    <div><p className="text-xs font-bold uppercase text-ink-soft">Module and lesson</p><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} aria-label="Module title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-bold" /><textarea value={moduleSummary} onChange={(event) => setModuleSummary(event.target.value)} aria-label="Module summary" rows={2} className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm" /><input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} aria-label="Lesson title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-semibold" /></div>
-    <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void save()} disabled={saving} className="min-h-11 flex-1 rounded-full bg-teal px-4 text-xs font-bold text-white">{saving ? "Saving…" : "Save outline"}</button><button type="button" onClick={() => void onRegenerate("lesson", section.lessonKey)} className="min-h-11 flex-1 rounded-full border border-line px-4 text-xs font-bold">Regenerate lesson</button><button type="button" onClick={() => void onRegenerate("module", section.moduleKey)} className="min-h-11 flex-1 rounded-full border border-line px-4 text-xs font-bold">Regenerate module</button></div>
+    const result = await response.json();
+    if (!response.ok) { setDirty(true); setError(result.error ?? "Could not save this block"); onSaving("error"); return; }
+    setRevision(result.block.revision); setLastSaved(result.block.content); setDirty(false); onUpdated(result.block); onSaving("saved");
+  }, [block.id, block.sourceRefs, content, dirty, editable, onSaving, onUpdated, revision]);
+  useEffect(() => { if (!dirty || !editable) return; const timer = window.setTimeout(() => void save(), 1100); return () => window.clearTimeout(timer); }, [content, dirty, editable, save]);
+  function change(next: Record<string, unknown>) { setContent(next); setDirty(true); onSaving("unsaved"); }
+  return <article id={`block-${block.id}`} onFocus={onSelect} onClick={onSelect} className={`group scroll-mt-28 rounded-[1.35rem] border bg-card p-5 shadow-card transition-all sm:p-6 ${selected ? "border-teal ring-4 ring-teal/10" : "border-line hover:border-line-deep"}`}>
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-paper text-teal"><AppIcon name={block.blockType === "multiple_choice" || block.blockType === "true_false" || block.blockType === "fill_in" ? "practice" : "bookmark"} className="h-4 w-4" /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-teal">{LABELS[block.blockType]}</p><p className="mt-1 text-xs text-ink-soft">Block {block.position + 1} · revision {revision}{block.editOrigin === "manual" ? " · human edited" : ""}</p></div></div>{editable && <div className="flex flex-wrap gap-1"><button type="button" onClick={() => void onAction("up", block)} aria-label="Move block up" className="grid h-9 w-9 place-items-center rounded-full border border-line text-sm hover:bg-paper">↑</button><button type="button" onClick={() => void onAction("down", block)} aria-label="Move block down" className="grid h-9 w-9 place-items-center rounded-full border border-line text-sm hover:bg-paper">↓</button><button type="button" onClick={() => void onAction("duplicate", block)} className="rounded-full border border-line px-3 text-[10px] font-bold">Duplicate</button><button type="button" onClick={() => void onAction("delete", block)} className="rounded-full border border-line px-3 text-[10px] font-bold text-no">Delete</button></div>}</div>
+    {!editable && <p className="mb-4 rounded-xl bg-paper px-3 py-2 text-xs font-semibold text-ink-soft">Published version · view only</p>}
+    <fieldset disabled={!editable} className={!editable ? "opacity-80" : ""}><StudioBlockFields blockType={block.blockType} content={content} onChange={change} /></fieldset>
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4"><div className="text-xs text-ink-soft">{block.sourceRefs.length > 0 ? `${block.sourceRefs.length} source link${block.sourceRefs.length === 1 ? "" : "s"}` : "No source linked yet"}</div>{editable && <div className="flex gap-2"><button type="button" disabled={!dirty} onClick={() => { setContent(lastSaved); setDirty(false); onSaving("saved"); }} className="quiet-button min-h-10 px-4 text-xs">Undo edits</button><button type="button" disabled={!dirty} onClick={() => void save()} className="btn-teal min-h-10 px-4 py-2 text-xs">Save now</button><button type="button" onClick={() => void onAction("regenerate", block)} className="quiet-button min-h-10 px-4 text-xs"><AppIcon name="spark" className="h-3.5 w-3.5" />Rewrite</button></div>}</div>
+    {error && <p role="alert" className="mt-4 rounded-xl bg-no-soft p-3 text-xs font-semibold text-no-deep">{error}</p>}
   </article>;
 }
 
-function CoursePreview({ blocks, mode, appearance }: { blocks: BlockItem[]; mode: "mobile" | "desktop" | "offline"; appearance: CourseAppearance }) {
-  return <CourseAppearanceFrame appearance={appearance} className={`course-page-bg mx-auto rounded-2xl border-4 border-ink/80 p-4 transition-all ${mode === "mobile" ? "max-w-sm" : "max-w-4xl"}`}><div>
-    <div className="mb-4 flex items-center justify-between text-xs font-bold text-ink-soft"><span>{mode === "mobile" ? "Mobile learner view" : mode === "desktop" ? "Desktop learner view" : "Offline learner view"}</span><span>{blocks.length} blocks</span></div>
-    <div className={mode === "desktop" ? "grid grid-cols-2 gap-3" : "space-y-3"}>{blocks.map((block) => {
-      const channel = BLOCK_CHANNELS[block.blockType];
-      const unavailable = mode === "offline" && !channel.offline;
-      return <article key={block.id} className="rounded-xl bg-card border border-line p-3"><p className="text-xs font-bold uppercase text-primary-deep">{LABELS[block.blockType]}</p><h3 className="font-bold mt-1">{block.lessonTitle}</h3>{unavailable ? <p className="mt-2 text-sm text-ink-soft">Offline fallback: {channel.fallback ? LABELS[channel.fallback] : "Reconnect to use this block"}</p> : <div className="mt-2 space-y-1 text-sm">{Object.entries(block.content).filter(([key]) => key !== "type").slice(0, 4).map(([key, value]) => <p key={key}><span className="font-semibold">{key.replace(/([A-Z])/g, " $1")}:</span> {Array.isArray(value) ? value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" · ") : String(value)}</p>)}</div>}</article>;
-    })}</div>
-  </div></CourseAppearanceFrame>;
+function OutlineDetails({ section, onSaved }: { section: BlockItem; onSaved: () => Promise<void> }) {
+  const [open, setOpen] = useState(false); const [moduleTitle, setModuleTitle] = useState(section.moduleTitle); const [moduleSummary, setModuleSummary] = useState(section.moduleSummary); const [lessonTitle, setLessonTitle] = useState(section.lessonTitle);
+  async function save(event: FormEvent) { event.preventDefault(); const response = await fetch(`/api/studio/courses/${window.location.pathname.split("/").pop()}/blocks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "outline", moduleKey: section.moduleKey, moduleTitle, moduleSummary, modulePosition: section.modulePosition, lessonKey: section.lessonKey, lessonTitle, lessonPosition: section.lessonPosition }) }); if (response.ok) { setOpen(false); await onSaved(); } }
+  return <div>{open ? <form onSubmit={save} className="mt-2 space-y-2 rounded-xl border border-line bg-card p-3"><input aria-label="Module title" value={moduleTitle} onChange={(e) => setModuleTitle(e.target.value)} className="field" /><textarea aria-label="Module summary" value={moduleSummary} onChange={(e) => setModuleSummary(e.target.value)} rows={2} className="field" /><input aria-label="Lesson title" value={lessonTitle} onChange={(e) => setLessonTitle(e.target.value)} className="field" /><div className="flex gap-2"><button className="btn-teal min-h-10 flex-1 py-2 text-xs">Save names</button><button type="button" onClick={() => setOpen(false)} className="quiet-button min-h-10 py-2 text-xs">Cancel</button></div></form> : <button type="button" onClick={() => setOpen(true)} className="mt-1 text-[10px] font-semibold text-ink-soft hover:text-ink">Edit lesson details</button>}</div>;
 }
 
 export default function StudioPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const [data, setData] = useState<StudioData | null>(null);
-  const [analysis, setAnalysis] = useState<{ totalBlocks: number; tracedBlocks: number; unsupportedBlockIds: string[]; accessibilityIssueBlockIds: string[]; estimatedDurationMinutes: number; estimatedLessonMinutes: number } | null>(null);
-  const [blockType, setBlockType] = useState<BlockType>("explanation");
-  const [moduleTitle, setModuleTitle] = useState("Module 1");
-  const [lessonTitle, setLessonTitle] = useState("Lesson 1");
-  const [comment, setComment] = useState("");
-  const [versionDiff, setVersionDiff] = useState<{ added: string[]; removed: string[]; changed: string[]; appearanceChanged: boolean } | null>(null);
-  const [error, setError] = useState("");
-  const [regenerating, setRegenerating] = useState("");
-  const [previewMode, setPreviewMode] = useState<"edit" | "mobile" | "desktop" | "offline">("edit");
-  const [selectedLessonKey, setSelectedLessonKey] = useState("");
-  const [studioPanel, setStudioPanel] = useState<"outline" | "canvas" | "inspector">("canvas");
-
-  const load = useCallback(async () => {
-    const response = await fetch(`/api/studio/courses/${id}`);
-    if (response.status === 401) return router.push("/login");
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not open Studio");
-    setData(result);
-    if (result.version.parent_version_id) {
-      const diff = await fetch(`/api/studio/courses/${id}/versions/diff?base=${encodeURIComponent(result.version.parent_version_id)}&compare=${encodeURIComponent(result.version.id)}`);
-      if (diff.ok) setVersionDiff(await diff.json());
-    } else {
-      setVersionDiff(null);
-    }
-    const check = await fetch(`/api/studio/courses/${id}/analysis`);
-    if (check.ok) setAnalysis(await check.json());
-  }, [id, router]);
+  const { id } = useParams<{ id: string }>(); const router = useRouter();
+  const [data, setData] = useState<StudioData | null>(null); const [analysis, setAnalysis] = useState<Analysis | null>(null); const [error, setError] = useState("");
+  const [selectedLessonKey, setSelectedLessonKey] = useState(""); const [selectedBlockId, setSelectedBlockId] = useState(""); const [saveState, setSaveState] = useState<"saved" | "saving" | "unsaved" | "error">("saved");
+  const [mobilePanel, setMobilePanel] = useState<"outline" | "canvas" | "tools">("canvas"); const [toolTab, setToolTab] = useState<"source" | "quality" | "publish">("source"); const [previewMode, setPreviewMode] = useState<"edit" | "mobile" | "desktop" | "offline">("edit");
+  const [paletteOpen, setPaletteOpen] = useState(false); const [paletteQuery, setPaletteQuery] = useState("");
+  const load = useCallback(async () => { const response = await fetch(`/api/studio/courses/${id}`); if (response.status === 401) return router.push("/login"); const result = await response.json(); if (!response.ok) return setError(result.error ?? "Could not open Studio"); setData(result); const check = await fetch(`/api/studio/courses/${id}/analysis`); if (check.ok) setAnalysis(await check.json()); }, [id, router]);
   useEffect(() => { void load(); }, [load]);
   const lessons = useMemo(() => data ? [...new Map(data.blocks.map((block) => [block.lessonKey, block])).values()] : [], [data]);
-  useEffect(() => {
-    if (lessons.length > 0 && !lessons.some((lesson) => lesson.lessonKey === selectedLessonKey)) {
-      setSelectedLessonKey(lessons[0].lessonKey);
-    }
-  }, [lessons, selectedLessonKey]);
-  const selectedLesson = lessons.find((lesson) => lesson.lessonKey === selectedLessonKey) ?? lessons[0];
-  const visibleBlocks = data?.blocks.filter((block) => block.lessonKey === selectedLesson?.lessonKey) ?? [];
-  const outlineModules = useMemo(() => {
-    const groups = new Map<string, { title: string; lessons: BlockItem[] }>();
-    for (const lesson of lessons) {
-      const group = groups.get(lesson.moduleKey) ?? { title: lesson.moduleTitle, lessons: [] };
-      group.lessons.push(lesson);
-      groups.set(lesson.moduleKey, group);
-    }
-    return [...groups.entries()];
-  }, [lessons]);
+  useEffect(() => { if (lessons.length && !lessons.some((item) => item.lessonKey === selectedLessonKey)) setSelectedLessonKey(lessons[0].lessonKey); }, [lessons, selectedLessonKey]);
+  const selectedLesson = lessons.find((item) => item.lessonKey === selectedLessonKey) ?? lessons[0]; const visibleBlocks = data?.blocks.filter((block) => block.lessonKey === selectedLesson?.lessonKey) ?? []; const selectedBlock = data?.blocks.find((block) => block.id === selectedBlockId) ?? visibleBlocks[0];
+  useEffect(() => { if (visibleBlocks.length && !visibleBlocks.some((item) => item.id === selectedBlockId)) setSelectedBlockId(visibleBlocks[0].id); }, [visibleBlocks, selectedBlockId]);
+  const modules = useMemo(() => { const map = new Map<string, { title: string; position: number; lessons: BlockItem[] }>(); for (const lesson of lessons) { const group = map.get(lesson.moduleKey) ?? { title: lesson.moduleTitle, position: lesson.modulePosition, lessons: [] }; group.lessons.push(lesson); map.set(lesson.moduleKey, group); } return [...map.entries()].sort((a, b) => a[1].position - b[1].position); }, [lessons]);
+  const editable = data?.version.lifecycle_status === "draft";
 
-  async function addBlock(event: FormEvent) {
-    event.preventDefault(); setError("");
-    const existing = selectedLesson ?? lessons[0];
-    const response = await fetch(`/api/studio/courses/${id}/blocks`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "add", moduleKey: existing?.moduleKey ?? "module:1", moduleTitle: existing?.moduleTitle ?? moduleTitle, moduleSummary: existing?.moduleSummary ?? "", lessonKey: existing?.lessonKey ?? "lesson:1", lessonTitle: existing?.lessonTitle ?? lessonTitle, modulePosition: existing?.modulePosition ?? 0, lessonPosition: existing?.lessonPosition ?? 0, blockType, content: template(blockType), sourceRefs: [] }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not add block");
-    await load();
-  }
+  function updateBlock(block: BlockItem) { setData((current) => current ? { ...current, blocks: current.blocks.map((item) => item.id === block.id ? block : item) } : current); void refreshAnalysis(); }
+  async function refreshAnalysis() { const response = await fetch(`/api/studio/courses/${id}/analysis`); if (response.ok) setAnalysis(await response.json()); }
+  async function addBlock(type: BlockType, target = selectedLesson) { setError(""); const sourceRef = data?.sources[0]?.source_version_id ? [{ sourceVersionId: data.sources[0].source_version_id }] : []; const now = Date.now(); const response = await fetch(`/api/studio/courses/${id}/blocks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", moduleKey: target?.moduleKey ?? `module:${now}`, moduleTitle: target?.moduleTitle ?? "New module", moduleSummary: target?.moduleSummary ?? "", lessonKey: target?.lessonKey ?? `lesson:${now}`, lessonTitle: target?.lessonTitle ?? "New lesson", modulePosition: target?.modulePosition ?? modules.length, lessonPosition: target?.lessonPosition ?? 0, blockType: type, content: template(type), sourceRefs: sourceRef }) }); const result = await response.json(); if (!response.ok) return setError(result.error ?? "Could not add block"); setPaletteOpen(false); await load(); setSelectedLessonKey(result.block.lessonKey); setSelectedBlockId(result.block.id); }
+  async function addLesson(newModule: boolean) { const now = Date.now(); const lastModule = selectedLesson ?? lessons.at(-1); const target = { ...(lastModule ?? {}), moduleKey: newModule ? `module:${now}` : (lastModule?.moduleKey ?? `module:${now}`), moduleTitle: newModule ? "New module" : (lastModule?.moduleTitle ?? "New module"), moduleSummary: newModule ? "" : (lastModule?.moduleSummary ?? ""), lessonKey: `lesson:${now}`, lessonTitle: "New lesson", modulePosition: newModule ? modules.length : (lastModule?.modulePosition ?? 0), lessonPosition: newModule ? 0 : lessons.filter((item) => item.moduleKey === lastModule?.moduleKey).length } as BlockItem; await addBlock("explanation", target); }
+  async function blockAction(action: "duplicate" | "delete" | "up" | "down" | "regenerate", block: BlockItem) { setError(""); if (action === "up" || action === "down") { const lessonBlocks = data?.blocks.filter((item) => item.lessonKey === block.lessonKey) ?? []; const index = lessonBlocks.findIndex((item) => item.id === block.id); const target = index + (action === "up" ? -1 : 1); if (target < 0 || target >= lessonBlocks.length) return; const orderedBlockIds = lessonBlocks.map((item) => item.id); [orderedBlockIds[index], orderedBlockIds[target]] = [orderedBlockIds[target], orderedBlockIds[index]]; const response = await fetch(`/api/studio/courses/${id}/blocks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reorder", lessonKey: block.lessonKey, orderedBlockIds }) }); if (!response.ok) return setError((await response.json()).error ?? "Could not move block"); await load(); return; }
+    if (action === "delete") { if (!window.confirm(`Delete this ${LABELS[block.blockType].toLowerCase()} block?`)) return; const response = await fetch(`/api/studio/courses/${id}/blocks/${block.id}`, { method: "DELETE" }); if (!response.ok) return setError((await response.json()).error ?? "Could not delete block"); await load(); return; }
+    if (action === "duplicate") { const response = await fetch(`/api/studio/courses/${id}/blocks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "duplicate", blockId: block.id }) }); const result = await response.json(); if (!response.ok) return setError(result.error ?? "Could not duplicate block"); await load(); setSelectedBlockId(result.block.id); return; }
+    const response = await fetch(`/api/studio/courses/${id}/regenerate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scopeType: "block", scopeKey: block.id }) }); if (!response.ok) return setError((await response.json()).error ?? "Could not rewrite block"); await load(); }
+  async function cite(sourceVersionId: string, section: string) { if (!selectedBlock) return; const otherRefs = selectedBlock.sourceRefs.filter((ref) => !(ref.sourceVersionId === sourceVersionId && ref.locator?.section === section)); const response = await fetch(`/api/studio/courses/${id}/blocks/${selectedBlock.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expectedRevision: selectedBlock.revision, content: selectedBlock.content, sourceRefs: [...otherRefs, { sourceVersionId, locator: { section } }] }) }); const result = await response.json(); if (!response.ok) throw new Error(result.error ?? "Could not link source"); updateBlock(result.block); }
+  async function lifecycle(action: "submit" | "review" | "branch" | "archive", decision?: "approved" | "changes_requested") { const response = await fetch(`/api/studio/courses/${id}/lifecycle`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, decision }) }); const result = await response.json(); if (!response.ok) return setError(result.error ?? "Could not update course status"); await load(); }
+  async function publish() { const response = await fetch(`/api/courses/${id}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ published: true, category: "Workplace training" }) }); const result = await response.json(); if (!response.ok) return setError(result.error ?? "Could not publish"); await load(); }
 
-  async function runLifecycle(action: "submit" | "review" | "branch" | "archive", decision?: "approved" | "changes_requested", versionId?: string) {
-    setError("");
-    const response = await fetch(`/api/studio/courses/${id}/lifecycle`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, decision, versionId }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not update this version");
-    await load();
-  }
-
-  async function addComment() {
-    if (!comment.trim()) return;
-    const response = await fetch(`/api/studio/courses/${id}/lifecycle`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "comment", comment }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not add comment");
-    setComment("");
-    await load();
-  }
-
-  async function resolveComment(commentId: string) {
-    const response = await fetch(`/api/studio/courses/${id}/lifecycle`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "resolve_comment", commentId }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not resolve comment");
-    await load();
-  }
-
-  async function regenerate(scopeType: "block" | "lesson" | "module", scopeKey: string) {
-    setError("");
-    setRegenerating(`${scopeType}:${scopeKey}`);
-    try {
-      const response = await fetch(`/api/studio/courses/${id}/regenerate`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scopeType, scopeKey }),
-      });
-      const result = await response.json();
-      if (!response.ok) return setError(result.error ?? "Could not regenerate this selection");
-      await load();
-    } finally {
-      setRegenerating("");
-    }
-  }
-
-  async function publish() {
-    setError("");
-    const response = await fetch(`/api/courses/${id}/publish`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ published: true, category: "General" }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not publish this version");
-    await load();
-  }
-
-  async function moveBlock(block: BlockItem, direction: -1 | 1) {
-    const lessonBlocks = data?.blocks.filter((candidate) => candidate.lessonKey === block.lessonKey) ?? [];
-    const index = lessonBlocks.findIndex((candidate) => candidate.id === block.id);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= lessonBlocks.length) return;
-    const orderedBlockIds = lessonBlocks.map((candidate) => candidate.id);
-    [orderedBlockIds[index], orderedBlockIds[target]] = [orderedBlockIds[target], orderedBlockIds[index]];
-    const response = await fetch(`/api/studio/courses/${id}/blocks`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reorder", lessonKey: block.lessonKey, orderedBlockIds }),
-    });
-    const result = await response.json();
-    if (!response.ok) return setError(result.error ?? "Could not reorder blocks");
-    await load();
-  }
-
-  if (!data) return <div className="p-6 text-ink-soft">{error || "Opening Studio…"}</div>;
-  const editable = data.version.lifecycle_status === "draft";
-  return <div className="page-wrap"><div className="mx-auto max-w-[88rem] space-y-5">
-    <header className="grid overflow-hidden rounded-[1.6rem] border border-line bg-card shadow-card lg:grid-cols-[1.2fr_.8fr]">
-      <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10"><Link href={`/course/${id}`} className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft hover:text-ink"><span aria-hidden="true">←</span> Course journey</Link><div className="mt-7 flex flex-wrap items-center gap-2"><span className="rounded-full bg-ink px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-white">Studio</span><span className="rounded-full border border-line px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-ink-soft">Version {data.version.version_number}</span><span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-go-deep">{data.version.lifecycle_status.replaceAll("_", " ")}</span></div><h1 className="display mt-4 text-[clamp(2.8rem,8vw,5rem)] leading-[0.9]">{data.version.title}</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-ink-soft">{data.version.description || "Shape the course with full source, review, accessibility, and version control."}</p></div>
-      <div className="relative min-h-56"><CourseWorld seed={`studio:${id}`} title={data.version.title} theme={(data.version.appearance ?? DEFAULT_COURSE_APPEARANCE).worldTheme} accent={COURSE_ACCENT_HEX[(data.version.appearance ?? DEFAULT_COURSE_APPEARANCE).accent]} progress={analysis && analysis.totalBlocks > 0 ? Math.round((analysis.tracedBlocks / analysis.totalBlocks) * 100) : 0} className="absolute inset-0" /><Link href={`/course/${id}#course-appearance`} className="absolute bottom-5 right-5 z-10 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-pine/70 px-5 text-sm font-semibold text-white backdrop-blur-sm">Preview & design learner world <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
-    </header>
-
-    {analysis && <section className="grid gap-3 sm:grid-cols-3" aria-label="Course quality summary"><div className="rounded-[1.2rem] bg-signal p-4"><p className="section-label text-ink/55">Source coverage</p><p className="display mt-3 text-3xl">{analysis.tracedBlocks}/{analysis.totalBlocks}</p><p className="text-xs text-ink/60">blocks linked</p></div><div className="rounded-[1.2rem] bg-sky p-4"><p className="section-label text-ink/55">Accessibility</p><p className="display mt-3 text-3xl">{analysis.accessibilityIssueBlockIds.length === 0 ? "Ready" : analysis.accessibilityIssueBlockIds.length}</p><p className="text-xs text-ink/60">{analysis.accessibilityIssueBlockIds.length === 0 ? "checks pass" : "issues to resolve"}</p></div><div className="rounded-[1.2rem] border border-line bg-card p-4 shadow-card"><p className="section-label">Estimated duration</p><p className="display mt-3 text-3xl">{analysis.estimatedDurationMinutes}</p><p className="text-xs text-ink-soft">minutes</p></div></section>}
-
-    <section className="sticky top-[4.5rem] z-20 flex flex-col gap-3 rounded-[1.2rem] border border-line bg-paper/92 p-2 shadow-card backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between lg:top-2"><div className="flex gap-1 overflow-x-auto rounded-full bg-card p-1">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} aria-pressed={previewMode === mode} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold capitalize ${previewMode === mode ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{mode === "edit" ? "Editorial view" : `${mode} preview`}</button>)}</div><p className="hidden px-3 text-xs text-ink-soft sm:block">{editable ? "Draft changes remain private until review and publishing." : "This version is read-only."}</p></section>
-
-    {error && <p role="alert" className="rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
-    {previewMode !== "edit" && <section className="rounded-[1.5rem] border border-line bg-card p-4 shadow-card sm:p-6"><CoursePreview blocks={data.blocks} mode={previewMode} appearance={data.version.appearance ?? DEFAULT_COURSE_APPEARANCE} /></section>}
-
-    {previewMode === "edit" && <>
-      <nav className="grid grid-cols-3 gap-1 rounded-[1.1rem] border border-line bg-card p-1 xl:hidden" aria-label="Studio panels">{([ ["outline", "Outline", "layers"], ["canvas", "Canvas", "create"], ["inspector", "Inspector", "settings"] ] as const).map(([panel, label, icon]) => <button key={panel} type="button" onClick={() => setStudioPanel(panel)} aria-pressed={studioPanel === panel} className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold ${studioPanel === panel ? "bg-ink text-white" : "text-ink-soft"}`}><AppIcon name={icon} className="h-4 w-4" /><span className="truncate">{label}</span></button>)}</nav>
-
-      <div className="grid items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)_20rem]">
-        <aside className={`${studioPanel === "outline" ? "block" : "hidden"} space-y-4 xl:sticky xl:top-24 xl:block`} aria-label="Course outline"><div className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><div className="flex items-center justify-between gap-3"><div><p className="section-label">Outline</p><h2 className="display mt-1 text-3xl">Course structure</h2></div><span className="text-xs font-semibold text-ink-soft">{lessons.length}</span></div><nav className="mt-5 space-y-5" aria-label="Modules and lessons">{outlineModules.length === 0 && <p className="text-sm leading-6 text-ink-soft">Add the first block to create a module and lesson.</p>}{outlineModules.map(([moduleKey, module]) => <section key={moduleKey}><h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">{module.title}</h3><div className="mt-2 space-y-1">{module.lessons.map((lesson) => <button key={lesson.lessonKey} type="button" onClick={() => { setSelectedLessonKey(lesson.lessonKey); setStudioPanel("canvas"); }} aria-pressed={selectedLesson?.lessonKey === lesson.lessonKey} className={`flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm ${selectedLesson?.lessonKey === lesson.lessonKey ? "bg-ink text-white" : "hover:bg-paper"}`}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${selectedLesson?.lessonKey === lesson.lessonKey ? "bg-signal" : "bg-moss"}`} /><span className="min-w-0 flex-1 leading-snug">{lesson.lessonTitle}</span><span className="text-[10px] opacity-60">{data.blocks.filter((block) => block.lessonKey === lesson.lessonKey).length}</span></button>)}</div></section>)}</nav></div></aside>
-
-        <section className={`${studioPanel === "canvas" ? "block" : "hidden"} min-w-0 space-y-5 xl:block`} aria-labelledby="studio-canvas-heading"><div className="rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><p className="section-label">Editable canvas</p><h2 id="studio-canvas-heading" className="display mt-2 text-4xl">{selectedLesson?.lessonTitle ?? "First lesson"}</h2><p className="mt-2 text-sm text-ink-soft">{selectedLesson?.moduleTitle ?? "Start by naming the first module and lesson."}</p></div>
-          {editable && selectedLesson && <OutlineEditor key={`outline:${selectedLesson.lessonKey}`} section={selectedLesson} onSaved={load} onRegenerate={regenerate} />}
-          {visibleBlocks.length === 0 && <p className="rounded-[1.35rem] border border-dashed border-line-deep bg-card px-5 py-10 text-center text-sm text-ink-soft">This lesson is empty. Add its first block below.</p>}
-          {visibleBlocks.map((block) => { const lessonIndex = visibleBlocks.findIndex((candidate) => candidate.id === block.id); return <div key={`${block.id}:${block.revision}`} className="space-y-2"><div className="flex flex-wrap justify-end gap-2">{editable && <><button type="button" onClick={() => void moveBlock(block, -1)} disabled={lessonIndex === 0} className="min-h-10 rounded-full border border-line px-4 text-xs font-semibold disabled:opacity-30">Move up</button><button type="button" onClick={() => void moveBlock(block, 1)} disabled={lessonIndex === visibleBlocks.length - 1} className="min-h-10 rounded-full border border-line px-4 text-xs font-semibold disabled:opacity-30">Move down</button></>}</div><BlockEditor block={block} sources={data.sources} onSaved={load} />{editable && <button type="button" onClick={() => void regenerate("block", block.id)} disabled={!!regenerating} className="min-h-11 w-full rounded-full border border-teal/40 px-5 text-sm font-semibold text-teal-deep disabled:opacity-40">{regenerating === `block:${block.id}` ? "Regenerating this block…" : "Regenerate only this block"}</button>}</div>; })}
-          {editable && <form onSubmit={addBlock} className="space-y-4 rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><div><p className="section-label">Add to the canvas</p><h2 className="display mt-2 text-3xl">New content block</h2></div>{lessons.length === 0 && <><label className="block text-xs font-semibold">Module title<input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} className="field mt-2" /></label><label className="block text-xs font-semibold">Lesson title<input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} className="field mt-2" /></label></>}<label className="block text-xs font-semibold">Block type<select value={blockType} onChange={(event) => setBlockType(event.target.value as BlockType)} className="field mt-2">{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="btn-teal w-full">Add block</button></form>}
-        </section>
-
-        <aside className={`${studioPanel === "inspector" ? "block" : "hidden"} space-y-4 xl:sticky xl:top-24 xl:block`} aria-label="Course inspector">
-          <section className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><p className="section-label">Release desk</p><h2 className="display mt-2 text-3xl">Review & publish</h2><div className="mt-4 space-y-2">{data.version.lifecycle_status === "draft" && <button onClick={() => void runLifecycle("submit")} className="btn-primary w-full">Submit for review</button>}{data.version.lifecycle_status === "review" && <><button onClick={() => void runLifecycle("review", "changes_requested")} className="min-h-11 w-full rounded-full border border-line px-4 text-sm font-semibold">Request changes</button><button onClick={() => void runLifecycle("review", "approved")} className="btn-teal w-full">Approve version</button></>}{data.version.lifecycle_status === "approved" && <button onClick={() => void publish()} className="btn-go w-full">Publish approved version</button>}{data.version.lifecycle_status === "published" && <button onClick={() => void runLifecycle("branch")} className="btn-primary w-full">Create a new draft</button>}{["draft", "review", "approved"].includes(data.version.lifecycle_status) && <button onClick={() => void runLifecycle("archive")} className="min-h-11 w-full rounded-full border border-line px-4 text-sm font-semibold">Archive working version</button>}</div></section>
-
-          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card" open><summary className="min-h-10 text-sm font-semibold">Source traceability <span className="float-right text-xs font-normal text-ink-soft">{data.sources.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{data.sources.length === 0 && <p className="text-xs leading-5 text-ink-soft">No source versions are attached to this course.</p>}{data.sources.map((source) => <div key={source.source_version_id} className="rounded-lg bg-paper p-3"><p className="text-xs font-semibold">{source.title}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-ink-soft">{source.kind}</p></div>)}</div></details>
-
-          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Review notes <span className="float-right text-xs font-normal text-ink-soft">{data.comments.filter((item) => item.status === "open").length} open</span></summary><div className="mt-3 space-y-3 border-t border-line pt-3">{data.reviews.map((review) => <div key={review.id} className="rounded-lg bg-paper p-3 text-xs"><p className="font-semibold">{review.reviewer_name} · {review.decision.replaceAll("_", " ")}</p>{review.summary && <p className="mt-1 leading-5 text-ink-soft">{review.summary}</p>}</div>)}{data.comments.map((item) => <div key={item.id} className="rounded-lg border border-line p-3 text-xs"><p><strong>{item.author_name}:</strong> {item.body}</p><p className="mt-1 uppercase tracking-wide text-ink-soft">{item.status}</p>{item.status === "open" && <button onClick={() => void resolveComment(item.id)} className="mt-2 font-semibold text-teal">Mark resolved</button>}</div>)}<label className="block text-xs font-semibold">Add a review note<textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="field mt-2" /></label><button type="button" onClick={() => void addComment()} disabled={!comment.trim()} className="btn-teal w-full">Add note</button></div></details>
-
-          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Version history <span className="float-right text-xs font-normal text-ink-soft">{data.versions.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{versionDiff && <div className="rounded-lg bg-sky/45 p-3 text-xs"><p className="font-semibold">Changes from version {data.versions.find((version) => version.id === data.version.parent_version_id)?.version_number}</p><p className="mt-1 text-ink-soft">{versionDiff.changed.length} changed · {versionDiff.added.length} added · {versionDiff.removed.length} removed{versionDiff.appearanceChanged ? " · appearance changed" : ""}</p></div>}{data.versions.map((version) => <div key={version.id} className="rounded-lg bg-paper p-3 text-xs"><p><strong>Version {version.version_number}</strong> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="mt-2 font-semibold text-teal-deep">Restore as draft</button>}</div>)}</div></details>
-        </aside>
-      </div>
-    </>}
-  </div></div>;
+  if (!data) return <div className="page-wrap"><div className="mx-auto max-w-6xl rounded-2xl border border-line bg-card p-10 text-center text-ink-soft">{error || "Opening your course workspace…"}</div></div>;
+  const readiness = [{ label: "Content added", pass: (analysis?.totalBlocks ?? 0) > 0 }, { label: "Every block linked to a source", pass: analysis ? analysis.tracedBlocks === analysis.totalBlocks && analysis.totalBlocks > 0 : false }, { label: "Accessibility checks clear", pass: analysis ? analysis.accessibilityIssueBlockIds.length === 0 : false }, { label: "Review notes resolved", pass: data.comments.every((item) => item.status !== "open") }];
+  const palette = BLOCKS.filter((item) => `${item.label} ${item.description} ${item.group}`.toLowerCase().includes(paletteQuery.toLowerCase()));
+  return <div className="min-h-dvh bg-paper">
+    <header className="sticky top-0 z-30 border-b border-line bg-card/92 backdrop-blur-xl"><div className="mx-auto flex max-w-[100rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"><div className="flex min-w-0 items-center gap-3"><Link href={`/course/${id}`} aria-label="Back to course" className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line hover:bg-paper">←</Link><div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-bold sm:text-base">{data.version.title}</h1><span className="hidden rounded-full bg-paper px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-ink-soft sm:inline">v{data.version.version_number} · {data.version.lifecycle_status}</span></div><SaveState state={saveState} /></div></div><div className="flex flex-wrap items-center gap-2"><Link href={`/course/${id}/appearance`} className="quiet-button hidden min-h-10 py-2 text-xs md:inline-flex">Theme</Link>{(["mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => { setPreviewMode(previewMode === mode ? "edit" : mode); setMobilePanel("canvas"); }} className={`${mode === "mobile" ? "inline-flex" : "hidden"} min-h-10 items-center rounded-full px-3 text-xs font-semibold sm:inline-flex ${previewMode === mode ? "bg-ink text-white" : "border border-line bg-card"}`}>{mode === "mobile" ? <><span className="sm:hidden">Preview</span><span className="hidden sm:inline">Phone</span></> : mode === "desktop" ? "Preview" : "Offline"}</button>)}<button type="button" onClick={() => { setToolTab("publish"); setMobilePanel("tools"); }} className="btn-primary min-h-10 px-4 py-2 text-xs">Review & publish</button></div></div></header>
+    <nav className="sticky top-[121px] z-20 grid grid-cols-3 border-b border-line bg-card lg:top-[65px] xl:hidden" aria-label="Studio panels">{(["outline", "canvas", "tools"] as const).map((panel) => <button key={panel} onClick={() => setMobilePanel(panel)} aria-pressed={mobilePanel === panel} className={`min-h-11 text-xs font-bold capitalize ${mobilePanel === panel ? "border-b-2 border-teal text-teal" : "text-ink-soft"}`}>{panel === "tools" ? "Source & checks" : panel}</button>)}</nav>
+    {error && <div className="mx-auto mt-4 max-w-[100rem] px-4 sm:px-6"><p role="alert" className="rounded-xl border border-no/20 bg-no-soft p-3 text-sm font-semibold text-no-deep">{error}<button onClick={() => setError("")} className="float-right">×</button></p></div>}
+    <div className="mx-auto grid max-w-[100rem] gap-5 px-4 py-5 sm:px-6 xl:grid-cols-[17rem_minmax(0,1fr)_22rem]">
+      <aside className={`${mobilePanel === "outline" ? "block" : "hidden"} space-y-4 xl:sticky xl:top-24 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto`}><section className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><div className="flex items-center justify-between"><div><p className="section-label">Course outline</p><h2 className="display mt-1 text-2xl">{lessons.length} lesson{lessons.length === 1 ? "" : "s"}</h2></div><span className="grid h-9 w-9 place-items-center rounded-xl bg-forest text-signal"><AppIcon name="layers" className="h-4 w-4" /></span></div><div className="mt-4 space-y-4">{modules.map(([moduleKey, module]) => <div key={moduleKey}><p className="mb-1 px-2 text-[9px] font-bold uppercase tracking-[0.15em] text-ink-soft">{module.title}</p>{module.lessons.sort((a, b) => a.lessonPosition - b.lessonPosition).map((lesson, index) => <div key={lesson.lessonKey} className={`rounded-xl p-2 ${lesson.lessonKey === selectedLessonKey ? "bg-forest text-white" : "hover:bg-paper"}`}><button onClick={() => { setSelectedLessonKey(lesson.lessonKey); setMobilePanel("canvas"); }} className="flex w-full items-start gap-3 text-left"><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold ${lesson.lessonKey === selectedLessonKey ? "bg-signal text-ink" : "bg-paper text-ink-soft"}`}>{index + 1}</span><span><strong className="block text-xs leading-5">{lesson.lessonTitle}</strong><span className={`text-[10px] ${lesson.lessonKey === selectedLessonKey ? "text-white/55" : "text-ink-soft"}`}>{data.blocks.filter((item) => item.lessonKey === lesson.lessonKey).length} blocks</span></span></button>{editable && lesson.lessonKey === selectedLessonKey && <OutlineDetails section={lesson} onSaved={load} />}</div>)}</div>)}{lessons.length === 0 && <div className="rounded-xl border border-dashed border-line-deep p-4 text-center text-xs leading-5 text-ink-soft">Start with one lesson. You can reorganize it later.</div>}</div>{editable && <div className="mt-4 grid gap-2"><button onClick={() => void addLesson(false)} className="quiet-button min-h-10 text-xs">+ Add lesson</button><button onClick={() => void addLesson(true)} className="quiet-button min-h-10 text-xs">+ Add module</button></div>}</section></aside>
+      <section className={`${mobilePanel === "canvas" ? "block" : "hidden"} min-w-0 space-y-4 xl:block`} aria-label="Lesson canvas">
+        {previewMode !== "edit" ? <div><div className="mb-4 flex items-center justify-between"><div><p className="section-label">True learner experience</p><h2 className="display mt-1 text-3xl">{selectedLesson?.lessonTitle ?? "Lesson preview"}</h2></div><button onClick={() => setPreviewMode("edit")} className="quiet-button text-xs">Return to editing</button></div><StudioLessonPreview blocks={visibleBlocks} appearance={data.version.appearance} mode={previewMode} /></div> : <>
+          <section className="overflow-hidden rounded-[1.5rem] bg-forest p-6 text-white shadow-pop sm:p-8"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Now editing</p><h2 className="display mt-3 text-[clamp(2.4rem,6vw,4.5rem)] leading-[.92]">{selectedLesson?.lessonTitle ?? "Your first lesson"}</h2><p className="mt-4 max-w-xl text-sm leading-6 text-white/60">{selectedLesson?.moduleSummary || "Build the lesson in small, focused blocks. Changes save automatically."}</p></div>{analysis && <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs"><strong className="block text-signal">About {analysis.estimatedLessonMinutes || 1} min</strong><span className="text-white/55">learner time</span></div>}</div></section>
+          {visibleBlocks.map((block) => <BlockEditor key={block.id} block={block} editable={Boolean(editable)} selected={selectedBlock?.id === block.id} onSelect={() => setSelectedBlockId(block.id)} onUpdated={updateBlock} onAction={blockAction} onSaving={setSaveState} />)}
+          {editable && <section className="rounded-[1.35rem] border border-dashed border-line-deep bg-card/55 p-5 sm:p-6"><button type="button" onClick={() => setPaletteOpen(!paletteOpen)} className="flex w-full items-center justify-between text-left"><span><span className="section-label">Continue the lesson</span><strong className="display mt-1 block text-3xl font-normal">Add a content block</strong></span><span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-xl text-white">{paletteOpen ? "×" : "+"}</span></button>{paletteOpen && <div className="mt-5 border-t border-line pt-5"><input autoFocus value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} placeholder="Search explanations, quizzes, tasks…" className="field" /><div className="mt-4 grid gap-2 sm:grid-cols-2">{palette.map((item) => <button key={item.type} type="button" onClick={() => void addBlock(item.type)} className="group rounded-xl border border-line bg-card p-4 text-left transition hover:-translate-y-0.5 hover:border-teal hover:shadow-card"><span className="text-[9px] font-bold uppercase tracking-[0.14em] text-teal">{item.group}</span><strong className="mt-1 block text-sm">{item.label}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{item.description}</span></button>)}</div></div>}</section>}
+        </>}
+      </section>
+      <aside className={`${mobilePanel === "tools" ? "block" : "hidden"} min-w-0 xl:sticky xl:top-24 xl:block xl:max-h-[calc(100dvh-7rem)] xl:overflow-y-auto`}><section className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><div className="grid grid-cols-3 rounded-xl bg-paper p-1">{(["source", "quality", "publish"] as const).map((tab) => <button key={tab} onClick={() => setToolTab(tab)} className={`min-h-9 rounded-lg text-[10px] font-bold capitalize ${toolTab === tab ? "bg-card text-ink shadow-sm" : "text-ink-soft"}`}>{tab}</button>)}</div><div className="mt-5">
+        {toolTab === "source" && <><div className="mb-4"><p className="section-label">Source reader</p><h2 className="display mt-1 text-3xl">Read while you write</h2><p className="mt-2 text-xs leading-5 text-ink-soft">Select a block on the canvas, then link the exact section that supports it.</p></div><StudioSourceReader courseId={id} sources={data.sources} selectedBlockLabel={selectedBlock ? LABELS[selectedBlock.blockType] : undefined} onCite={cite} /></>}
+        {toolTab === "quality" && <><div><p className="section-label">Quality coach</p><h2 className="display mt-1 text-3xl">What needs attention</h2></div><div className="mt-4 space-y-2">{readiness.slice(0, 3).map((item) => <div key={item.label} className={`flex items-center gap-3 rounded-xl border p-3 text-xs font-semibold ${item.pass ? "border-go/20 bg-go-soft text-go-deep" : "border-amber/30 bg-ivory"}`}><span className={`grid h-6 w-6 place-items-center rounded-full ${item.pass ? "bg-go text-white" : "bg-amber/25 text-ink"}`}>{item.pass ? "✓" : "!"}</span>{item.label}</div>)}</div>{analysis && <div className="mt-4 rounded-xl bg-paper p-4 text-xs leading-6 text-ink-soft"><strong className="block text-ink">Course estimate</strong>{analysis.totalBlocks} blocks · about {analysis.estimatedDurationMinutes || 1} minutes<br />{analysis.tracedBlocks} blocks trace back to the document</div>}</>}
+        {toolTab === "publish" && <><div><p className="section-label">Release desk</p><h2 className="display mt-1 text-3xl">Ready for learners?</h2></div><div className="mt-4 space-y-2">{readiness.map((item) => <div key={item.label} className="flex items-center gap-3 rounded-xl border border-line p-3 text-xs"><span className={`grid h-6 w-6 place-items-center rounded-full ${item.pass ? "bg-go text-white" : "bg-paper text-ink-soft"}`}>{item.pass ? "✓" : "·"}</span><span>{item.label}</span></div>)}</div><div className="mt-5 space-y-2">{data.version.lifecycle_status === "draft" && <button onClick={() => void lifecycle("submit")} className="btn-primary w-full text-sm">Submit for review</button>}{data.version.lifecycle_status === "review" && <><button onClick={() => void lifecycle("review", "approved")} className="btn-go w-full text-sm">Approve this version</button><button onClick={() => void lifecycle("review", "changes_requested")} className="quiet-button w-full text-sm">Request changes</button></>}{data.version.lifecycle_status === "approved" && <button onClick={() => void publish()} className="btn-go w-full text-sm">Publish to learners</button>}{data.version.lifecycle_status === "published" && <button onClick={() => void lifecycle("branch")} className="btn-primary w-full text-sm">Create a new draft</button>}</div><p className="mt-4 text-xs leading-5 text-ink-soft">BookQuest keeps published versions locked. Future edits happen in a new draft, so learner records stay trustworthy.</p></>}
+      </div></section></aside>
+    </div>
+  </div>;
 }
