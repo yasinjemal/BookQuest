@@ -1,4 +1,4 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 export type OperationalSeverity = "info" | "warning" | "error";
 export type OperationalMetadataValue = string | number | boolean | null;

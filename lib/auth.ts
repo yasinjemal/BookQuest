@@ -41,15 +41,15 @@ export async function login(
   return { user };
 }
 
-export async function startSession(res: NextResponse, userId: number) {
+export async function startSession(res: NextResponse, userId: number, days = 30) {
   const token = crypto.randomBytes(32).toString("hex");
-  await createSession(userId, token);
+  await createSession(userId, token, days);
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 30 * 24 * 3600,
+    maxAge: days * 24 * 3600,
   });
 }
 

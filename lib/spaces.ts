@@ -646,6 +646,13 @@ export async function updateSpaceLifecycle(
     if (space.type === "personal" && status !== "active") {
       throw new SpaceConflictError("Personal Spaces follow the account lifecycle");
     }
+    if (status === "deletion_scheduled") {
+      const hold = await client.query(
+        "SELECT 1 FROM space_legal_holds WHERE space_id=$1 AND status='active' LIMIT 1",
+        [spaceId]
+      );
+      if (hold.rowCount) throw new SpaceConflictError("Release active legal holds before scheduling Space deletion");
+    }
     const at = nowIso();
     const updated = (
       await client.query<SpaceRow>(
@@ -783,6 +790,27 @@ export async function createSpace(
         [space.id, ownerUserId, space.policy_version, nowIso()]
       )
     ).rows[0];
+    if (type === "organization") {
+      const defaultPolicy = JSON.stringify({
+        minimum_password_length: 12,
+        session_max_days: 30,
+        require_mfa_roles: [],
+        retention_days: 2555,
+        legal_hold_enabled: true,
+      });
+      const policy = (await client.query<{ id: string }>(
+        `INSERT INTO space_policy_versions
+          (space_id,version,status,policy_json,content_hash,created_by_user_id,published_at)
+         VALUES ($1,1,'published',$2,$3,$4,$5) RETURNING id`,
+        [space.id, defaultPolicy,
+         crypto.createHash("sha256").update(defaultPolicy).digest("hex"),
+         ownerUserId, nowIso()]
+      )).rows[0];
+      await client.query(
+        "UPDATE spaces SET current_policy_version_id=$2 WHERE id=$1",
+        [space.id, policy.id]
+      );
+    }
     await recordSpaceAudit(client, {
       eventType: "space.created",
       space,
@@ -885,6 +913,79 @@ export async function inviteSpaceMember(
       metadata: { role, expires_at: expiresAt },
     });
     return { invitation, token };
+  });
+}
+
+export async function bulkInviteSpaceMembers(
+  actorUserId: number,
+  spaceId: string,
+  entries: Array<{ email: string; role: Exclude<SpaceRole, "owner"> }>,
+  expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString()
+) {
+  if (entries.length < 1 || entries.length > 100) throw new SpaceConflictError("Bulk invitations require 1 to 100 entries");
+  if (Date.parse(expiresAt) <= Date.now()) throw new SpaceConflictError("Invitation expiry must be in the future");
+  const roles = new Set<SpaceRole>(["administrator", "creator", "reviewer", "manager", "learner", "auditor"]);
+  const normalized = entries.map((entry) => ({ email: entry.email.trim().toLowerCase(), role: entry.role }));
+  if (normalized.some((entry) => !entry.email || !roles.has(entry.role))) throw new SpaceConflictError("Bulk invitation contains an invalid email or role");
+  if (new Set(normalized.map((entry) => entry.email)).size !== normalized.length) throw new SpaceConflictError("Bulk invitation contains duplicate emails");
+  return tx(async (client) => {
+    const { space } = await authorizeStoredMembership(actorUserId, spaceId, "members.invite", client);
+    const users = (await client.query<{ id: number; email: string }>(
+      "SELECT id,email FROM users WHERE lower(email)=ANY($1::text[])",
+      [normalized.map((entry) => entry.email)]
+    )).rows;
+    const userByEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
+    const missing = normalized.filter((entry) => !userByEmail.has(entry.email));
+    if (missing.length) throw new SpaceConflictError(`No account exists for ${missing[0].email}`);
+    const results: Array<{ email: string; invitation: SpaceInvitationRow; token: string }> = [];
+    for (const entry of normalized) {
+      const invitee = userByEmail.get(entry.email)!;
+      const existing = (await client.query<SpaceMembershipRow>(
+        "SELECT * FROM space_memberships WHERE space_id=$1 AND user_id=$2 FOR UPDATE",
+        [spaceId, invitee.id]
+      )).rows[0];
+      if (existing?.status === "active") throw new SpaceConflictError(`${entry.email} is already an active member`);
+      const at = nowIso();
+      await client.query(
+        `UPDATE space_invitations SET status='revoked',revoked_at=$3
+         WHERE space_id=$1 AND invitee_user_id=$2 AND status='pending'`,
+        [spaceId, invitee.id, at]
+      );
+      const token = crypto.randomBytes(32).toString("base64url");
+      const invitation = (await client.query<SpaceInvitationRow>(
+        `INSERT INTO space_invitations
+          (space_id,invitee_user_id,token_hash,role,created_by_user_id,policy_version,expires_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING id,space_id,invitee_user_id,role,status,created_by_user_id,
+                   policy_version,expires_at,accepted_at,revoked_at,created_at`,
+        [spaceId, invitee.id, invitationHash(token), entry.role, actorUserId,
+         space.policy_version, expiresAt]
+      )).rows[0];
+      const membership = (await client.query<SpaceMembershipRow>(
+        `INSERT INTO space_memberships
+          (space_id,user_id,status,role,invited_by_user_id,invitation_id,
+           policy_version,expires_at,updated_at)
+         VALUES ($1,$2,'invited',$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (space_id,user_id) DO UPDATE SET
+           status='invited',role=excluded.role,invited_by_user_id=excluded.invited_by_user_id,
+           invitation_id=excluded.invitation_id,policy_version=excluded.policy_version,
+           expires_at=excluded.expires_at,joined_at=NULL,suspended_at=NULL,removed_at=NULL,
+           updated_at=excluded.updated_at RETURNING *`,
+        [spaceId, invitee.id, entry.role, actorUserId, invitation.id,
+         space.policy_version, expiresAt, at]
+      )).rows[0];
+      await recordSpaceAudit(client, {
+        eventType: "membership.invited",
+        space,
+        actorUserId,
+        subjectUserId: invitee.id,
+        membershipId: membership.id,
+        invitationId: invitation.id,
+        metadata: { role: entry.role, expires_at: expiresAt, bulk: true },
+      });
+      results.push({ email: entry.email, invitation, token });
+    }
+    return results;
   });
 }
 

@@ -255,6 +255,16 @@ export async function resetPasswordWithToken(
   });
 }
 
+export async function getPasswordResetTokenUserId(tokenHash: string): Promise<number | undefined> {
+  const row = await one<{ user_id: number }>(
+    `SELECT user_id FROM account_tokens
+     WHERE token_hash=$1 AND purpose='reset_password' AND used_at IS NULL
+       AND expires_at::timestamptz > now()`,
+    [tokenHash]
+  );
+  return row ? Number(row.user_id) : undefined;
+}
+
 // ---------- Courses ----------
 
 export interface CreatedCourse {

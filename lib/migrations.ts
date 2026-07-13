@@ -1858,6 +1858,116 @@ CREATE TRIGGER assignment_versions_locked
   BEFORE UPDATE OR DELETE ON assignment_versions FOR EACH ROW EXECUTE FUNCTION phase3_assignment_version_guard();
 `;
 
+const INSTITUTIONAL_POLICY_AND_MFA_SQL = `
+CREATE TABLE space_policy_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('draft','published','superseded')),
+  policy_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  published_at TEXT,
+  superseded_at TEXT,
+  UNIQUE (space_id,version)
+);
+ALTER TABLE spaces ADD COLUMN current_policy_version_id TEXT
+  REFERENCES space_policy_versions(id) ON DELETE RESTRICT;
+
+INSERT INTO space_policy_versions
+  (space_id,version,status,policy_json,content_hash,created_by_user_id,published_at)
+SELECT space.id,1,'published',
+       '{"minimum_password_length":12,"session_max_days":30,"require_mfa_roles":[],"retention_days":2555,"legal_hold_enabled":true}',
+       md5('{"minimum_password_length":12,"session_max_days":30,"require_mfa_roles":[],"retention_days":2555,"legal_hold_enabled":true}'),
+       membership.user_id, ${ISO_NOW}
+FROM spaces space
+JOIN space_memberships membership ON membership.space_id=space.id AND membership.role='owner'
+WHERE space.type='organization';
+
+UPDATE spaces space SET current_policy_version_id=policy.id
+FROM space_policy_versions policy
+WHERE policy.space_id=space.id AND policy.version=1;
+
+CREATE TABLE space_legal_holds (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  scope_json TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','released')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  released_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  released_at TEXT,
+  release_reason TEXT
+);
+CREATE INDEX idx_space_legal_holds_active ON space_legal_holds(space_id,status,created_at);
+
+CREATE TABLE user_mfa_methods (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  method_type TEXT NOT NULL CHECK (method_type IN ('totp')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','disabled')),
+  secret_ciphertext TEXT NOT NULL,
+  secret_iv TEXT NOT NULL,
+  secret_auth_tag TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  verified_at TEXT,
+  disabled_at TEXT,
+  UNIQUE (user_id,method_type)
+);
+CREATE TABLE user_mfa_recovery_codes (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  mfa_method_id TEXT NOT NULL REFERENCES user_mfa_methods(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE TABLE user_mfa_challenges (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_user_mfa_challenges_user ON user_mfa_challenges(user_id,expires_at);
+
+CREATE TABLE space_identity_providers (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  protocol TEXT NOT NULL CHECK (protocol IN ('oidc','saml')),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','disabled')),
+  issuer TEXT NOT NULL,
+  configuration_json TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  activated_at TEXT,
+  UNIQUE (space_id,protocol,issuer)
+);
+
+CREATE OR REPLACE FUNCTION phase3_policy_version_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status IN ('published','superseded') THEN
+    IF TG_OP='UPDATE' AND OLD.status='published' AND NEW.status='superseded'
+       AND NEW.superseded_at IS NOT NULL
+       AND ROW(NEW.id,NEW.space_id,NEW.version,NEW.policy_json,NEW.content_hash,
+               NEW.created_by_user_id,NEW.created_at,NEW.published_at)
+           IS NOT DISTINCT FROM
+           ROW(OLD.id,OLD.space_id,OLD.version,OLD.policy_json,OLD.content_hash,
+               OLD.created_by_user_id,OLD.created_at,OLD.published_at)
+    THEN RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Published organization policies are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER space_policy_versions_locked
+  BEFORE UPDATE OR DELETE ON space_policy_versions
+  FOR EACH ROW EXECUTE FUNCTION phase3_policy_version_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -1869,6 +1979,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 4, name: "course_studio_foundation", sql: COURSE_STUDIO_FOUNDATION_SQL },
   { id: 5, name: "phase2_lifecycle_hardening", sql: PHASE2_LIFECYCLE_HARDENING_SQL },
   { id: 6, name: "institutional_evidence_foundation", sql: INSTITUTIONAL_EVIDENCE_FOUNDATION_SQL },
+  { id: 7, name: "institutional_policy_and_mfa", sql: INSTITUTIONAL_POLICY_AND_MFA_SQL },
 ];
 
 /**

@@ -46,6 +46,10 @@ function ProfileInner() {
   const payment = search.get("payment");
   const [data, setData] = useState<Data | null>(null);
   const [buying, setBuying] = useState<string | null>(null);
+  const [mfaActive, setMfaActive] = useState(false);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(
     payment === "success"
       ? "✅ Payment received — thank you!"
@@ -57,9 +61,10 @@ function ProfileInner() {
   );
 
   const load = useCallback(async () => {
-    const [res, privacyRes] = await Promise.all([
+    const [res, privacyRes, mfaRes] = await Promise.all([
       fetch("/api/stats"),
       fetch("/api/account/privacy"),
+      fetch("/api/account/mfa"),
     ]);
     if (res.status === 401) {
       router.push("/login");
@@ -70,11 +75,38 @@ function ProfileInner() {
       return;
     }
     setData({ ...(await res.json()), privacy: await privacyRes.json() });
+    if (mfaRes.ok) setMfaActive((await mfaRes.json()).active === true);
   }, [router]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  async function mfaAction(action: "begin" | "confirm" | "disable") {
+    setNotice(null);
+    const response = await fetch("/api/account/mfa", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, code: mfaCode }),
+    });
+    const result = await response.json();
+    if (!response.ok) return setNotice(result.error ?? "MFA action failed");
+    if (action === "begin") {
+      setMfaSecret(result.secret);
+      setNotice("Add the secret to your authenticator, then enter its 6-digit code.");
+    } else if (action === "confirm") {
+      setMfaActive(true);
+      setMfaSecret(null);
+      setMfaCode("");
+      setRecoveryCodes(result.recoveryCodes ?? []);
+      setNotice("Authenticator MFA is active. Save the recovery codes now; they are shown once.");
+    } else {
+      setMfaActive(false);
+      setMfaCode("");
+      setRecoveryCodes([]);
+      setNotice("Authenticator MFA is disabled.");
+    }
+  }
 
   async function buy(product: string) {
     setBuying(product);
@@ -238,6 +270,28 @@ function ProfileInner() {
 
       {/* Store */}
       <section className="mt-6">
+        <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">Account security</h2>
+        <div className="rounded-2xl bg-card border border-line p-4 shadow-sm space-y-3">
+          <p className="text-sm font-bold">Authenticator MFA {mfaActive ? "is active" : "is not active"}</p>
+          {!mfaActive && !mfaSecret && <button onClick={() => void mfaAction("begin")} className="rounded-lg bg-primary text-white px-3 py-2 text-xs font-bold">Set up authenticator</button>}
+          {mfaSecret && <div className="space-y-2">
+            <p className="text-xs text-ink-soft">Manual setup secret</p>
+            <code className="block rounded-lg bg-paper border border-line p-2 text-xs break-all select-all">{mfaSecret}</code>
+            <input value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder="6-digit code" autoComplete="one-time-code" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <button disabled={!/^\d{6}$/.test(mfaCode)} onClick={() => void mfaAction("confirm")} className="rounded-lg bg-primary text-white px-3 py-2 text-xs font-bold disabled:opacity-40">Confirm MFA</button>
+          </div>}
+          {mfaActive && <div className="space-y-2">
+            <input value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder="Current 6-digit code" autoComplete="one-time-code" className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm" />
+            <button disabled={!/^\d{6}$/.test(mfaCode)} onClick={() => void mfaAction("disable")} className="rounded-lg border border-no text-no px-3 py-2 text-xs font-bold disabled:opacity-40">Disable MFA</button>
+          </div>}
+          {recoveryCodes.length > 0 && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <p className="text-xs font-bold">One-time recovery codes</p>
+            <div className="grid grid-cols-2 gap-1 mt-2 font-mono text-xs">{recoveryCodes.map((code) => <span key={code}>{code}</span>)}</div>
+          </div>}
+        </div>
+      </section>
+
+      <section className="mt-6">
         <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">
           Get more
         </h2>
@@ -395,6 +449,12 @@ function ProfileInner() {
           </div>
         </div>
       </section>
+
+      <div className="mt-6 flex justify-center gap-4 text-xs font-semibold text-primary-deep">
+        <Link href="/security">Security</Link>
+        <Link href="/accessibility">Accessibility</Link>
+        <Link href="/verify-credential">Verify credential</Link>
+      </div>
 
       {isAdmin && (
         <Link

@@ -332,6 +332,12 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
     });
     await expect(auditPack.generateAssignmentAuditPack(outsiderId, assignmentId))
       .rejects.toMatchObject({ reason: "membership_required" });
+    expect(await institutional.getInstitutionalDashboard(auditorId, spaceId)).toMatchObject({
+      role: "auditor",
+      summary: { assignments: 1, completed: 1, revoked_credentials: 1 },
+    });
+    await expect(institutional.getInstitutionalDashboard(outsiderId, spaceId))
+      .rejects.toMatchObject({ reason: "membership_required" });
     expect(await pg.one<{ packs: number }>(
       "SELECT COUNT(*)::int AS packs FROM audit_packs WHERE assignment_version_id=$1",
       [assignmentVersionId]

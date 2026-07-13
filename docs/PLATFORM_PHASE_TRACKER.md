@@ -627,17 +627,24 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
   generator time and report-format version.
 - [x] Give auditors read-only evidence/report access.
 - [ ] Add MFA and pilot-driven OIDC/SAML; add SCIM when volume justifies it.
-- [ ] Add organization password, session, retention and legal-hold policies.
-- [ ] Document regional residency, continuity, recovery and incident response.
+- [x] Add organization password, session, retention and legal-hold policies.
+- [x] Document regional residency, continuity, recovery and incident response.
 - [ ] Add dependency scanning, security reviews and an external penetration test.
-- [ ] Publish data-flow, subprocessor and security questionnaire material.
-- [ ] Add branding, bulk invitation and role-scoped dashboards.
+- [x] Publish data-flow, subprocessor and security questionnaire material.
+- [x] Add branding, bulk invitation and role-scoped dashboards.
 - [ ] Complete full-journey WCAG 2.2 AA testing and publish an accessibility
   statement with remediation process.
 - [ ] Recruit one to three document-heavy design partners.
 - [ ] Measure their current manual process and agree success criteria in advance.
 - [ ] Observe real admins/learners, record support needs and validate willingness
   to pay.
+
+Local progress on open combined items: authenticator MFA and recovery codes are
+complete, while OIDC/SAML awaits a partner provider and SCIM remains
+volume-triggered. Dependency automation and internal security review are complete,
+while the independent penetration test remains open. The accessibility statement
+and remediation process are published; independent full-journey assistive-technology
+testing remains open.
 
 ### Release gates
 

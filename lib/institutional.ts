@@ -1189,3 +1189,69 @@ export async function dispatchDueAssignmentDeliveries(
   }
   return { due: due.length, sent, failed };
 }
+
+export async function getInstitutionalDashboard(actorUserId: number, spaceId: string) {
+  const { membership } = await authorizeStoredMembership(actorUserId, spaceId, "evidence.read_members", pool);
+  const summary = (await pool.query<{
+    assignments: number;
+    participation_attempts: number;
+    completed: number;
+    in_progress: number;
+    overdue: number;
+    active_credentials: number;
+    revoked_credentials: number;
+    pending_practical_reviews: number;
+  }>(
+    `SELECT
+      (SELECT COUNT(*)::int FROM space_assignments WHERE space_id=$1 AND status='active') AS assignments,
+      (SELECT COUNT(*)::int FROM assignment_participations participation
+       JOIN assignment_versions version ON version.id=participation.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1) AS participation_attempts,
+      (SELECT COUNT(*)::int FROM assignment_participations participation
+       JOIN assignment_versions version ON version.id=participation.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND participation.status='completed') AS completed,
+      (SELECT COUNT(*)::int FROM assignment_participations participation
+       JOIN assignment_versions version ON version.id=participation.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND participation.status IN ('assigned','started','submitted')) AS in_progress,
+      (SELECT COUNT(*)::int FROM assignment_participations participation
+       JOIN assignment_versions version ON version.id=participation.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND participation.status IN ('assigned','started','submitted')
+         AND version.due_at IS NOT NULL AND version.due_at<$2) AS overdue,
+      (SELECT COUNT(*)::int FROM credential_records credential
+       JOIN assignment_versions version ON version.id=credential.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND credential.status='active'
+         AND (credential.expires_at IS NULL OR credential.expires_at>$2)) AS active_credentials,
+      (SELECT COUNT(*)::int FROM credential_records credential
+       JOIN assignment_versions version ON version.id=credential.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND credential.status='revoked') AS revoked_credentials,
+      (SELECT COUNT(*)::int FROM practical_task_submissions submission
+       JOIN assignment_versions version ON version.id=submission.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=version.assignment_id
+       WHERE assignment.space_id=$1 AND NOT EXISTS (
+         SELECT 1 FROM practical_task_reviews review WHERE review.submission_id=submission.id
+       )) AS pending_practical_reviews`,
+    [spaceId, nowIso()]
+  )).rows[0];
+  const assignments = (await pool.query(
+    `SELECT assignment.id,course.title AS course_title,version.id AS assignment_version_id,
+            version.version,version.start_at,version.due_at,version.expires_at,
+            COUNT(participation.id)::int AS attempts,
+            COUNT(participation.id) FILTER (WHERE participation.status='completed')::int AS completed,
+            COUNT(participation.id) FILTER (WHERE participation.status IN ('assigned','started','submitted'))::int AS open
+     FROM space_assignments assignment
+     JOIN courses course ON course.id=assignment.course_id
+     JOIN assignment_versions version ON version.id=assignment.current_version_id
+     LEFT JOIN assignment_participations participation ON participation.assignment_version_id=version.id
+     WHERE assignment.space_id=$1 AND assignment.status='active'
+     GROUP BY assignment.id,course.title,version.id
+     ORDER BY version.due_at NULLS LAST,course.title`,
+    [spaceId]
+  )).rows;
+  return { role: membership.role, summary, assignments };
+}

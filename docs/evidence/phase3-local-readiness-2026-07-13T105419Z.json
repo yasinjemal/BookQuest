@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-13T10:54:19.0311774Z",
+  "baseCommit": "0de570108c2bf314fa9f009bd045b7649cdcaf46",
+  "phase": 3,
+  "scope": "local institutional controls; not production or partner acceptance",
+  "database": {
+    "engine": "PostgreSQL 16 disposable local database",
+    "migrationsApplied": [1, 2, 3, 4, 5, 6, 7],
+    "latestMigration": "institutional_policy_and_mfa"
+  },
+  "verification": {
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "testFiles": 27,
+    "tests": 134,
+    "dependencyAudit": {
+      "command": "npm audit --omit=dev --audit-level=high",
+      "result": "0 vulnerabilities"
+    },
+    "pdfVisualQa": {
+      "pages": 4,
+      "result": "passed after long-token wrapping and page-label correction"
+    },
+    "browserSmoke": {
+      "result": "passed",
+      "pages": [
+        "/security",
+        "/accessibility",
+        "/verify-credential",
+        "/spaces/:organizationId",
+        "/profile?ui=phase3"
+      ],
+      "checks": [
+        "credential verification fails safely for an unknown opaque token",
+        "organization controls have accessible names and no horizontal overflow",
+        "MFA enrollment controls render for an authenticated user",
+        "development service-worker cache cannot mask current UI",
+        "browser console contained no application warnings or errors after correction"
+      ]
+    }
+  },
+  "implemented": [
+    "versioned completion rules and assignment revisions",
+    "team, member and whole-Space audience history",
+    "lesson, attestation and manager-reviewed practical evidence",
+    "deterministic completion and evidence-linked credential lifecycle",
+    "opaque verification and readable CSV/PDF audit packs",
+    "read-only auditor and role dashboard access",
+    "reminder, escalation, reassignment and expiry maintenance",
+    "TOTP MFA and recovery codes",
+    "versioned organization password, session, retention and legal-hold policy",
+    "bulk invitations, branding and controlled assignment UI",
+    "dependency automation and institutional security/accessibility statements"
+  ],
+  "openReleaseGates": [
+    "production migration, CI and deployment evidence",
+    "pilot-selected OIDC or SAML integration",
+    "independent penetration test",
+    "full-journey WCAG 2.2 AA assistive-technology audit",
+    "contracted runtime-region confirmation",
+    "one to three real design partners",
+    "observed no-database partner journey",
+    "named stakeholder audit-pack acceptance"
+  ]
+}

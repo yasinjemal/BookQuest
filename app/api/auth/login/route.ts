@@ -7,6 +7,8 @@ import {
   requestIp,
   tooManyRequests,
 } from "@/lib/rate-limit";
+import { createLoginMfaChallenge, hasActiveMfa } from "@/lib/mfa";
+import { getUserAuthenticationPolicy } from "@/lib/organization-policies";
 
 export const runtime = "nodejs";
 
@@ -37,7 +39,17 @@ export async function POST(req: NextRequest) {
   if (!result.user) {
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
+  const policy = await getUserAuthenticationPolicy(result.user.id);
+  if (await hasActiveMfa(result.user.id)) {
+    return NextResponse.json({
+      mfaRequired: true,
+      challengeToken: await createLoginMfaChallenge(result.user.id),
+    }, { status: 202, headers: { "Cache-Control": "no-store" } });
+  }
+  if (policy.requireMfa) {
+    return NextResponse.json({ error: "MFA enrollment is required by your organization" }, { status: 403 });
+  }
   const res = NextResponse.json({ user: publicUser(result.user) });
-  await startSession(res, result.user.id);
+  await startSession(res, result.user.id, policy.sessionMaxDays);
   return res;
 }

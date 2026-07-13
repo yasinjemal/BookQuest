@@ -111,6 +111,16 @@ export const RATE_LIMITS = {
     limit: 120,
     windowSeconds: 60 * 60,
   },
+  mfaUser: {
+    scope: "auth.mfa.user",
+    limit: 20,
+    windowSeconds: 15 * 60,
+  },
+  mfaChallengeIp: {
+    scope: "auth.mfa.challenge.ip",
+    limit: 60,
+    windowSeconds: 15 * 60,
+  },
   outboxTelemetryUser: {
     scope: "telemetry.outbox.user",
     limit: 120,

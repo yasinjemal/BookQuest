@@ -2,6 +2,7 @@ import {
   createAccountToken,
   getUserByEmail,
   getUserById,
+  getPasswordResetTokenUserId,
   resetPasswordWithToken,
   verifyEmailWithToken,
   type AccountTokenPurpose,
@@ -18,6 +19,7 @@ import {
   recordOperationalError,
   recordOperationalEvent,
 } from "./observability";
+import { getUserAuthenticationPolicy } from "./organization-policies";
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 const RESET_TTL_MS = 30 * 60 * 1000;
@@ -121,8 +123,15 @@ export async function confirmPasswordReset(token: string, password: string) {
   if (!isAccountTokenShape(token)) {
     return { error: "This reset link is invalid or expired." };
   }
+  const tokenDigest = hashAccountToken(token);
+  const pendingUserId = await getPasswordResetTokenUserId(tokenDigest);
+  if (!pendingUserId) return { error: "This reset link is invalid or expired." };
+  const organizationPolicy = await getUserAuthenticationPolicy(pendingUserId);
+  if (password.length < organizationPolicy.minimumPasswordLength) {
+    return { error: `Password must be at least ${organizationPolicy.minimumPasswordLength} characters for your organization.` };
+  }
   const userId = await resetPasswordWithToken(
-    hashAccountToken(token),
+    tokenDigest,
     hashPassword(password)
   );
   if (!userId) return { error: "This reset link is invalid or expired." };

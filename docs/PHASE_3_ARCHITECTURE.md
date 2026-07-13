@@ -62,20 +62,43 @@ The visually inspected local sample is:
 ## Verification
 
 - TypeScript: pass
-- PostgreSQL integration: 126 tests pass sequentially, including 17 Phase 3 and
-  migration-upgrade checks
+- PostgreSQL integration: 134 tests in 27 files pass sequentially, including the
+  institutional assignment, security-policy, MFA and migration-upgrade checks
 - Production build: pass
 - PDF visual QA: four rendered pages inspected; clipping and page-label alignment
   corrected
 
 ## Still required before Phase 3 can close
 
-- MFA and pilot-selected OIDC or SAML; SCIM only if pilot volume justifies it;
-- versioned organization password, session, retention and legal-hold policies;
+- pilot-selected OIDC or SAML after discovery; SCIM only if pilot volume justifies it;
 - bulk invitations, role dashboards and remaining branding controls;
 - security/dependency evidence, external penetration test and updated institutional
-  security materials;
+  review;
 - full-journey WCAG 2.2 AA test and published remediation process;
 - production migration, CI and deployment evidence;
 - one to three real design partners, an observed no-database journey and named
   stakeholder acceptance of the pack.
+
+## Institutional security controls added after the core slice
+
+Migration 7 adds encrypted authenticator-TOTP MFA, one-time recovery codes and
+single-use login challenges. Voluntary MFA is enforced on every later password
+login. Organization policy publication can require MFA by role, but fails until
+every affected member has enrolled, preventing lockout. Session lifetime uses the
+strictest active organization policy and policy publication revokes existing member
+sessions. Password reset enforces the strictest organization minimum length.
+
+Organization policy versions also record retention and legal-hold settings. Active
+legal holds can be scoped to a Space, assignment or membership, require reasons for
+creation and release, and block Space deletion scheduling. Draft OIDC/SAML provider
+configuration is represented, but activation remains pilot-driven and is not claimed
+complete without a selected partner identity provider.
+
+The Space interface now exposes controlled assignment creation, versioned rule
+thresholds, team/member/whole-Space audiences, date and attempt policies, bulk
+invitations, branding, role-scoped completion metrics and one-click PDF/CSV audit
+downloads. The public credential-verification screen accepts only the private token.
+`docs/INSTITUTIONAL_SECURITY.md` records data flow, current subprocessors, regional
+limitations, recovery/incident procedures and factual security-questionnaire answers.
+The same bounded claims are exposed in the product at `/security`, with the honest
+accessibility status and remediation process at `/accessibility`.
