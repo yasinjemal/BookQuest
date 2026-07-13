@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "measuredAt": "2026-07-13T11:32:08.710Z",
+  "scope": "Governed institutional pilot workflow production release",
+  "release": {
+    "commit": "60a4408d7876e52774024ee5ca6f757146d6602c",
+    "productionUrl": "https://book-quest-silk.vercel.app",
+    "ci": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29246436133",
+      "startedAt": "2026-07-13T11:29:42Z",
+      "completedAt": "2026-07-13T11:31:26Z"
+    },
+    "security": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29246436003",
+      "startedAt": "2026-07-13T11:29:42Z",
+      "completedAt": "2026-07-13T11:30:00Z"
+    },
+    "deployment": {
+      "state": "success",
+      "url": "https://vercel.com/dynasty-built-academy/book-quest/BcFMxnWoUvh7JgJbGeRDrxULcv5o",
+      "completedAt": "2026-07-13T11:30:12Z"
+    }
+  },
+  "migration": {
+    "id": 8,
+    "name": "institutional_pilot_evidence",
+    "appliedAt": "2026-07-13T11:31:53.709Z"
+  },
+  "readiness": {
+    "requiredTables": 26,
+    "missingTables": [],
+    "requiredTriggers": 18,
+    "missingTriggers": [],
+    "metrics": {
+      "assignments": 6,
+      "assignmentVersions": 6,
+      "participations": 9,
+      "activePilots": 0,
+      "completedPilots": 0,
+      "pilotObservations": 0,
+      "pilotGateAttestations": 0
+    },
+    "failures": {
+      "organizationSpacesWithoutPolicy": 0,
+      "assignmentsWithoutCurrentVersion": 0,
+      "assignmentRuleOrCourseMismatch": 0,
+      "crossSpaceAssignmentTargets": 0,
+      "crossSpaceParticipations": 0,
+      "completionBindingMismatch": 0,
+      "credentialBindingMismatch": 0,
+      "activeExpiredCredentials": 0,
+      "pilotsWithoutCurrentPlan": 0,
+      "completedPilotsWithoutStatusEvent": 0
+    },
+    "healthy": true
+  },
+  "productionSmoke": {
+    "page": {
+      "path": "/spaces/not-a-real-space/pilot",
+      "anonymousHttpStatus": 200,
+      "browserResult": "redirected to /login"
+    },
+    "api": {
+      "path": "/api/spaces/not-a-real-space/institutional-pilot",
+      "anonymousHttpStatus": 401
+    },
+    "browserWarningOrErrorCount": 0
+  },
+  "scopeLimit": "The governed pilot workflow is deployed and healthy, but production contains no real organization pilot, partner observations, stakeholder attestations, credential or accepted audit pack. External Phase 3 gates remain open."
+}

@@ -679,6 +679,15 @@ or independent-assessment items by itself.
   token and recorded no browser warnings or errors.
 - Exact evidence is stored in
   `docs/evidence/phase3-production-readiness-2026-07-13T110212Z.json`.
+- Governed-pilot release `60a4408d7876e52774024ee5ca6f757146d6602c`
+  passed [CI #29246436133](https://github.com/yasinjemal/BookQuest/actions/runs/29246436133),
+  the [security audit #29246436003](https://github.com/yasinjemal/BookQuest/actions/runs/29246436003)
+  and Vercel deployment. Migration 8 (`institutional_pilot_evidence`) applied at
+  `2026-07-13T11:31:53.709Z`. The expanded production gate found all 26 tables,
+  all 18 integrity triggers and all ten consistency counters at zero. Anonymous
+  API access returned `401`, the page redirected to login and the browser logged
+  no warnings or errors. Exact evidence is in
+  `docs/evidence/phase3-pilot-workflow-production-2026-07-13T113208Z.json`.
 - This does not close Phase 3: production currently has no organization Space,
   completion, credential or audit-pack rows. A real partner journey, stakeholder
   audit-pack acceptance, live revocation proof, pilot-selected identity provider,

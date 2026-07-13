@@ -104,7 +104,6 @@ self-entered test data into partner or independent-assessor proof.
   only if pilot volume justifies it;
 - external penetration test and updated institutional review;
 - independent full-journey WCAG 2.2 AA assistive-technology audit;
-- production migration 8, CI and deployment evidence for the governed pilot flow;
 - one to three real design partners, an observed no-database journey and named
   stakeholder acceptance of the pack.
 
