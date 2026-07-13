@@ -1,38 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  /* --- Brand palette (warm "paper" identity) --- */
-  --color-ink: #1f2440;
-  --color-ink-soft: #5a6080;
-  --color-paper: #faf7f0;
+  --color-ink: #37352f;
+  --color-ink-soft: #787774;
+  --color-paper: #f7f7f5;
   --color-card: #ffffff;
-  --color-primary: #f59e0b;
-  --color-primary-deep: #d97706;
-  --color-go: #16a34a;
-  --color-go-deep: #15803d;
-  --color-go-soft: #dcfce7;
-  --color-no: #dc2626;
-  --color-no-deep: #b91c1c;
-  --color-no-soft: #fee2e2;
-  --color-teal: #0d9488;
-  --color-teal-deep: #0f766e;
-  --color-line: #e8e2d4;
-  --color-line-deep: #d8cfb8;
+  --color-sidebar: #f1f1ef;
+  --color-hover: #e8e8e5;
+  --color-primary: #2383e2;
+  --color-primary-deep: #1668b7;
+  --color-go: #448361;
+  --color-go-deep: #35674c;
+  --color-go-soft: #edf3ec;
+  --color-no: #c4554d;
+  --color-no-deep: #9e3f39;
+  --color-no-soft: #fbeceb;
+  --color-teal: #337ea9;
+  --color-teal-deep: #286488;
+  --color-line: #e3e3df;
+  --color-line-deep: #cececa;
 
   /* --- Typography --- */
-  --font-display: var(--font-rounded), "Baloo 2", ui-rounded, "Segoe UI",
-    system-ui, sans-serif;
-  --font-reading: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+  --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-reading: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* --- Elevation (warm, ink-tinted so it reads on cream) --- */
-  --shadow-card: 0 1px 2px rgba(31, 36, 64, 0.04),
-    0 6px 16px rgba(31, 36, 64, 0.05);
-  --shadow-pop: 0 8px 28px rgba(31, 36, 64, 0.1);
+  --shadow-card: 0 1px 2px rgba(15, 15, 15, 0.04);
+  --shadow-pop: 0 8px 28px rgba(15, 15, 15, 0.12);
 
   /* --- Radius scale --- */
-  --radius-xl: 1rem;
-  --radius-2xl: 1.25rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
 }
 
 html {
@@ -42,13 +40,14 @@ html {
 body {
   color: var(--color-ink);
   font-family: var(--font-display);
+  font-size: 15px;
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 24%, transparent);
 }
 
 /* Long-form lesson prose reads better in a neutral sans than the rounded
@@ -60,7 +59,7 @@ body {
 /* --- Accessibility: a single, consistent focus ring everywhere --- */
 @layer base {
   :focus-visible {
-    outline: 3px solid color-mix(in srgb, var(--color-primary) 65%, white);
+    outline: 2px solid color-mix(in srgb, var(--color-primary) 72%, white);
     outline-offset: 2px;
     border-radius: 6px;
   }
@@ -78,7 +77,7 @@ body {
 /* --- Reusable components so buttons/cards/chips stay consistent --- */
 @layer components {
   .card {
-    @apply rounded-2xl bg-card border border-line shadow-card;
+    @apply rounded-xl bg-card border border-line shadow-card;
   }
 
   /* Pressable, Duolingo-style buttons: a darker bottom edge gives a tactile
@@ -89,21 +88,21 @@ body {
   .btn-go,
   .btn-teal,
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-2xl font-extrabold
-      py-3.5 px-5 transition-transform duration-100 active:scale-[0.98]
+    @apply inline-flex items-center justify-center gap-2 rounded-lg font-semibold
+      py-2.5 px-4 transition-colors duration-100
       disabled:opacity-40 disabled:pointer-events-none select-none cursor-pointer;
   }
   .btn-primary {
-    @apply bg-primary text-white border-b-4 border-primary-deep active:border-b-2;
+    @apply bg-ink text-white hover:bg-ink/90;
   }
   .btn-go {
-    @apply bg-go text-white border-b-4 border-go-deep active:border-b-2;
+    @apply bg-go text-white hover:bg-go-deep;
   }
   .btn-teal {
-    @apply bg-teal text-white border-b-4 border-teal-deep active:border-b-2;
+    @apply bg-teal text-white hover:bg-teal-deep;
   }
   .btn-ghost {
-    @apply bg-card border-2 border-line text-ink;
+    @apply bg-card border border-line text-ink hover:bg-hover/60;
   }
 
   /* Small status pills (PUBLISHED, %, Quiz, Learn…). */
@@ -118,6 +117,36 @@ body {
   }
   .track > .fill {
     @apply h-full rounded-full transition-all duration-500 ease-out;
+  }
+}
+
+@layer components {
+  .nav-item {
+    @apply flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-hover hover:text-ink;
+  }
+  .nav-item-active {
+    @apply bg-hover text-ink;
+  }
+  .page-wrap {
+    @apply px-5 py-7 sm:px-8 sm:py-9 lg:px-12 lg:py-12;
+  }
+  .page-heading {
+    @apply text-2xl font-semibold tracking-[-0.025em] sm:text-3xl;
+  }
+  .section-label {
+    @apply text-xs font-semibold uppercase tracking-[0.08em] text-ink-soft;
+  }
+  .panel {
+    @apply rounded-xl border border-line bg-card p-4 shadow-card sm:p-5;
+  }
+  .quiet-button {
+    @apply inline-flex items-center justify-center rounded-lg border border-line bg-card px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-hover/60;
+  }
+  .field {
+    @apply w-full rounded-lg border border-line-deep bg-card px-3 py-2.5 text-sm outline-none transition-shadow placeholder:text-ink-soft/70 focus:border-primary focus:ring-2 focus:ring-primary/15;
+  }
+  .skip-link {
+    @apply fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-white focus:translate-y-0;
   }
 }
 

@@ -214,14 +214,14 @@ export default function InstitutionalPilotPage() {
     } catch (caught) { setError((caught as Error).message); }
   }
 
-  if (loading) return <main className="mx-auto max-w-3xl p-5"><p>Loading pilot evidence…</p></main>;
-  if (!dashboard) return <main className="mx-auto max-w-3xl p-5"><p role="alert">{error || "Pilot evidence is unavailable."}</p></main>;
+  if (loading) return <div className="mx-auto max-w-3xl p-5"><p>Loading pilot evidence…</p></div>;
+  if (!dashboard) return <div className="mx-auto max-w-3xl p-5"><p role="alert">{error || "Pilot evidence is unavailable."}</p></div>;
 
   const canManage = dashboard.access.canManagePilot;
   const canObserve = dashboard.access.canRecordObservation;
   const active = dashboard.pilot?.status === "active";
 
-  return <main className="mx-auto max-w-3xl px-5 py-8 space-y-5">
+  return <div className="page-wrap mx-auto max-w-4xl space-y-5">
     <div className="flex items-center justify-between gap-3">
       <div><p className="text-xs font-bold uppercase tracking-wide text-primary">Institutional pilot</p><h1 className="text-2xl font-extrabold">Governed pilot evidence</h1></div>
       <Link href={`/spaces/${id}`} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold">Back to Space</Link>
@@ -271,5 +271,5 @@ export default function InstitutionalPilotPage() {
     {active && canManage && <button onClick={() => void complete()} disabled={!dashboard.readiness?.ready} className="w-full rounded-xl bg-go py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Complete pilot only when every gate passes</button>}
     {notice && <p className="rounded-xl bg-go/10 p-3 text-sm font-semibold text-go">{notice}</p>}
     {error && <p role="alert" className="rounded-xl bg-no/10 p-3 text-sm font-semibold text-no">{error}</p>}
-  </main>;
+  </div>;
 }

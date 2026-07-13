@@ -57,7 +57,7 @@ export default function ClassesPage() {
   }
 
   return (
-    <div className="px-4 pt-6 pb-8">
+    <div className="page-wrap max-w-4xl">
       <h1 className="text-2xl font-extrabold mb-1">Classes</h1>
       <p className="text-sm text-ink-soft mb-5">
         For schools, study groups and workplace training.

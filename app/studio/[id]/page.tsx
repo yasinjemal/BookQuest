@@ -243,19 +243,18 @@ export default function StudioPage() {
 
   if (!data) return <div className="p-6 text-ink-soft">{error || "Opening Studio…"}</div>;
   const editable = data.version.lifecycle_status === "draft";
-  return <div className="px-4 pt-6 pb-8 space-y-5">
+  return <div className="page-wrap max-w-5xl space-y-5">
     <header>
       <Link href={`/course/${id}`} className="text-sm text-primary-deep font-semibold">← Course</Link>
-      <h1 className="text-2xl font-extrabold mt-2">{data.version.title}</h1>
+      <h1 className="page-heading mt-3">{data.version.title}</h1>
       <p className="text-sm text-ink-soft">Version {data.version.version_number} · {data.version.lifecycle_status} · {data.blocks.length} blocks</p>
     </header>
-    {analysis && <section className="rounded-2xl bg-card border border-line p-4">
-      <h2 className="font-bold">Version checks</h2>
-      <p className="text-sm mt-1">{analysis.tracedBlocks}/{analysis.totalBlocks} blocks linked to sources</p>
-      <p className="text-sm">{analysis.accessibilityIssueBlockIds.length === 0 ? "Accessibility checks pass" : `${analysis.accessibilityIssueBlockIds.length} accessibility issues need attention`}</p>
-      <p className="text-sm">Estimated duration: {analysis.estimatedDurationMinutes} minutes</p>
+    {analysis && <section className="panel grid gap-3 sm:grid-cols-3">
+      <div><p className="text-xs text-ink-soft">Source coverage</p><p className="mt-1 font-medium">{analysis.tracedBlocks}/{analysis.totalBlocks} blocks linked</p></div>
+      <div><p className="text-xs text-ink-soft">Accessibility</p><p className="mt-1 font-medium">{analysis.accessibilityIssueBlockIds.length === 0 ? "Checks pass" : `${analysis.accessibilityIssueBlockIds.length} issues`}</p></div>
+      <div><p className="text-xs text-ink-soft">Estimated duration</p><p className="mt-1 font-medium">{analysis.estimatedDurationMinutes} minutes</p></div>
     </section>}
-    <section className="rounded-2xl bg-card border border-line p-3"><div className="grid grid-cols-4 gap-2">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-lg px-2 py-2 text-xs font-bold capitalize ${previewMode === mode ? "bg-primary text-white" : "bg-paper border border-line"}`}>{mode}</button>)}</div></section>
+    <section className="border-b border-line"><div className="flex gap-1 overflow-x-auto">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`border-b-2 px-4 py-2 text-sm font-medium capitalize ${previewMode === mode ? "border-ink text-ink" : "border-transparent text-ink-soft"}`}>{mode}</button>)}</div></section>
     {previewMode !== "edit" && <CoursePreview blocks={data.blocks} mode={previewMode} />}
     <section className="rounded-2xl bg-card border border-line p-4 space-y-2">
       <h2 className="font-bold">Review and publish</h2>

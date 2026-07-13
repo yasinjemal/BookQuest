@@ -9,9 +9,17 @@ interface SpaceSummary {
   membership: { role: string; status: string };
 }
 
+const typeDescription: Record<string, string> = {
+  private: "A private workspace for your own material or a small invited group.",
+  unlisted: "A hidden workspace that people join through a private link.",
+  organization: "A managed workspace with roles, assignments, and audit evidence.",
+  public: "An open learning community anyone can discover.",
+};
+
 export default function SpacesPage() {
   const router = useRouter();
   const [spaces, setSpaces] = useState<SpaceSummary[] | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState("private");
   const [error, setError] = useState("");
@@ -44,32 +52,34 @@ export default function SpacesPage() {
     }
   }
 
-  return (
-    <div className="px-4 pt-6 pb-8">
-      <h1 className="text-2xl font-extrabold">Spaces</h1>
-      <p className="text-sm text-ink-soft mt-1 mb-5">Your private learning areas, teams, and communities.</p>
-      <form onSubmit={create} className="rounded-2xl bg-card border border-line p-4 shadow-card space-y-3">
-        <h2 className="font-bold">Create a Space</h2>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Economics study group" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5 outline-none focus:border-primary" />
-        <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5">
-          <option value="private">Private — invitation only</option>
-          <option value="unlisted">Unlisted — hidden link</option>
-          <option value="organization">Organization — managed</option>
-          <option value="public">Public — open community</option>
-        </select>
-        <button disabled={busy || name.trim().length < 2} className="w-full rounded-xl bg-primary text-white font-bold py-2.5 disabled:opacity-40">{busy ? "Creating…" : "Create Space"}</button>
-        {error && <p className="text-sm text-no font-medium">{error}</p>}
-      </form>
-      <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">My Spaces</h2>
-      <div className="space-y-3">
-        {spaces === null && <p className="text-center text-ink-soft py-6">Loading…</p>}
-        {spaces?.map(({ space, membership }) => (
-          <Link key={space.id} href={`/spaces/${space.id}`} className="block rounded-2xl bg-card border border-line p-4 shadow-card">
-            <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h3 className="font-bold truncate">{space.name}</h3><p className="text-xs text-ink-soft capitalize">{space.type} · {membership.role}</p></div><span>→</span></div>
-          </Link>
-        ))}
+  return <div className="page-wrap">
+    <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div><h1 className="page-heading">Spaces</h1><p className="mt-1 text-sm text-ink-soft">Keep courses, people, and evidence together.</p></div>
+      <button type="button" onClick={() => setShowCreate((open) => !open)} className={showCreate ? "quiet-button" : "btn-primary"}>{showCreate ? "Cancel" : "New space"}</button>
+    </header>
+
+    {showCreate && <form onSubmit={create} className="panel mb-8 max-w-2xl space-y-4">
+      <div><h2 className="font-semibold">Create a space</h2><p className="mt-1 text-sm text-ink-soft">Choose the simplest type that fits how people will join.</p></div>
+      <label className="block text-sm font-medium">Name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Blacksteel Clothing" className="field mt-1.5" /></label>
+      <label className="block text-sm font-medium">Type<select value={type} onChange={(event) => setType(event.target.value)} className="field mt-1.5"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="organization">Organization</option><option value="public">Public</option></select></label>
+      <p className="rounded-lg bg-hover/50 px-3 py-2 text-sm text-ink-soft">{typeDescription[type]}</p>
+      <div className="flex justify-end"><button disabled={busy || name.trim().length < 2} className="btn-primary">{busy ? "Creating..." : "Create space"}</button></div>
+      {error && <p role="alert" className="text-sm font-medium text-no">{error}</p>}
+    </form>}
+
+    <section>
+      <h2 className="section-label mb-3">Your spaces</h2>
+      {spaces === null && <div className="panel text-sm text-ink-soft">Loading spaces...</div>}
+      {spaces?.length === 0 && <div className="panel py-10 text-center"><p className="font-medium">No spaces yet</p><p className="mt-1 text-sm text-ink-soft">Create one when you need to organize courses or invite people.</p></div>}
+      <div className="grid gap-3 md:grid-cols-2">
+        {spaces?.map(({ space, membership }) => <Link key={space.id} href={`/spaces/${space.id}`} className="group panel flex items-center gap-4 transition-colors hover:bg-hover/30">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-hover text-sm font-semibold">{space.name.slice(0, 2).toUpperCase()}</span>
+          <div className="min-w-0 flex-1"><h3 className="truncate font-medium">{space.name}</h3><p className="mt-0.5 text-xs capitalize text-ink-soft">{space.type} · {membership.role}</p></div>
+          <span className="text-ink-soft transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
+        </Link>)}
       </div>
-      <Link href="/classes" className="block text-center text-sm text-primary-deep font-semibold mt-6">Open legacy Classes</Link>
-    </div>
-  );
+    </section>
+
+    <Link href="/classes" className="mt-8 inline-block text-sm text-ink-soft underline decoration-line-deep underline-offset-4 hover:text-ink">Legacy classes</Link>
+  </div>;
 }

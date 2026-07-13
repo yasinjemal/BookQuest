@@ -46,7 +46,7 @@ export default function ExplorePage() {
   }
 
   return (
-    <div className="px-4 pt-6">
+    <div className="page-wrap max-w-5xl">
       <h1 className="text-2xl font-extrabold mb-4">Explore courses</h1>
 
       <input

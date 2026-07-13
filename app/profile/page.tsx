@@ -206,10 +206,10 @@ function ProfileInner() {
     next > prev ? Math.min(100, Math.round(((xp - prev) / (next - prev)) * 100)) : 100;
 
   return (
-    <div className="px-4 pt-6 pb-8">
-      <header className="flex items-start justify-between mb-5">
+    <div className="page-wrap max-w-4xl">
+      <header className="mb-8 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold">
+          <h1 className="page-heading">
             {user.name} {premium && "👑"}
           </h1>
           <p className="text-xs text-ink-soft">{user.email}</p>

@@ -58,6 +58,7 @@ interface InstitutionalDashboard {
 export default function SpacePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const [view, setView] = useState<"overview" | "people" | "settings">("overview");
   const [data, setData] = useState<Dashboard | null>(null);
   const [owned, setOwned] = useState<OwnedCourse[]>([]);
   const [email, setEmail] = useState("");
@@ -360,15 +361,15 @@ export default function SpacePage() {
   );
   const administers = ["owner", "administrator"].includes(data.membership.role);
   return (
-    <div className="px-4 pt-6 pb-8 space-y-5">
-      <div>
+    <div className="page-wrap max-w-5xl space-y-5">
+      <div className="mb-2">
         <Link
           href="/spaces"
           className="text-sm text-primary-deep font-semibold"
         >
           ← Spaces
         </Link>
-        <h1 className="text-2xl font-extrabold mt-2">{data.space.name}</h1>
+        <h1 className="page-heading mt-3">{data.space.name}</h1>
         <p className="text-sm text-ink-soft capitalize">
           {data.space.type} · {data.membership.role} · {data.space.status}
         </p>
@@ -376,7 +377,10 @@ export default function SpacePage() {
           <p className="text-sm mt-2">{data.space.description}</p>
         )}
       </div>
-      {institutional && (
+      <nav aria-label="Space sections" className="flex gap-1 border-b border-line">
+        {(["overview", "people", "settings"] as const).map((item) => <button key={item} type="button" onClick={() => setView(item)} aria-current={view === item ? "page" : undefined} className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${view === item ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+      </nav>
+      {view === "overview" && institutional && (
         <section className="rounded-2xl bg-card border border-line p-4">
           <h2 className="font-bold mb-3">Institutional overview</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
@@ -395,7 +399,7 @@ export default function SpacePage() {
           {institutional.assignments.length > 0 && <div className="mt-4 space-y-2">{institutional.assignments.map((assignment) => <div key={assignment.id} className="rounded-xl border border-line bg-paper p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{assignment.course_title}</p><p className="text-xs text-ink-soft">Version {assignment.version} · {assignment.completed}/{assignment.attempts} completed · {assignment.open} open</p></div><div className="flex gap-1"><button onClick={() => void downloadAudit(assignment.id, "pdf")} className="rounded-lg border border-line px-2 py-1 text-xs font-semibold">PDF</button><button onClick={() => void downloadAudit(assignment.id, "csv")} className="rounded-lg border border-line px-2 py-1 text-xs font-semibold">CSV</button></div></div></div>)}</div>}
         </section>
       )}
-      {manages && data.space.type !== "personal" && (
+      {view === "people" && manages && data.space.type !== "personal" && (
         <form
           onSubmit={invite}
           className="rounded-2xl bg-card border border-line p-4 space-y-3"
@@ -432,10 +436,12 @@ export default function SpacePage() {
           )}
         </form>
       )}
-      {manages && data.space.type !== "personal" && (
+      {view === "overview" && manages && data.space.type !== "personal" && (
+        <details className="panel">
+          <summary className="flex items-center justify-between text-sm font-medium">Create a controlled assignment <span className="text-xs font-normal text-ink-soft">Open form</span></summary>
         <form
           onSubmit={attachAndAssign}
-          className="rounded-2xl bg-card border border-line p-4 space-y-3"
+          className="mt-4 space-y-3 border-t border-line pt-4"
         >
           <h2 className="font-bold">Create controlled assignment</h2>
           <select
@@ -581,11 +587,14 @@ export default function SpacePage() {
             Publish rule and assign
           </button>
         </form>
+        </details>
       )}
-      {manages && data.space.type !== "personal" && (
+      {view === "people" && manages && data.space.type !== "personal" && (
+        <details className="panel">
+          <summary className="flex items-center justify-between text-sm font-medium">Teams <span className="text-xs font-normal text-ink-soft">Optional</span></summary>
         <form
           onSubmit={createTeam}
-          className="rounded-2xl bg-card border border-line p-4 space-y-3"
+          className="mt-4 space-y-3 border-t border-line pt-4"
         >
           <h2 className="font-bold">Teams</h2>
           <div className="space-y-1">
@@ -610,11 +619,14 @@ export default function SpacePage() {
             </button>
           </div>
         </form>
+        </details>
       )}
-      {manages && data.space.type !== "personal" && (
+      {view === "people" && manages && data.space.type !== "personal" && (
+        <details className="panel">
+          <summary className="flex items-center justify-between text-sm font-medium">Bulk invitations <span className="text-xs font-normal text-ink-soft">Optional</span></summary>
         <form
           onSubmit={sendBulkInvites}
-          className="rounded-2xl bg-card border border-line p-4 space-y-3"
+          className="mt-4 space-y-3 border-t border-line pt-4"
         >
           <h2 className="font-bold">Bulk invitations</h2>
           <p className="text-xs text-ink-soft">
@@ -643,8 +655,9 @@ export default function SpacePage() {
             </div>
           )}
         </form>
+        </details>
       )}
-      {administers && data.space.type !== "personal" && (
+      {view === "settings" && administers && data.space.type !== "personal" && (
         <form
           onSubmit={saveBranding}
           className="rounded-2xl bg-card border border-line p-4 space-y-3"
@@ -670,17 +683,19 @@ export default function SpacePage() {
           </button>
         </form>
       )}
-      {administers && data.space.type === "organization" && (
+      {view === "overview" && administers && data.space.type === "organization" && (
         <Link href={`/spaces/${id}/pilot`} className="block rounded-2xl bg-card border border-line p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-primary">Phase 3 pilot</p>
           <h2 className="mt-1 font-bold">Governed pilot evidence</h2>
           <p className="mt-1 text-xs leading-5 text-ink-soft">Measure the current process, observe real journeys and bind stakeholder or assessor decisions to actual assignment, credential and audit evidence.</p>
         </Link>
       )}
-      {administers && data.space.type === "organization" && (
+      {view === "settings" && administers && data.space.type === "organization" && (
+        <details className="panel">
+          <summary className="flex items-center justify-between text-sm font-medium">Organization security policy <span className="text-xs font-normal text-ink-soft">Advanced</span></summary>
         <form
           onSubmit={publishPolicy}
-          className="rounded-2xl bg-card border border-line p-4 space-y-3"
+          className="mt-4 space-y-3 border-t border-line pt-4"
         >
           <h2 className="font-bold">Organization security policy</h2>
           <div className="grid grid-cols-3 gap-2">
@@ -701,18 +716,22 @@ export default function SpacePage() {
           <p className="text-xs text-ink-soft">Policy publication revokes current organization sessions. MFA requirements can activate only after every affected member enrolls.</p>
           <button className="w-full rounded-xl bg-ink text-white font-bold py-2.5">Publish policy version</button>
         </form>
+        </details>
       )}
-      {administers && data.space.type === "organization" && (
-        <form onSubmit={createSpaceHold} className="rounded-2xl bg-card border border-line p-4 space-y-3">
+      {view === "settings" && administers && data.space.type === "organization" && (
+        <details className="panel">
+          <summary className="flex items-center justify-between text-sm font-medium">Legal hold <span className="text-xs font-normal text-ink-soft">Advanced</span></summary>
+        <form onSubmit={createSpaceHold} className="mt-4 space-y-3 border-t border-line pt-4">
           <h2 className="font-bold">Legal hold</h2>
           <p className="text-xs text-ink-soft">A Space-wide hold blocks deletion scheduling and records the reason immutably.</p>
           <input value={holdReason} onChange={(event) => setHoldReason(event.target.value)} placeholder="Reason and authority" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5" />
           <button disabled={!holdReason.trim()} className="w-full rounded-xl border border-no text-no font-bold py-2.5 disabled:opacity-40">Create Space-wide hold</button>
         </form>
+        </details>
       )}
       {notice && <p className="text-sm text-teal font-medium">{notice}</p>}
       {error && <p className="text-sm text-no font-medium">{error}</p>}
-      <section>
+      {view === "overview" && <section>
         <h2 className="font-bold mb-2">Assigned courses</h2>
         <div className="space-y-2">
           {data.courses.length === 0 && (
@@ -728,8 +747,8 @@ export default function SpacePage() {
             </Link>
           ))}
         </div>
-      </section>
-      {data.members && (
+      </section>}
+      {view === "people" && data.members && (
         <section>
           <h2 className="font-bold mb-2">Members</h2>
           <div className="space-y-2">
@@ -776,7 +795,7 @@ export default function SpacePage() {
           </div>
         </section>
       )}
-      {data.membership.role === "owner" && data.space.type !== "personal" && (
+      {view === "settings" && data.membership.role === "owner" && data.space.type !== "personal" && (
         <section className="rounded-2xl bg-card border border-line p-4 space-y-3">
           <h2 className="font-bold">Space lifecycle</h2>
           <a

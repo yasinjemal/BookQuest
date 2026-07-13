@@ -39,7 +39,7 @@ export default function PracticeHubPage() {
   }, []);
 
   return (
-    <div className="px-4 pt-6 pb-8">
+    <div className="page-wrap max-w-4xl">
       <h1 className="text-2xl font-extrabold mb-1">Practice</h1>
       <p className="text-sm text-ink-soft mb-5">
         BookQuest tracks every concept you answer and targets your weak spots.

@@ -94,7 +94,7 @@ export default function AdminPage() {
 
   const c = data.counts;
   return (
-    <div className="px-4 pt-6 pb-8">
+    <div className="page-wrap max-w-5xl">
       <h1 className="text-2xl font-extrabold mb-4">Admin</h1>
 
       <div className="grid grid-cols-2 gap-3">

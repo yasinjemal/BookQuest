@@ -748,6 +748,30 @@ or independent-assessment items by itself.
 proctoring, no universal compliance claim, and no premature active/active global
 architecture.
 
+### Usability hardening before Phase 4
+
+- [x] Replace the phone-width desktop frame with a responsive workspace shell.
+- [x] Reduce mobile navigation to five stable destinations and make creation the
+  single emphasized action.
+- [x] Replace the generic game-like/emoji-heavy visual language with a restrained,
+  original document-workspace system.
+- [x] Put the essential course-creation path before optional source and recipe
+  controls.
+- [x] Divide Space administration into Overview, People and Settings, with advanced
+  assignment, team, bulk-invitation, security-policy and legal-hold controls behind
+  progressive disclosure.
+- [x] Preserve keyboard focus, semantic navigation, reduced motion and responsive
+  reflow. Local browser QA does not close the independent accessibility gate.
+- [x] Re-verify the redesign locally: 27/27 PostgreSQL-backed test files and
+  136/136 tests pass, the production build completes, the production dependency
+  audit reports zero vulnerabilities, and signed-in/signed-out browser checks at
+  1440x900 and 390x844 show no horizontal overflow or console errors.
+
+The design principles and information architecture are recorded in
+`docs/UX_FOUNDATION.md`. This work improves the existing Phase 0-3 experience and
+does not start Phase 4. Dated local evidence is stored in
+`docs/evidence/pre-phase4-usability-local-2026-07-13T154352Z.json`.
+
 ---
 
 ## Phase 4 — Skill Passport and interoperability

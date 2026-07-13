@@ -98,14 +98,14 @@ export default function CoursePathPage() {
   let currentFound = false;
 
   return (
-    <div className="px-4 pt-6">
+    <div className="page-wrap max-w-4xl">
       <header className="mb-4">
         <Link href="/" className="text-sm font-semibold text-ink-soft">
           ← Courses
         </Link>
         <div className="flex items-start justify-between gap-2 mt-2">
           <div>
-            <h1 className="text-xl font-extrabold leading-tight">
+            <h1 className="page-heading leading-tight">
               {data.course.title}
             </h1>
             <p className="text-sm text-ink-soft">{data.course.description}</p>

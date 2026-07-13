@@ -78,15 +78,15 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <div className="px-6 pt-14">
-      <div className="text-4xl">📖</div>
-      <h1 className="text-2xl font-extrabold mt-2">
+    <div className="mx-auto min-h-dvh max-w-md px-6 py-16">
+      <Link href="/" className="mb-10 flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-md bg-ink text-[11px] font-bold text-white">BQ</span>BookQuest</Link>
+      <h1 className="text-3xl font-semibold tracking-[-0.03em]">
         {mode === "login" ? "Welcome back" : "Create your account"}
       </h1>
       <p className="text-sm text-ink-soft mt-1">
         {mode === "login"
-          ? "Sign in to keep your streak going."
-          : "Join BookQuest and get 3 free course generations."}
+          ? "Sign in to continue your work."
+          : "Create a workspace and start with your first document."}
       </p>
 
       {mfaChallenge ? <form onSubmit={completeMfa} className="mt-6 space-y-3">
@@ -97,10 +97,10 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           placeholder="Authenticator or recovery code"
           autoComplete="one-time-code"
           autoFocus
-          className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
+          className="field"
         />
         {error && <p className="text-sm font-medium text-no">{error}</p>}
-        <button type="submit" disabled={busy || !mfaCode.trim()} className="w-full rounded-2xl bg-primary text-white font-bold py-3.5 disabled:opacity-50">
+        <button type="submit" disabled={busy || !mfaCode.trim()} className="btn-primary w-full">
           {busy ? "Verifying..." : "Verify and sign in"}
         </button>
         <button type="button" onClick={() => { setMfaChallenge(null); setMfaCode(""); }} className="w-full text-sm font-semibold text-primary-deep">Use a different account</button>
@@ -111,7 +111,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
             autoComplete="name"
-            className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
+            className="field"
           />
         )}
         <input
@@ -120,7 +120,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           placeholder="Email"
           type="email"
           autoComplete="email"
-          className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
+          className="field"
         />
         {mode === "register" && (
           <label className="flex items-start gap-2 text-xs text-ink-soft">
@@ -150,13 +150,13 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           placeholder={mode === "register" ? "Password (min 8 characters)" : "Password"}
           type="password"
           autoComplete={mode === "register" ? "new-password" : "current-password"}
-          className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
+          className="field"
         />
         {error && <p className="text-sm font-medium text-no">{error}</p>}
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep active:scale-[0.98] transition disabled:opacity-50"
+          className="btn-primary w-full"
         >
           {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
         </button>
