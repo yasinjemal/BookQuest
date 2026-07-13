@@ -90,4 +90,12 @@ describe.skipIf(!TEST_DB)("migration runner", () => {
     )) as { courses: boolean; events: boolean };
     expect(present).toEqual({ courses: true, events: true });
   });
+
+  it("releases the transaction-scoped schema lock after initialization", async () => {
+    const row = (await pg.one(
+      `SELECT COUNT(*)::int AS count FROM pg_locks
+       WHERE pid = pg_backend_pid() AND locktype = 'advisory' AND granted`
+    )) as { count: number };
+    expect(row.count).toBe(0);
+  });
 });

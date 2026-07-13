@@ -160,30 +160,16 @@ export async function withLessonCompletionLock<T>(
   }
 }
 
-// A stable 64-bit key so every worker takes the same advisory lock during init.
-const SCHEMA_LOCK_KEY = 4927310572841100n;
-
 /**
  * Apply pending migrations once per worker.
  *
- * A session-scoped advisory lock serializes concurrent cold-start workers: the
- * first applies the pending migrations while the rest wait, then find them
- * already recorded and skip them. Session-scoped (not transaction-scoped) because
- * the lock is held across one transaction per migration.
+ * The migration runner owns a transaction-scoped advisory lock, which remains
+ * safe when DATABASE_URL uses a transaction-pooling proxy.
  */
 async function ensureSchema(): Promise<void> {
   const client = await pool.connect();
   try {
-    await client.query("SELECT pg_advisory_lock($1)", [SCHEMA_LOCK_KEY]);
-    try {
-      await applyPendingMigrations(client);
-    } finally {
-      try {
-        await client.query("SELECT pg_advisory_unlock($1)", [SCHEMA_LOCK_KEY]);
-      } catch {
-        /* a broken/ended session releases the advisory lock on its own */
-      }
-    }
+    await applyPendingMigrations(client);
   } catch (err) {
     // Let the next caller retry rather than caching a broken init.
     schemaReady = undefined;

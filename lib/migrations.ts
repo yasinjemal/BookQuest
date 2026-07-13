@@ -1553,43 +1553,43 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );`;
 
 /**
- * Apply every not-yet-recorded migration on `client`, in order, each in its own
- * transaction with its `schema_migrations` row committed alongside its DDL — so a
- * migration is either fully applied and recorded, or not at all. Returns the ids
- * applied in this call (empty when the database is already up to date).
+ * Apply every not-yet-recorded migration on `client`, in order, within one
+ * transaction. Pending DDL and ledger rows commit together or roll back together.
+ * Returns the ids applied in this call (empty when already up to date).
  *
- * The caller owns concurrency control and must pass a dedicated client, not a
- * pool (per-migration `BEGIN`/`COMMIT` needs one connection). In the app,
- * `ensureSchema` (lib/pg) holds a session-scoped advisory lock around this; the
- * upgrade test drives it directly against a scratch database.
+ * The runner owns concurrency control. The caller must pass a dedicated client,
+ * not a pool, so the transaction stays pinned to one backend through a pooled
+ * database proxy.
  */
 export async function applyPendingMigrations(client: PoolClient): Promise<number[]> {
-  await client.query(MIGRATIONS_TABLE_SQL);
-  const applied = new Set(
-    (
-      await client.query<{ id: number }>("SELECT id FROM schema_migrations")
-    ).rows.map((row) => Number(row.id))
-  );
+  const schemaLockKey = 4927310572841100n;
   const ran: number[] = [];
-  for (const migration of MIGRATIONS) {
-    if (applied.has(migration.id)) continue;
-    await client.query("BEGIN");
-    try {
+  await client.query("BEGIN");
+  try {
+    await client.query("SELECT pg_advisory_xact_lock($1)", [schemaLockKey]);
+    await client.query(MIGRATIONS_TABLE_SQL);
+    const applied = new Set(
+      (
+        await client.query<{ id: number }>("SELECT id FROM schema_migrations")
+      ).rows.map((row) => Number(row.id))
+    );
+    for (const migration of MIGRATIONS) {
+      if (applied.has(migration.id)) continue;
       await client.query(migration.sql);
       await client.query(
         "INSERT INTO schema_migrations (id, name, applied_at) VALUES ($1, $2, $3)",
         [migration.id, migration.name, new Date().toISOString()]
       );
-      await client.query("COMMIT");
       ran.push(migration.id);
-    } catch (err) {
-      try {
-        await client.query("ROLLBACK");
-      } catch {
-        /* the connection is being discarded anyway */
-      }
-      throw err;
     }
+    await client.query("COMMIT");
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* the connection is being discarded anyway */
+    }
+    throw err;
   }
   return ran;
 }
