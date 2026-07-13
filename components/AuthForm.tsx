@@ -78,12 +78,24 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   return (
-    <div className="mx-auto min-h-dvh max-w-md px-6 py-16">
-      <Link href="/" className="mb-10 flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-md bg-ink text-[11px] font-bold text-white">BQ</span>BookQuest</Link>
-      <h1 className="text-3xl font-semibold tracking-[-0.03em]">
+    <div className="min-h-dvh bg-sidebar p-3 sm:p-5">
+      <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] max-w-6xl overflow-hidden rounded-[2rem] bg-paper shadow-pop sm:min-h-[calc(100dvh-2.5rem)] lg:grid-cols-[.9fr_1.1fr]">
+        <aside className="premium-panel relative m-3 hidden rounded-[1.5rem] p-10 lg:flex lg:flex-col lg:justify-between">
+          <Link href="/" className="relative z-10 flex items-center gap-3 font-semibold text-white"><span className="brand-mark text-white" aria-hidden="true" />BookQuest</Link>
+          <div className="relative z-10">
+            <span className="eyebrow text-signal">Learning, with proof</span>
+            <p className="display mt-7 text-6xl leading-[0.9] text-white">Make useful knowledge <em className="text-signal">last.</em></p>
+            <p className="mt-6 max-w-sm text-sm leading-6 text-white/45">A beautifully clear home for trusted training, deliberate learning, and evidence that holds up.</p>
+          </div>
+          <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">BookQuest · South Africa</p>
+        </aside>
+        <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-14 sm:px-10 lg:py-16">
+      <Link href="/" className="mb-12 flex items-center gap-3 font-semibold lg:hidden"><span className="brand-mark text-ink" aria-hidden="true" />BookQuest</Link>
+      <p className="section-label mb-4">{mode === "login" ? "Welcome back" : "Your workspace awaits"}</p>
+      <h1 className="display text-5xl leading-[0.95] sm:text-6xl">
         {mode === "login" ? "Welcome back" : "Create your account"}
       </h1>
-      <p className="text-sm text-ink-soft mt-1">
+      <p className="mt-4 text-sm leading-6 text-ink-soft">
         {mode === "login"
           ? "Sign in to continue your work."
           : "Create a workspace and start with your first document."}
@@ -179,6 +191,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </>
         )}
       </p>
+        </div>
+      </div>
     </div>
   );
 }

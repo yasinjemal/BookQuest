@@ -768,11 +768,18 @@ architecture.
   1440x900 and 390x844 show no horizontal overflow or console errors.
 - [x] Make page navigations network-first with a cached offline fallback so a
   returning online user receives the current interface instead of one stale page.
+- [x] Establish a distinctive premium BookQuest identity across the public story,
+  authentication, workspace shell, creation flow, Spaces, course view, and Studio:
+  editorial typography, a bespoke page mark, forest/paper/cobalt/acid palette,
+  layered course sheets, and meaningful restrained motion.
+- [x] Remove the signed-in home request loop discovered during visual QA so account
+  and course data settle after the initial load instead of refetching continuously.
 
 The design principles and information architecture are recorded in
 `docs/UX_FOUNDATION.md`. This work improves the existing Phase 0-3 experience and
 does not start Phase 4. Dated local evidence is stored in
-`docs/evidence/pre-phase4-usability-local-2026-07-13T154352Z.json`.
+`docs/evidence/pre-phase4-usability-local-2026-07-13T154352Z.json` and
+`docs/evidence/pre-phase4-premium-design-local-2026-07-13T163121Z.json`.
 
 ---
 

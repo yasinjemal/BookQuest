@@ -361,28 +361,28 @@ export default function SpacePage() {
   );
   const administers = ["owner", "administrator"].includes(data.membership.role);
   return (
-    <div className="page-wrap max-w-5xl space-y-5">
-      <div className="mb-2">
+    <div className="page-wrap max-w-6xl space-y-5">
+      <div className="premium-panel mb-8 p-7 sm:p-10">
         <Link
           href="/spaces"
-          className="text-sm text-primary-deep font-semibold"
+          className="relative z-10 text-xs font-bold uppercase tracking-[0.15em] text-white/45 hover:text-white"
         >
           ← Spaces
         </Link>
-        <h1 className="page-heading mt-3">{data.space.name}</h1>
-        <p className="text-sm text-ink-soft capitalize">
+        <h1 className="relative z-10 mt-7 font-display text-5xl leading-[0.9] text-white sm:text-7xl">{data.space.name}</h1>
+        <p className="relative z-10 mt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-signal">
           {data.space.type} · {data.membership.role} · {data.space.status}
         </p>
         {data.space.description && (
-          <p className="text-sm mt-2">{data.space.description}</p>
+          <p className="relative z-10 mt-4 max-w-2xl text-sm leading-6 text-white/50">{data.space.description}</p>
         )}
       </div>
-      <nav aria-label="Space sections" className="flex gap-1 border-b border-line">
-        {(["overview", "people", "settings"] as const).map((item) => <button key={item} type="button" onClick={() => setView(item)} aria-current={view === item ? "page" : undefined} className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${view === item ? "border-ink text-ink" : "border-transparent text-ink-soft hover:text-ink"}`}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+      <nav aria-label="Space sections" className="flex w-fit gap-1 rounded-full border border-line bg-card p-1 shadow-card">
+        {(["overview", "people", "settings"] as const).map((item) => <button key={item} type="button" onClick={() => setView(item)} aria-current={view === item ? "page" : undefined} className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${view === item ? "bg-ink text-white shadow-card" : "text-ink-soft hover:text-ink"}`}>{item[0].toUpperCase() + item.slice(1)}</button>)}
       </nav>
       {view === "overview" && institutional && (
-        <section className="rounded-2xl bg-card border border-line p-4">
-          <h2 className="font-bold mb-3">Institutional overview</h2>
+        <section className="paper-card p-5 sm:p-7">
+          <p className="section-label mb-2">At a glance</p><h2 className="display mb-5 text-3xl">Institutional overview</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             {[
               ["Open", institutional.summary.in_progress],
@@ -390,9 +390,9 @@ export default function SpacePage() {
               ["Overdue", institutional.summary.overdue],
               ["Active credentials", institutional.summary.active_credentials],
             ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-xl bg-paper p-3">
-                <p className="text-xl font-extrabold">{value}</p>
-                <p className="text-xs text-ink-soft">{label}</p>
+              <div key={String(label)} className="rounded-2xl bg-paper p-4 text-left">
+                <p className="display text-3xl">{value}</p>
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.12em] text-ink-soft">{label}</p>
               </div>
             ))}
           </div>
@@ -728,6 +728,13 @@ export default function SpacePage() {
           <button disabled={!holdReason.trim()} className="w-full rounded-xl border border-no text-no font-bold py-2.5 disabled:opacity-40">Create Space-wide hold</button>
         </form>
         </details>
+      )}
+      {view === "settings" && data.space.type === "personal" && (
+        <section className="paper-card max-w-2xl p-6 sm:p-8">
+          <p className="section-label">Personal by design</p>
+          <h2 className="display mt-3 text-4xl">Nothing to configure.</h2>
+          <p className="mt-3 max-w-lg text-sm leading-6 text-ink-soft">Your personal Space is already private and ready for your courses. Organization controls appear only when you create an organization Space.</p>
+        </section>
       )}
       {notice && <p className="text-sm text-teal font-medium">{notice}</p>}
       {error && <p className="text-sm text-no font-medium">{error}</p>}

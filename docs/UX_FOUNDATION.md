@@ -1,7 +1,9 @@
 # BookQuest usability foundation
 
-This pass establishes an original, calm workspace design inspired by the clarity
-of tools such as Notion without copying their brand or interface.
+BookQuest now uses an original editorial workspace identity: expressive enough to
+be memorable, disciplined enough to keep complex training work easy. It retains
+the clarity that motivated the earlier Notion-inspired pass without copying any
+product's brand, layout, or visual language.
 
 ## Product rules
 
@@ -10,9 +12,27 @@ of tools such as Notion without copying their brand or interface.
 3. Use one persistent desktop sidebar and stable page titles.
 4. Group organization work into **Overview**, **People**, and **Settings**.
 5. Hide advanced controls until the user asks for them.
-6. Prefer plain labels and status words over emoji, decorative cards, or jargon.
-7. Use restrained borders, neutral surfaces, and one dark primary action.
+6. Prefer plain labels and status words over emoji or jargon; expressive surfaces
+   must communicate hierarchy, state, or workflow.
+7. Use color with intent: forest for focus, acid paper for action, cobalt for
+   evidence, and warm paper for reading.
 8. Preserve keyboard focus, semantic landmarks, mobile reflow, and reduced motion.
+
+## Visual identity
+
+- **Typography:** Instrument Serif carries the editorial voice; Manrope carries
+  interface detail and long-form clarity. The contrast makes important moments
+  feel authored without sacrificing scan speed.
+- **Palette:** deep forest (`#10261f`), warm paper (`#f3f0e8`), acid paper
+  (`#dcfa72`), cobalt (`#5960ed`), and restrained coral and sky accents.
+- **BookQuest mark:** two offset page forms create a recognizable open-book mark
+  without initials, emoji, or a third-party icon set.
+- **Signature surfaces:** dark gridded canvases represent the workspace; layered
+  paper sheets represent courses and immutable evidence.
+- **Motion:** small lift, rotation, and depth changes reward intent. All motion is
+  removed when the user requests reduced motion.
+- **Voice:** concise, confident, human, and specific. Product evidence is shown as
+  something valuable, not administrative residue.
 
 ## Current information architecture
 

@@ -62,15 +62,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return <div className="min-h-dvh bg-paper">
     <a href="#main-content" className="skip-link">Skip to content</a>
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-line bg-sidebar px-3 py-4 lg:flex lg:flex-col">
-      <Link href="/" className="mb-5 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[15px] font-semibold">
-        <span className="grid h-7 w-7 place-items-center rounded-md bg-ink text-xs font-bold text-white">BQ</span>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[268px] overflow-hidden border-r border-white/5 bg-sidebar px-4 py-5 text-white lg:flex lg:flex-col">
+      <div className="pointer-events-none absolute -right-24 top-[-5rem] h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
+      <Link href="/" className="relative mb-8 flex items-center gap-3 rounded-xl px-2 py-1.5 text-[15px] font-semibold tracking-[-0.02em] text-white">
+        <span className="brand-mark text-white" aria-hidden="true" />
         <span>BookQuest</span>
       </Link>
-      <Link href="/create" className="mb-3 flex items-center justify-center gap-2 rounded-lg bg-ink px-3 py-2 text-sm font-semibold text-white hover:bg-ink/90">
-        <Icon name="create" className="h-4 w-4" /> New course
+      <Link href="/create" className="relative mb-7 flex items-center justify-between rounded-2xl bg-signal px-4 py-3.5 text-sm font-bold text-ink shadow-[0_12px_28px_rgba(220,250,114,0.12)] transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_36px_rgba(220,250,114,0.2)]">
+        <span>New course</span><span className="grid h-6 w-6 place-items-center rounded-full bg-ink text-white"><Icon name="create" className="h-3.5 w-3.5" /></span>
       </Link>
-      <nav aria-label="Primary" className="space-y-0.5">
+      <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Workspace</p>
+      <nav aria-label="Primary" className="space-y-1">
         {items.map((item) => {
           const active = activePath(pathname, item.href);
           return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`nav-item ${active ? "nav-item-active" : ""}`}>
@@ -79,32 +81,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>;
         })}
       </nav>
-      <div className="mt-auto border-t border-line pt-3">
+      <div className="relative mt-auto border-t border-white/10 pt-4">
         <Link href="/profile" className={`nav-item ${pathname.startsWith("/profile") ? "nav-item-active" : ""}`}>
-          <Icon name="account" className="h-[18px] w-[18px]" /> Account
+          <span className="grid h-8 w-8 place-items-center rounded-full bg-white/10"><Icon name="account" className="h-4 w-4" /></span>
+          <span><span className="block text-sm">Account</span><span className="block text-[10px] font-normal text-white/35">Settings & privacy</span></span>
         </Link>
-        <div className="mt-2 flex gap-3 px-2 text-[11px] text-ink-soft">
-          <Link href="/security" className="hover:text-ink">Security</Link>
-          <Link href="/accessibility" className="hover:text-ink">Accessibility</Link>
+        <div className="mt-3 flex gap-3 px-3 text-[10px] text-white/30">
+          <Link href="/security" className="hover:text-white">Security</Link>
+          <Link href="/accessibility" className="hover:text-white">Accessibility</Link>
         </div>
       </div>
     </aside>
 
-    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-line bg-card/95 px-4 backdrop-blur lg:hidden">
-      <Link href="/" className="flex items-center gap-2 font-semibold"><span className="grid h-7 w-7 place-items-center rounded-md bg-ink text-[10px] font-bold text-white">BQ</span>BookQuest</Link>
-      <Link href="/profile" aria-label="Open account" className="grid h-8 w-8 place-items-center rounded-md text-ink-soft hover:bg-hover hover:text-ink"><Icon name="account" className="h-5 w-5" /></Link>
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-white/5 bg-sidebar/95 px-5 text-white backdrop-blur-xl lg:hidden">
+      <Link href="/" className="flex items-center gap-2.5 font-semibold tracking-[-0.02em]"><span className="brand-mark scale-90 text-white" aria-hidden="true" />BookQuest</Link>
+      <Link href="/profile" aria-label="Open account" className="grid h-9 w-9 place-items-center rounded-full border border-white/10 text-white/70 hover:bg-white/10 hover:text-white"><Icon name="account" className="h-[18px] w-[18px]" /></Link>
     </header>
 
-    <div className="lg:pl-60">
-      <main id="main-content" className="mx-auto min-h-dvh w-full max-w-6xl pb-24 lg:pb-12">{children}</main>
+    <div className="relative lg:pl-[268px]">
+      <div className="pointer-events-none fixed right-[-12rem] top-[-12rem] h-[32rem] w-[32rem] rounded-full bg-sky/20 blur-3xl" />
+      <main id="main-content" className="relative mx-auto min-h-dvh w-full max-w-7xl pb-28 lg:pb-14">{children}</main>
     </div>
 
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Primary">
+    <nav className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-5 overflow-hidden rounded-2xl border border-white/10 bg-sidebar/95 px-1 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_20px_50px_rgba(6,22,16,0.28)] backdrop-blur-xl lg:hidden" aria-label="Primary">
       {mobileItems.map((item) => {
         const active = activePath(pathname, item.href);
         const create = item.href === "/create";
-        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-ink" : "text-ink-soft"}`}>
-          <span className={create ? "grid h-9 w-9 place-items-center rounded-lg bg-ink text-white" : "grid h-7 w-9 place-items-center rounded-md"}><Icon name={item.icon} className="h-5 w-5" /></span>
+        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-16 flex-col items-center justify-center gap-1 text-[9px] font-semibold ${active ? "text-white" : "text-white/45"}`}>
+          <span className={create ? "grid h-9 w-9 -translate-y-1 place-items-center rounded-full bg-signal text-ink shadow-[0_8px_20px_rgba(220,250,114,.2)]" : `grid h-7 w-9 place-items-center rounded-lg ${active ? "bg-white/10" : ""}`}><Icon name={item.icon} className="h-[18px] w-[18px]" /></span>
           {item.label}
         </Link>;
       })}

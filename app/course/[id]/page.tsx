@@ -98,25 +98,26 @@ export default function CoursePathPage() {
   let currentFound = false;
 
   return (
-    <div className="page-wrap max-w-4xl">
-      <header className="mb-4">
-        <Link href="/" className="text-sm font-semibold text-ink-soft">
+    <div className="page-wrap max-w-5xl">
+      <header className="paper-card mb-8 p-6 sm:p-8">
+        <Link href="/" className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">
           ← Courses
         </Link>
-        <div className="flex items-start justify-between gap-2 mt-2">
+        <div className="mt-7 flex items-start justify-between gap-4">
           <div>
-            <h1 className="page-heading leading-tight">
+            <p className="section-label mb-3">Learning path</p>
+            <h1 className="page-heading max-w-3xl leading-[0.95]">
               {data.course.title}
             </h1>
-            <p className="text-sm text-ink-soft">{data.course.description}</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">{data.course.description}</p>
           </div>
           {data.course.isOwner && (
             <button
               onClick={remove}
-              className="shrink-0 text-xs text-ink-soft border border-line rounded-lg px-2 py-1"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-sm text-ink-soft hover:border-no hover:text-no"
               aria-label="Delete course"
             >
-              🗑
+              ×
             </button>
           )}
         </div>
@@ -131,9 +132,9 @@ export default function CoursePathPage() {
 
         {/* Owner publish controls */}
         {data.course.isOwner && data.course.status === "ready" && (
-          <div className="mt-3 rounded-xl bg-card border border-line px-4 py-3">
-            <Link href={`/studio/${id}`} className="block text-center rounded-lg bg-primary/10 text-primary-deep font-bold text-sm py-2 mb-3">
-              Edit in Studio
+          <div className="mt-5 rounded-2xl border border-line bg-paper/70 px-4 py-4">
+            <Link href={`/studio/${id}`} className="mb-3 block rounded-full bg-ink py-2.5 text-center text-sm font-bold text-white transition-transform hover:-translate-y-0.5">
+              Edit in Studio ↗
             </Link>
             {data.course.published ? (
               <div className="flex items-center justify-between gap-2">

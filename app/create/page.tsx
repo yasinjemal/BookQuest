@@ -123,20 +123,21 @@ export default function CreatePage() {
   }
 
   return (
-    <div className="page-wrap flex max-w-4xl flex-col gap-5">
-      <header className="order-0 mb-2">
+    <div className="page-wrap flex max-w-5xl flex-col gap-5">
+      <header className="order-0 mb-5 max-w-2xl">
+        <p className="section-label mb-3">Course atelier</p>
         <h1 className="page-heading">Create a course</h1>
-        <p className="mt-1 text-sm text-ink-soft">Start simple. You can refine everything in Studio before publishing.</p>
+        <p className="mt-4 text-sm leading-6 text-ink-soft">Start with the truth. Shape every detail in Studio before anyone learns from it.</p>
       </header>
 
-      <section className="panel order-1 space-y-3">
-        <label className="block text-sm font-medium">1. Choose a space</label>
+      <section className="order-1 space-y-4 rounded-[1.75rem] bg-signal p-5 sm:p-7">
+        <div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-ink text-xs font-bold text-white">01</span><label className="text-sm font-bold">Choose a space</label></div>
         <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="field">
           {spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name} · {space.type}</option>)}
         </select>
       </section>
 
-      <details className="panel order-3">
+      <details className="panel order-3 transition-shadow open:shadow-pop">
         <summary className="flex items-center justify-between text-sm font-medium">Add text to the source library <span className="text-xs font-normal text-ink-soft">Optional</span></summary>
       <form onSubmit={addSource} className="mt-4 space-y-3 border-t border-line pt-4">
         <div><h2 className="font-bold">Add a text source</h2><p className="text-xs text-ink-soft">Paste your own material, transcript, notes, or approved webpage text.</p></div>
@@ -150,7 +151,7 @@ export default function CreatePage() {
       </form>
       </details>
 
-      <details className="panel order-4">
+      <details className="panel order-4 transition-shadow open:shadow-pop">
         <summary className="flex items-center justify-between text-sm font-medium">Choose a teaching recipe <span className="text-xs font-normal text-ink-soft">Optional</span></summary>
       <section className="mt-4 space-y-3 border-t border-line pt-4">
         <div><h2 className="font-bold">Teaching recipe</h2><p className="text-xs text-ink-soft">Optional. A recipe controls audience, style, assessment, delivery and accessibility without containing learner data.</p></div>
@@ -161,19 +162,19 @@ export default function CreatePage() {
       </section>
       </details>
 
-      <form onSubmit={createCourse} className="panel order-2 space-y-3">
-        <div><h2 className="font-semibold">2. Name the course and choose material</h2><p className="mt-1 text-sm text-ink-soft">Leave the source list empty for a blank course.</p></div>
+      <form onSubmit={createCourse} className="order-2 space-y-4 rounded-[1.75rem] border border-primary/10 bg-sky/65 p-5 shadow-card sm:p-7">
+        <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-white">02</span><div><h2 className="font-bold">Name the course and choose material</h2><p className="mt-1 text-sm text-ink-soft">Leave the source list empty for a beautifully blank draft.</p></div></div>
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Course title" className="field" />
         <div className="space-y-2 max-h-56 overflow-y-auto">
           {sources.length === 0 && <p className="text-sm text-ink-soft">No saved sources yet. A blank draft is ready whenever you are.</p>}
           {sources.map((source) => (
-            <label key={source.source_version_id} className="flex items-start gap-3 rounded-lg border border-line p-3 hover:bg-hover/30">
+            <label key={source.source_version_id} className="flex items-start gap-3 rounded-xl border border-line bg-card/70 p-3 transition-all hover:-translate-y-0.5 hover:bg-card">
               <input type="checkbox" checked={selected.includes(source.source_version_id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} className="mt-1" />
               <span><span className="block text-sm font-semibold">{source.title}</span><span className="text-xs text-ink-soft capitalize">{source.kind}</span></span>
             </label>
           ))}
         </div>
-        <button disabled={busy || !spaceId || title.trim().length < 2} className="w-full rounded-xl bg-primary text-white font-bold py-2.5 disabled:opacity-40">{busy ? "Creating…" : selected.length ? `Create from ${selected.length} source${selected.length === 1 ? "" : "s"}` : "Create blank draft"}</button>
+        <button disabled={busy || !spaceId || title.trim().length < 2} className="btn-primary w-full">{busy ? "Creating…" : selected.length ? `Create from ${selected.length} source${selected.length === 1 ? "" : "s"}` : "Create blank draft"}</button>
       </form>
       {error && <p className="order-5 text-sm font-semibold text-no">{error}</p>}
     </div>

@@ -243,21 +243,22 @@ export default function StudioPage() {
 
   if (!data) return <div className="p-6 text-ink-soft">{error || "Opening Studio…"}</div>;
   const editable = data.version.lifecycle_status === "draft";
-  return <div className="page-wrap max-w-5xl space-y-5">
-    <header>
-      <Link href={`/course/${id}`} className="text-sm text-primary-deep font-semibold">← Course</Link>
-      <h1 className="page-heading mt-3">{data.version.title}</h1>
-      <p className="text-sm text-ink-soft">Version {data.version.version_number} · {data.version.lifecycle_status} · {data.blocks.length} blocks</p>
+  return <div className="page-wrap max-w-6xl space-y-5">
+    <header className="premium-panel p-7 sm:p-10">
+      <Link href={`/course/${id}`} className="relative z-10 text-[10px] font-bold uppercase tracking-[0.15em] text-white/45 hover:text-white">← Course</Link>
+      <p className="relative z-10 mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Studio · Version {data.version.version_number}</p>
+      <h1 className="relative z-10 mt-3 font-display text-5xl leading-[0.9] text-white sm:text-7xl">{data.version.title}</h1>
+      <p className="relative z-10 mt-5 text-sm text-white/45">{data.version.lifecycle_status} · {data.blocks.length} blocks · Every detail remains yours</p>
     </header>
-    {analysis && <section className="panel grid gap-3 sm:grid-cols-3">
-      <div><p className="text-xs text-ink-soft">Source coverage</p><p className="mt-1 font-medium">{analysis.tracedBlocks}/{analysis.totalBlocks} blocks linked</p></div>
-      <div><p className="text-xs text-ink-soft">Accessibility</p><p className="mt-1 font-medium">{analysis.accessibilityIssueBlockIds.length === 0 ? "Checks pass" : `${analysis.accessibilityIssueBlockIds.length} issues`}</p></div>
-      <div><p className="text-xs text-ink-soft">Estimated duration</p><p className="mt-1 font-medium">{analysis.estimatedDurationMinutes} minutes</p></div>
+    {analysis && <section className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-2xl bg-signal p-5"><p className="section-label text-ink/50">Source coverage</p><p className="display mt-5 text-3xl">{analysis.tracedBlocks}/{analysis.totalBlocks}</p><p className="text-xs text-ink/55">blocks linked</p></div>
+      <div className="rounded-2xl bg-sky p-5"><p className="section-label text-ink/50">Accessibility</p><p className="display mt-5 text-3xl">{analysis.accessibilityIssueBlockIds.length === 0 ? "Ready" : analysis.accessibilityIssueBlockIds.length}</p><p className="text-xs text-ink/55">{analysis.accessibilityIssueBlockIds.length === 0 ? "checks pass" : "issues to resolve"}</p></div>
+      <div className="paper-card p-5"><p className="section-label">Estimated duration</p><p className="display mt-5 text-3xl">{analysis.estimatedDurationMinutes}</p><p className="text-xs text-ink-soft">minutes</p></div>
     </section>}
-    <section className="border-b border-line"><div className="flex gap-1 overflow-x-auto">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`border-b-2 px-4 py-2 text-sm font-medium capitalize ${previewMode === mode ? "border-ink text-ink" : "border-transparent text-ink-soft"}`}>{mode}</button>)}</div></section>
+    <section><div className="flex w-fit gap-1 overflow-x-auto rounded-full border border-line bg-card p-1 shadow-card">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-full px-4 py-2 text-sm font-semibold capitalize transition-all ${previewMode === mode ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{mode}</button>)}</div></section>
     {previewMode !== "edit" && <CoursePreview blocks={data.blocks} mode={previewMode} />}
-    <section className="rounded-2xl bg-card border border-line p-4 space-y-2">
-      <h2 className="font-bold">Review and publish</h2>
+    <section className="paper-card space-y-3 p-5 sm:p-6">
+      <p className="section-label">Release desk</p><h2 className="display text-3xl">Review and publish</h2>
       {data.version.lifecycle_status === "draft" && <button onClick={() => void runLifecycle("submit")} className="w-full rounded-xl bg-primary text-white font-bold py-2.5">Submit for review</button>}
       {data.version.lifecycle_status === "review" && <div className="grid grid-cols-2 gap-2"><button onClick={() => void runLifecycle("review", "changes_requested")} className="rounded-xl border border-line font-bold py-2.5">Request changes</button><button onClick={() => void runLifecycle("review", "approved")} className="rounded-xl bg-teal text-white font-bold py-2.5">Approve</button></div>}
       {data.version.lifecycle_status === "approved" && <button onClick={() => void publish()} className="w-full rounded-xl bg-go text-white font-bold py-2.5">Publish approved version</button>}

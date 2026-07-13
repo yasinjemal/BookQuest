@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "measuredAt": "2026-07-13T16:31:21.340Z",
+  "scope": "Pre-Phase 4 premium BookQuest art direction and usability verification",
+  "identity": {
+    "displayTypeface": "Instrument Serif",
+    "interfaceTypeface": "Manrope",
+    "corePalette": {
+      "forest": "#10261f",
+      "paper": "#f3f0e8",
+      "signal": "#dcfa72",
+      "cobalt": "#5960ed"
+    },
+    "signatureElements": [
+      "bespoke offset-page BookQuest mark",
+      "dark gridded workspace canvases",
+      "layered course and evidence sheets",
+      "editorial serif headings with utilitarian sans-serif controls"
+    ]
+  },
+  "surfaces": [
+    "public landing",
+    "authentication",
+    "signed-in desktop and mobile workspace shell",
+    "course creation",
+    "Spaces list and detail",
+    "course view",
+    "Studio"
+  ],
+  "automatedVerification": {
+    "typecheck": "pass",
+    "testFiles": { "passed": 27, "total": 27 },
+    "tests": { "passed": 136, "total": 136 },
+    "productionBuild": "pass",
+    "productionDependencyAudit": { "status": "pass", "vulnerabilities": 0 }
+  },
+  "browserVerification": {
+    "requestedViewports": [
+      { "width": 1440, "height": 900, "mode": "desktop" },
+      { "width": 390, "height": 844, "mode": "mobile" }
+    ],
+    "horizontalOverflow": false,
+    "localConsoleErrorsOrWarnings": 0,
+    "spaceTabs": ["Overview", "People", "Settings"],
+    "fontLoading": "Instrument Serif and Manrope confirmed from computed styles"
+  },
+  "qualityFix": "The signed-in home load callback is now stable and no longer refetches account and course data whenever the user object is updated.",
+  "scopeLimit": "This is a pre-Phase 4 product-quality release. It does not start Phase 4, close the Blacksteel pilot, or replace the independent Phase 3 WCAG 2.2 AA assessment."
+}

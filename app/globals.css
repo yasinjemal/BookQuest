@@ -1,45 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #37352f;
-  --color-ink-soft: #787774;
-  --color-paper: #f7f7f5;
-  --color-card: #ffffff;
-  --color-sidebar: #f1f1ef;
-  --color-hover: #e8e8e5;
-  --color-primary: #2383e2;
-  --color-primary-deep: #1668b7;
-  --color-go: #448361;
-  --color-go-deep: #35674c;
-  --color-go-soft: #edf3ec;
-  --color-no: #c4554d;
-  --color-no-deep: #9e3f39;
-  --color-no-soft: #fbeceb;
-  --color-teal: #337ea9;
-  --color-teal-deep: #286488;
-  --color-line: #e3e3df;
-  --color-line-deep: #cececa;
+  --color-ink: #142a23;
+  --color-ink-soft: #657168;
+  --color-paper: #f3f0e8;
+  --color-card: #fcfbf7;
+  --color-sidebar: #10261f;
+  --color-hover: #e7e2d7;
+  --color-primary: #5960ed;
+  --color-primary-deep: #3d43c4;
+  --color-go: #277b57;
+  --color-go-deep: #1d6044;
+  --color-go-soft: #e6f2e9;
+  --color-no: #d85b48;
+  --color-no-deep: #aa4335;
+  --color-no-soft: #fbe9e4;
+  --color-teal: #167d80;
+  --color-teal-deep: #0f6063;
+  --color-line: #ddd7ca;
+  --color-line-deep: #c7beaf;
+  --color-signal: #dcfa72;
+  --color-coral: #ff795e;
+  --color-sky: #cbd8ff;
 
   /* --- Typography --- */
-  --font-display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-reading: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-editorial), Georgia, serif;
+  --font-reading: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
 
   /* --- Elevation (warm, ink-tinted so it reads on cream) --- */
-  --shadow-card: 0 1px 2px rgba(15, 15, 15, 0.04);
-  --shadow-pop: 0 8px 28px rgba(15, 15, 15, 0.12);
+  --shadow-card: 0 1px 1px rgba(20, 42, 35, 0.04), 0 12px 32px rgba(20, 42, 35, 0.055);
+  --shadow-pop: 0 24px 70px rgba(11, 29, 23, 0.18);
 
   /* --- Radius scale --- */
-  --radius-xl: 0.625rem;
-  --radius-2xl: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
 }
 
 html {
   background: var(--color-paper);
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--color-ink);
-  font-family: var(--font-display);
+  background: var(--color-paper);
+  font-family: var(--font-reading);
   font-size: 15px;
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
@@ -47,13 +52,20 @@ body {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-primary) 24%, transparent);
+  background: var(--color-signal);
+  color: var(--color-ink);
 }
 
 /* Long-form lesson prose reads better in a neutral sans than the rounded
    display face; opt into it explicitly on reading surfaces. */
 .reading {
   font-family: var(--font-reading);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.035em;
 }
 
 /* --- Accessibility: a single, consistent focus ring everywhere --- */
@@ -77,7 +89,7 @@ body {
 /* --- Reusable components so buttons/cards/chips stay consistent --- */
 @layer components {
   .card {
-    @apply rounded-xl bg-card border border-line shadow-card;
+    @apply rounded-2xl bg-card border border-line shadow-card;
   }
 
   /* Pressable, Duolingo-style buttons: a darker bottom edge gives a tactile
@@ -88,12 +100,12 @@ body {
   .btn-go,
   .btn-teal,
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg font-semibold
-      py-2.5 px-4 transition-colors duration-100
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-semibold
+      py-3 px-5 transition-all duration-200
       disabled:opacity-40 disabled:pointer-events-none select-none cursor-pointer;
   }
   .btn-primary {
-    @apply bg-ink text-white hover:bg-ink/90;
+    @apply bg-ink text-white shadow-[0_10px_28px_rgba(20,42,35,0.18)] hover:-translate-y-0.5 hover:bg-sidebar hover:shadow-[0_16px_36px_rgba(20,42,35,0.22)];
   }
   .btn-go {
     @apply bg-go text-white hover:bg-go-deep;
@@ -102,7 +114,7 @@ body {
     @apply bg-teal text-white hover:bg-teal-deep;
   }
   .btn-ghost {
-    @apply bg-card border border-line text-ink hover:bg-hover/60;
+    @apply bg-card/70 border border-line text-ink backdrop-blur hover:-translate-y-0.5 hover:bg-card;
   }
 
   /* Small status pills (PUBLISHED, %, Quiz, Learn…). */
@@ -122,31 +134,87 @@ body {
 
 @layer components {
   .nav-item {
-    @apply flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium text-ink-soft transition-colors hover:bg-hover hover:text-ink;
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/60 transition-all hover:bg-white/8 hover:text-white;
   }
   .nav-item-active {
-    @apply bg-hover text-ink;
+    @apply bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)];
   }
   .page-wrap {
-    @apply px-5 py-7 sm:px-8 sm:py-9 lg:px-12 lg:py-12;
+    @apply px-5 py-8 sm:px-9 sm:py-11 lg:px-14 lg:py-14;
   }
   .page-heading {
-    @apply text-2xl font-semibold tracking-[-0.025em] sm:text-3xl;
+    font-family: var(--font-display);
+    @apply text-4xl font-normal leading-[0.95] tracking-[-0.035em] sm:text-5xl;
   }
   .section-label {
-    @apply text-xs font-semibold uppercase tracking-[0.08em] text-ink-soft;
+    @apply text-[10px] font-bold uppercase tracking-[0.18em] text-ink-soft;
   }
   .panel {
-    @apply rounded-xl border border-line bg-card p-4 shadow-card sm:p-5;
+    @apply rounded-2xl border border-line bg-card p-5 shadow-card sm:p-6;
   }
   .quiet-button {
-    @apply inline-flex items-center justify-center rounded-lg border border-line bg-card px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-hover/60;
+    @apply inline-flex items-center justify-center rounded-full border border-line bg-card/80 px-4 py-2.5 text-sm font-semibold text-ink backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-card hover:shadow-card;
   }
   .field {
-    @apply w-full rounded-lg border border-line-deep bg-card px-3 py-2.5 text-sm outline-none transition-shadow placeholder:text-ink-soft/70 focus:border-primary focus:ring-2 focus:ring-primary/15;
+    @apply w-full rounded-xl border border-line-deep bg-card px-4 py-3 text-sm outline-none transition-all placeholder:text-ink-soft/65 focus:border-primary focus:ring-4 focus:ring-primary/10;
   }
   .skip-link {
     @apply fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-white focus:translate-y-0;
+  }
+}
+
+@layer components {
+  .brand-mark {
+    @apply relative block h-8 w-8 shrink-0;
+  }
+  .brand-mark::before,
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    border-radius: 3px 8px 8px 3px;
+  }
+  .brand-mark::before {
+    inset: 2px 7px 2px 1px;
+    background: var(--color-signal);
+    transform: rotate(-5deg);
+  }
+  .brand-mark::after {
+    inset: 5px 1px 5px 10px;
+    border: 1.5px solid currentColor;
+    transform: rotate(5deg);
+  }
+  .eyebrow {
+    @apply inline-flex items-center gap-2 rounded-full border border-current/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em];
+  }
+  .eyebrow::before {
+    content: "";
+    @apply h-1.5 w-1.5 rounded-full bg-signal;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-signal) 18%, transparent);
+  }
+  .premium-panel {
+    @apply relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-sidebar text-white shadow-pop;
+    background-image: radial-gradient(circle at 85% 5%, rgba(89, 96, 237, 0.35), transparent 28%), radial-gradient(circle at 12% 90%, rgba(220, 250, 114, 0.13), transparent 26%);
+  }
+  .premium-panel::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0 opacity-[0.07];
+    background-image: linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 82%);
+  }
+  .paper-card {
+    @apply relative rounded-2xl border border-line bg-card shadow-[0_24px_70px_rgba(7,24,18,0.16)];
+  }
+  .paper-card::before,
+  .paper-card::after {
+    content: "";
+    @apply absolute -z-10 rounded-2xl border border-line bg-card;
+  }
+  .paper-card::before { inset: 8px -8px -8px 8px; transform: rotate(1.5deg); }
+  .paper-card::after { inset: 14px -14px -14px 14px; opacity: .45; transform: rotate(3deg); }
+  .soft-rule {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-line), transparent);
   }
 }
 

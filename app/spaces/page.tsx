@@ -53,29 +53,29 @@ export default function SpacesPage() {
   }
 
   return <div className="page-wrap">
-    <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
-      <div><h1 className="page-heading">Spaces</h1><p className="mt-1 text-sm text-ink-soft">Keep courses, people, and evidence together.</p></div>
-      <button type="button" onClick={() => setShowCreate((open) => !open)} className={showCreate ? "quiet-button" : "btn-primary"}>{showCreate ? "Cancel" : "New space"}</button>
+    <header className="premium-panel mb-10 flex min-h-64 flex-wrap items-end justify-between gap-8 p-7 sm:p-10">
+      <div className="relative z-10 max-w-xl"><p className="section-label mb-4 text-signal">Shared knowledge</p><h1 className="display text-6xl leading-[0.9] text-white sm:text-7xl">Spaces that keep everything together.</h1><p className="mt-5 text-sm text-white/45">Courses, people, decisions, and evidence—beautifully organized.</p></div>
+      <button type="button" onClick={() => setShowCreate((open) => !open)} className={`relative z-10 ${showCreate ? "inline-flex rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10" : "inline-flex rounded-full bg-signal px-5 py-3 text-sm font-bold text-ink"}`}>{showCreate ? "Cancel" : "New space ↗"}</button>
     </header>
 
-    {showCreate && <form onSubmit={create} className="panel mb-8 max-w-2xl space-y-4">
-      <div><h2 className="font-semibold">Create a space</h2><p className="mt-1 text-sm text-ink-soft">Choose the simplest type that fits how people will join.</p></div>
+    {showCreate && <form onSubmit={create} className="mb-10 max-w-2xl space-y-4 rounded-[1.75rem] bg-signal p-6 shadow-card sm:p-8">
+      <div><p className="section-label mb-2 text-ink/50">A new home</p><h2 className="display text-4xl">Create a space</h2><p className="mt-2 text-sm text-ink/65">Choose the simplest type that fits how people will join.</p></div>
       <label className="block text-sm font-medium">Name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Blacksteel Clothing" className="field mt-1.5" /></label>
       <label className="block text-sm font-medium">Type<select value={type} onChange={(event) => setType(event.target.value)} className="field mt-1.5"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="organization">Organization</option><option value="public">Public</option></select></label>
-      <p className="rounded-lg bg-hover/50 px-3 py-2 text-sm text-ink-soft">{typeDescription[type]}</p>
+      <p className="rounded-xl bg-ink/7 px-4 py-3 text-sm text-ink/65">{typeDescription[type]}</p>
       <div className="flex justify-end"><button disabled={busy || name.trim().length < 2} className="btn-primary">{busy ? "Creating..." : "Create space"}</button></div>
       {error && <p role="alert" className="text-sm font-medium text-no">{error}</p>}
     </form>}
 
     <section>
-      <h2 className="section-label mb-3">Your spaces</h2>
+      <h2 className="section-label mb-4">Your spaces</h2>
       {spaces === null && <div className="panel text-sm text-ink-soft">Loading spaces...</div>}
       {spaces?.length === 0 && <div className="panel py-10 text-center"><p className="font-medium">No spaces yet</p><p className="mt-1 text-sm text-ink-soft">Create one when you need to organize courses or invite people.</p></div>}
-      <div className="grid gap-3 md:grid-cols-2">
-        {spaces?.map(({ space, membership }) => <Link key={space.id} href={`/spaces/${space.id}`} className="group panel flex items-center gap-4 transition-colors hover:bg-hover/30">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-hover text-sm font-semibold">{space.name.slice(0, 2).toUpperCase()}</span>
-          <div className="min-w-0 flex-1"><h3 className="truncate font-medium">{space.name}</h3><p className="mt-0.5 text-xs capitalize text-ink-soft">{space.type} · {membership.role}</p></div>
-          <span className="text-ink-soft transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
+      <div className="grid gap-4 md:grid-cols-2">
+        {spaces?.map(({ space, membership }) => <Link key={space.id} href={`/spaces/${space.id}`} className="group paper-card flex min-h-36 items-center gap-4 p-5 transition-all hover:-translate-y-1 hover:shadow-pop sm:p-6">
+          <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl font-display text-2xl ${space.type === "organization" ? "bg-signal text-ink" : space.type === "public" ? "bg-sky text-ink" : "bg-ink text-white"}`}>{space.name.slice(0, 2).toUpperCase()}</span>
+          <div className="min-w-0 flex-1"><h3 className="display truncate text-2xl">{space.name}</h3><p className="mt-1 text-[10px] font-bold uppercase tracking-[0.13em] text-ink-soft">{space.type} · {membership.role}</p></div>
+          <span className="grid h-9 w-9 place-items-center rounded-full border border-line text-ink-soft transition-all group-hover:border-ink group-hover:bg-ink group-hover:text-white" aria-hidden="true">↗</span>
         </Link>)}
       </div>
     </section>
