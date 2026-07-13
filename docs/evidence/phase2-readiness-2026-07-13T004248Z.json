@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-13T00:42:48.990Z",
+  "migration": {
+    "id": 4,
+    "name": "course_studio_foundation",
+    "appliedAt": "2026-07-12T23:39:24.549Z"
+  },
+  "hardeningMigration": {
+    "id": 5,
+    "name": "phase2_lifecycle_hardening",
+    "appliedAt": "2026-07-13T00:36:40.410Z"
+  },
+  "requiredTables": [
+    "recipes",
+    "recipe_versions",
+    "source_assets",
+    "source_versions",
+    "source_collections",
+    "source_collection_versions",
+    "course_versions",
+    "course_version_sources",
+    "course_blocks",
+    "course_block_revisions",
+    "course_version_reviews",
+    "course_version_comments",
+    "course_generation_jobs"
+  ],
+  "missingTables": [],
+  "requiredTriggers": [
+    "source_versions_no_update",
+    "course_block_revisions_no_update",
+    "course_version_reviews_no_update",
+    "course_versions_locked_lifecycle",
+    "course_blocks_version_guard",
+    "course_block_revisions_version_guard"
+  ],
+  "missingTriggers": [],
+  "metrics": {
+    "courses": 5,
+    "courseVersions": 6,
+    "sources": 5,
+    "sourceVersions": 5,
+    "blocks": 317,
+    "recipes": 1,
+    "publishedVersions": 2,
+    "postMigrationEvidence": 0
+  },
+  "failures": {
+    "missingTables": 0,
+    "missingTriggers": 0,
+    "lifecycleGuardNotHardened": 0,
+    "sourcesWithoutSpace": 0,
+    "sourcesWithoutCurrentVersion": 0,
+    "coursesWithoutWorkingVersion": 0,
+    "publishedCoursesWithoutVersion": 0,
+    "coursePointerMismatch": 0,
+    "publishedVersionMismatch": 0,
+    "crossSpaceRecipeLinks": 0,
+    "crossSpaceSourceLinks": 0,
+    "blocksWithoutCurrentRevision": 0,
+    "publishedCoursesWithoutLearnerProjection": 0,
+    "postMigrationEvidenceVersionMismatch": 0
+  },
+  "healthy": true
+}

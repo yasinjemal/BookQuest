@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-07-13T00:42:03.311Z",
+  "releaseSha": "b665ab671b7128f6dddbdb973569a918ed6a3ab0",
+  "unauthenticatedHttp": [
+    { "method": "GET", "path": "/create", "status": 200 },
+    { "method": "GET", "path": "/api/studio/sources", "status": 401 },
+    { "method": "GET", "path": "/api/studio/recipes", "status": 401 },
+    { "method": "GET", "path": "/api/studio/courses", "status": 405 },
+    { "method": "POST", "path": "/api/studio/courses/1/regenerate", "status": 401 }
+  ],
+  "authenticatedJourney": {
+    "syntheticUserId": 6,
+    "personalSpaceCreated": true,
+    "aiOffUploadMode": "manual",
+    "creditsBefore": 3,
+    "creditsAfter": 3,
+    "sourceVersionPinned": true,
+    "recipeVersionPinned": true,
+    "smokeCourseId": 6,
+    "uploadedCourseId": 5,
+    "blocks": 2,
+    "tracedBlocks": 2,
+    "accessibilityIssues": 0,
+    "outlineEdited": true,
+    "blocksReordered": true,
+    "reviewApproved": true,
+    "publishedVersion": 1,
+    "branchCreated": true,
+    "changedLineages": 1,
+    "publishedVersionRemainedImmutable": true
+  },
+  "cleanup": {
+    "courseUnpublished": true,
+    "workingDraftsArchived": true,
+    "visibleSyntheticCourses": 0,
+    "sessionRevoked": true,
+    "syntheticAccountRetainedForAuditableSmokeEvidence": true
+  },
+  "healthy": true
+}

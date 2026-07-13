@@ -399,7 +399,7 @@ evaluation.
 
 ## Phase 2 — Course Studio, blocks and reusable recipes
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE (13 July 2026 UTC)
 **Outcome:** creators can generate, manually build, review, customize and reuse
 unique learning experiences with source traceability.
 
@@ -555,6 +555,42 @@ unique learning experiences with source traceability.
   mobile, low-bandwidth and offline defaults plus at least one safety boundary;
   their data-only controls use the existing responsive Create journey.)
 
+### Closure evidence
+
+- Release commit `b665ab671b7128f6dddbdb973569a918ed6a3ab0` passed
+  [GitHub Actions CI #29215549437](https://github.com/yasinjemal/BookQuest/actions/runs/29215549437)
+  from `2026-07-13T00:32:37Z` to `2026-07-13T00:34:07Z`. The job completed
+  TypeScript checking, production build, migrations 1–5, 120 unit/database tests
+  on PostgreSQL 16 and logical backup restoration.
+- Vercel reported a successful production deployment for the same SHA at
+  `https://vercel.com/dynasty-built-academy/book-quest/B2q9TkdjW1SmvdfsXzM669yTTTe5`;
+  the production application is `https://book-quest-silk.vercel.app`.
+- Migration 4 (`course_studio_foundation`) applied at
+  `2026-07-12T23:39:24.549Z`; fix-forward migration 5
+  (`phase2_lifecycle_hardening`) applied at `2026-07-13T00:36:40.410Z`.
+  The release also replaced session-level schema locking, which is unsafe through
+  transaction pooling, with a transaction-scoped lock. One lock leaked by the
+  prior implementation was identified precisely, terminated with operator
+  approval and confirmed absent before migration 5 ran.
+- The post-smoke read-only production gate found every required table and trigger,
+  verified the hardened lifecycle function and checked 5 courses, 6 course
+  versions, 5 sources/versions, 317 blocks, one recipe and two published immutable
+  versions with all 13 failure counters at zero. Exact output is stored in
+  `docs/evidence/phase2-readiness-2026-07-13T004248Z.json`.
+- Anonymous production smoke checks returned `200` for Create, `401` for protected
+  Source/Recipe/regeneration APIs and `405` for unsupported GET on the POST-only
+  course-creation route. An authenticated synthetic journey proved AI-off upload
+  without credit use, automatic personal Space, pinned source/recipe versions,
+  outline/block edits, ordering, coverage/accessibility checks, approval,
+  immutable publication, branching and lineage diff. It then unpublished the
+  synthetic course, archived working drafts and revoked the session. Exact proof
+  is stored in `docs/evidence/phase2-production-smoke-2026-07-13T004203Z.json`.
+- Accepted limitation: production had no post-migration learner answer events at
+  measurement time. Exact-version learning evidence is therefore established by
+  the deployed PostgreSQL integration suite rather than synthetic learner records
+  in production. The smoke account remains as non-visible audit evidence; it owns
+  no visible published course and its session was revoked.
+
 ### Measure
 
 - Time from upload to draft and draft to publication
@@ -569,6 +605,7 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 
 ## Phase 3 — Institutional and government-ready pilot
 
+**Status:** IN PROGRESS
 **Outcome:** a real organization completes this controlled journey:
 
 > Private Space → controlled source → compliance recipe → review and approval →
