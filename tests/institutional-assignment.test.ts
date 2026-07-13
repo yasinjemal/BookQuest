@@ -403,7 +403,7 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
     const created = await pilot.createInstitutionalPilot(ownerId, spaceId, {
       partnerDisplayName: "Evidence Design Partner",
       sector: "Workplace safety",
-      identityProviderRequirement: "oidc",
+      identityProviderRequirement: "password",
       scimRequired: false,
       baseline: {
         description: "The partner previously coordinated source approval, assignments and completion evidence by email and spreadsheet.",
@@ -431,12 +431,6 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
       minutesSpent: 18,
       manualDatabaseWork: false,
     });
-    await pg.q(
-      `INSERT INTO space_identity_providers
-        (space_id,protocol,status,issuer,configuration_json,created_by_user_id,activated_at)
-       VALUES ($1,'oidc','active','https://identity.example.test','{}',$2,$3)`,
-      [spaceId, ownerId, new Date().toISOString()],
-    );
     const hash = "a".repeat(64);
     const common = { outcome: "accepted" as const, summary: "Accepted by the responsible pilot stakeholder for the stated release purpose." };
     await pilot.attestInstitutionalPilotGate(ownerId, spaceId, { ...common, gateType: "manual_process_baseline" });

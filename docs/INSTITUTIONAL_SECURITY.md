@@ -49,8 +49,9 @@ privacy and procurement review is complete.
 - Organization policy versions set password length, session lifetime, MFA-required
   roles, retention and legal-hold behavior. A policy cannot require MFA from an
   unenrolled member. Publishing a policy revokes current organization sessions.
-- OIDC/SAML configuration is represented but remains disabled until a real pilot
-  selects and tests one provider. SCIM remains volume-triggered.
+- The Blacksteel pilot selected BookQuest verified email/password login. Its sign-in
+  test remains a governed pilot gate. OIDC/SAML configuration remains disabled
+  until a partner selects and tests one provider. SCIM remains volume-triggered.
 
 ## Evidence integrity and privacy
 
@@ -85,7 +86,7 @@ privacy and procurement review is complete.
 | Encryption at rest | Managed-provider controls; confirm contractual scope during procurement. MFA secrets also have application-layer encryption. |
 | Tenant isolation | Space-scoped authorization plus cross-tenant database integration tests. |
 | MFA | TOTP and recovery codes implemented; organization role enforcement is versioned. |
-| SSO/provisioning | OIDC/SAML pending pilot selection; SCIM deferred until justified by volume. |
+| Sign-in/provisioning | Blacksteel selected BookQuest email/password; OIDC/SAML and SCIM remain available when a partner's requirements justify them. |
 | Vulnerability management | Weekly Dependabot plus CI production-dependency audit. External penetration test remains a release gate. |
 | Backups | Logical restore and PITR exercises with reconciliation evidence. |
 | Data deletion | Account lifecycle and pseudonymization documented; legal holds override Space deletion scheduling. |

@@ -24,7 +24,7 @@ interface PilotDashboard {
     version: number;
     partnerDisplayName: string;
     sector: string;
-    identityProviderRequirement: "undecided" | "oidc" | "saml";
+    identityProviderRequirement: "undecided" | "password" | "oidc" | "saml";
     scimRequired: boolean;
     baseline: { description: string; uploadToAssignmentMinutes: number; adminHoursPerCohort: number };
     successCriteria: Array<{ metric: string; target: string }>;
@@ -39,13 +39,15 @@ interface PilotDashboard {
   readiness?: { ready: boolean; missing: string[]; technical: { completedParticipations: number; reconciliationFailures: number } };
 }
 
+type IdentityMethod = NonNullable<PilotDashboard["plan"]>["identityProviderRequirement"];
+
 const GATES: Array<{ value: GateType; label: string }> = [
   { value: "manual_process_baseline", label: "Manual process baseline agreed" },
   { value: "success_criteria", label: "Success criteria agreed" },
   { value: "journey_acceptance", label: "Admin and learner journey accepted" },
   { value: "audit_pack_acceptance", label: "Audit pack accepted" },
   { value: "live_credential_revocation", label: "Live credential revocation verified" },
-  { value: "identity_provider_test", label: "Identity provider tested" },
+  { value: "identity_provider_test", label: "Pilot sign-in tested" },
   { value: "penetration_test", label: "Independent penetration test" },
   { value: "accessibility_audit", label: "Accessibility audit" },
   { value: "incident_restore_exercise", label: "Incident and restore exercise" },
@@ -57,6 +59,9 @@ const missingLabel = (code: string) => code
   .replace(/^(attestation|observation|evidence|identity_provider):/, "")
   .replaceAll("_", " ");
 
+const signInLabel = (method: IdentityMethod) =>
+  method === "password" ? "BookQuest email and password" : method.toUpperCase();
+
 export default function InstitutionalPilotPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -66,7 +71,7 @@ export default function InstitutionalPilotPage() {
   const [notice, setNotice] = useState("");
   const [partnerName, setPartnerName] = useState("");
   const [sector, setSector] = useState("");
-  const [idp, setIdp] = useState<"undecided" | "oidc" | "saml">("undecided");
+  const [idp, setIdp] = useState<IdentityMethod>("undecided");
   const [scimRequired, setScimRequired] = useState(false);
   const [baseline, setBaseline] = useState("");
   const [baselineMinutes, setBaselineMinutes] = useState("60");
@@ -225,9 +230,9 @@ export default function InstitutionalPilotPage() {
 
     {dashboard.pilot && dashboard.plan && <section className="rounded-2xl border border-line bg-card p-4 space-y-3">
       <div className="flex items-center justify-between gap-3"><div><h2 className="font-bold">{dashboard.plan.partnerDisplayName}</h2><p className="text-xs text-ink-soft">{dashboard.plan.sector} · plan version {dashboard.plan.version}</p></div><span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold uppercase text-primary">{dashboard.pilot.status}</span></div>
-      <div className="grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-paper p-3"><p className="text-xs text-ink-soft">Identity provider</p><p className="font-semibold uppercase">{dashboard.plan.identityProviderRequirement}</p></div><div className="rounded-xl bg-paper p-3"><p className="text-xs text-ink-soft">Completed journeys</p><p className="font-semibold">{dashboard.readiness?.technical.completedParticipations ?? 0}</p></div></div>
+      <div className="grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-paper p-3"><p className="text-xs text-ink-soft">Sign-in method</p><p className="font-semibold">{signInLabel(dashboard.plan.identityProviderRequirement)}</p></div><div className="rounded-xl bg-paper p-3"><p className="text-xs text-ink-soft">Completed journeys</p><p className="font-semibold">{dashboard.readiness?.technical.completedParticipations ?? 0}</p></div></div>
       <div><h3 className="text-sm font-bold">Release readiness</h3>{dashboard.readiness?.ready ? <p className="mt-1 text-sm font-semibold text-go">Every governed gate has evidence.</p> : <ul className="mt-2 grid gap-1 text-sm text-ink-soft">{dashboard.readiness?.missing.map((item) => <li key={item} className="rounded-lg bg-paper px-3 py-2">Open: {missingLabel(item)}</li>)}</ul>}</div>
-      {dashboard.evidenceCandidates?.identityProviders.length === 0 && dashboard.plan.identityProviderRequirement !== "undecided" && <p className="rounded-xl border border-no/30 bg-no/5 p-3 text-sm text-no">The selected {dashboard.plan.identityProviderRequirement.toUpperCase()} connection has not been activated and tested.</p>}
+      {dashboard.evidenceCandidates?.identityProviders.length === 0 && ["oidc", "saml"].includes(dashboard.plan.identityProviderRequirement) && <p className="rounded-xl border border-no/30 bg-no/5 p-3 text-sm text-no">The selected {dashboard.plan.identityProviderRequirement.toUpperCase()} connection has not been activated and tested.</p>}
     </section>}
 
     {canManage && (!dashboard.pilot || active) && <form onSubmit={savePlan} className="rounded-2xl border border-line bg-card p-4 space-y-3">
@@ -236,7 +241,7 @@ export default function InstitutionalPilotPage() {
       <label className="block text-xs text-ink-soft">Current manual process<textarea value={baseline} onChange={(event) => setBaseline(event.target.value)} rows={4} className="mt-1 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm" /></label>
       <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs text-ink-soft">Upload-to-assignment minutes<input type="number" min="1" value={baselineMinutes} onChange={(event) => setBaselineMinutes(event.target.value)} className="mt-1 w-full rounded-xl border border-line bg-paper p-2 text-sm" /></label><label className="text-xs text-ink-soft">Admin hours per cohort<input type="number" min="0" step="0.25" value={baselineHours} onChange={(event) => setBaselineHours(event.target.value)} className="mt-1 w-full rounded-xl border border-line bg-paper p-2 text-sm" /></label></div>
       <label className="block text-xs text-ink-soft">Agreed criteria, one “metric | target” per line<textarea value={criteria} onChange={(event) => setCriteria(event.target.value)} rows={4} className="mt-1 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm" /></label>
-      <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs text-ink-soft">Identity provider<select value={idp} onChange={(event) => setIdp(event.target.value as typeof idp)} className="mt-1 w-full rounded-xl border border-line bg-paper p-2 text-sm"><option value="undecided">Not selected</option><option value="oidc">OIDC</option><option value="saml">SAML</option></select></label><label className="flex items-end gap-2 rounded-xl border border-line bg-paper p-3 text-sm"><input type="checkbox" checked={scimRequired} onChange={(event) => setScimRequired(event.target.checked)} /> SCIM volume justifies provisioning</label></div>
+      <div className="grid gap-2 sm:grid-cols-2"><label className="text-xs text-ink-soft">Pilot sign-in method<select value={idp} onChange={(event) => { const method = event.target.value as IdentityMethod; setIdp(method); if (method === "password") setScimRequired(false); }} className="mt-1 w-full rounded-xl border border-line bg-paper p-2 text-sm"><option value="undecided">Not selected</option><option value="password">BookQuest email and password</option><option value="oidc">Organization OIDC</option><option value="saml">Organization SAML</option></select></label><label className="flex items-end gap-2 rounded-xl border border-line bg-paper p-3 text-sm"><input type="checkbox" checked={scimRequired} onChange={(event) => setScimRequired(event.target.checked)} disabled={idp === "password"} /> SCIM volume justifies provisioning</label></div>
       <button className="w-full rounded-xl bg-primary py-2.5 font-bold text-white">{dashboard.pilot ? "Save new plan version" : "Start governed pilot"}</button>
     </form>}
 

@@ -626,7 +626,8 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 - [x] Include report scope, rule versions, attempts, attestations, revocations,
   generator time and report-format version.
 - [x] Give auditors read-only evidence/report access.
-- [ ] Add MFA and pilot-driven OIDC/SAML; add SCIM when volume justifies it.
+- [x] Add MFA and validate the pilot-selected sign-in path. The first partner chose
+  verified BookQuest email/password; OIDC/SAML and SCIM remain demand-driven.
 - [x] Add organization password, session, retention and legal-hold policies.
 - [x] Document regional residency, continuity, recovery and incident response.
 - [ ] Add dependency scanning, security reviews and an external penetration test.
@@ -634,25 +635,30 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 - [x] Add branding, bulk invitation and role-scoped dashboards.
 - [ ] Complete full-journey WCAG 2.2 AA testing and publish an accessibility
   statement with remediation process.
-- [ ] Recruit one to three document-heavy design partners.
+- [x] Recruit one to three document-heavy design partners. Blacksteel Clothing
+  Pilot, a South African clothing wholesale/retail business, confirmed a 3-5
+  employee onboarding and shop-procedures pilot on 13 July 2026.
 - [ ] Measure their current manual process and agree success criteria in advance.
 - [ ] Observe real admins/learners, record support needs and validate willingness
   to pay.
 
-Local progress on open combined items: authenticator MFA and recovery codes are
-complete, while OIDC/SAML awaits a partner provider and SCIM remains
-volume-triggered. Dependency automation and internal security review are complete,
+Authenticator MFA and recovery codes are complete. The first partner selected
+BookQuest email/password rather than external SSO; migration 9 and the governed
+pilot workflow now treat that as an explicit, tested sign-in choice without
+fabricating an OIDC/SAML connection. OIDC/SAML and SCIM remain demand-triggered.
+Dependency automation and internal security review are complete,
 while the independent penetration test remains open. The accessibility statement
 and remediation process are published; independent full-journey assistive-technology
 testing remains open.
 
-The governed pilot workflow is now implemented locally. Organization owners can
+The governed pilot workflow is implemented. Organization owners can
 version the partner baseline and success criteria, managers can append pseudonymous
 admin/learner observations, and owners can append role-snapshotted stakeholder or
 assessor decisions linked to exact audit-pack and credential records. The closure
 service refuses completion without no-database admin/learner observations, a real
 completed participation, reconciled versions, an accepted audit pack, a live-revoked
-credential, a selected active identity-provider connection and every external gate.
+credential, a tested selected sign-in method (and an active connection when the
+method is OIDC/SAML), and every external gate.
 This makes the remaining work executable but does not satisfy the unchecked partner
 or independent-assessment items by itself.
 
@@ -688,10 +694,27 @@ or independent-assessment items by itself.
   API access returned `401`, the page redirected to login and the browser logged
   no warnings or errors. Exact evidence is in
   `docs/evidence/phase3-pilot-workflow-production-2026-07-13T113208Z.json`.
-- This does not close Phase 3: production currently has no organization Space,
+- This does not close Phase 3: production currently has no Blacksteel organization
+  Space,
   completion, credential or audit-pack rows. A real partner journey, stakeholder
-  audit-pack acceptance, live revocation proof, pilot-selected identity provider,
+  audit-pack acceptance, live revocation proof, pilot sign-in test,
   independent penetration test and assistive-technology audit remain required.
+
+### Confirmed first pilot
+
+- Partner: Blacksteel Clothing Pilot, clothing wholesale and retail, South Africa.
+- Responsible stakeholder: business owner; proposed cohort: one administrator and
+  three to five employees.
+- Source: employee onboarding and shop-procedures document (final document pending).
+- Current process: verbal training plus WhatsApp messages, with no formal record,
+  assessment, completion proof or verifiable certificate.
+- Audit purpose: prove employee completion of onboarding and workplace procedures.
+- Agreed journey: upload one document, create and review a course, assign it, obtain
+  at least three real completions, generate an audit pack, and record the owner's
+  usefulness and willingness-to-pay decision.
+- Sign-in: BookQuest email/password; SCIM is not required.
+- Pilot dates and the quantitative time/administration baseline remain open. The
+  execution and evidence procedure is in `docs/BLACKSTEEL_PHASE_3_PILOT.md`.
 
 ### Release gates
 

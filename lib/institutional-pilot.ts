@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { pool, tx, type Queryable } from "./pg";
 import { authorizeStoredMembership } from "./spaces";
 
-export type IdentityProviderRequirement = "undecided" | "oidc" | "saml";
+export type IdentityProviderRequirement = "undecided" | "password" | "oidc" | "saml";
 export type PilotGateType =
   | "manual_process_baseline"
   | "success_criteria"
@@ -55,7 +55,7 @@ export interface PilotGateAttestationInput {
   credentialId?: string | null;
 }
 
-const IDP_REQUIREMENTS = new Set<IdentityProviderRequirement>(["undecided", "oidc", "saml"]);
+const IDP_REQUIREMENTS = new Set<IdentityProviderRequirement>(["undecided", "password", "oidc", "saml"]);
 const OBSERVATION_TYPES = new Set<PilotObservationType>([
   "admin_journey", "learner_journey", "support", "commercial", "incident",
 ]);
@@ -458,7 +458,7 @@ async function pilotReadiness(exec: Queryable, pilotId: string) {
     missing.push("identity_provider:selected");
   } else {
     if (!accepted("identity_provider_test")) missing.push("attestation:identity_provider_test");
-    if (!(await exec.query(
+    if (plan.identity_provider_requirement !== "password" && !(await exec.query(
       `SELECT 1 FROM space_identity_providers provider
        JOIN institutional_pilots pilot ON pilot.space_id=provider.space_id
        WHERE pilot.id=$1 AND provider.protocol=$2 AND provider.status='active' LIMIT 1`,

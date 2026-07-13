@@ -79,7 +79,9 @@ The product will not mark a pilot complete unless it finds:
 - a real completed assignment participation with zero version-binding failures;
 - the exact accepted generated audit pack;
 - the exact live-revoked credential and its revocation event;
-- a selected active OIDC/SAML connection and its accepted test decision;
+- a selected sign-in method and its accepted test decision; password pilots use
+  BookQuest's verified email/password and MFA controls, while OIDC/SAML pilots
+  additionally require a matching active organization connection;
 - accepted baseline, criteria, journey, penetration, incident/restore, marketing
   and willingness-to-pay decisions;
 - an accepted accessibility audit or an accepted-with-actions decision that names
@@ -100,8 +102,9 @@ self-entered test data into partner or independent-assessor proof.
 
 ## Still required before Phase 3 can close
 
-- a pilot-selected identity-provider implementation and tested connection; SCIM
-  only if pilot volume justifies it;
+- a tested pilot-selected sign-in method. Blacksteel selected BookQuest
+  email/password, so it does not require an external identity-provider connection;
+  OIDC/SAML and SCIM remain demand-driven for partners that select them;
 - external penetration test and updated institutional review;
 - independent full-journey WCAG 2.2 AA assistive-technology audit;
 - one to three real design partners, an observed no-database journey and named

@@ -2102,6 +2102,34 @@ CREATE TRIGGER institutional_pilot_status_events_no_write
   FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
 `;
 
+const PILOT_PASSWORD_SIGN_IN_SQL = `
+DO $$
+DECLARE
+  check_name TEXT;
+BEGIN
+  SELECT con.conname INTO check_name
+  FROM pg_constraint con
+  JOIN pg_class rel ON rel.oid=con.conrelid
+  JOIN pg_namespace ns ON ns.oid=rel.relnamespace
+  WHERE ns.nspname='public'
+    AND rel.relname='institutional_pilot_plan_versions'
+    AND con.contype='c'
+    AND pg_get_constraintdef(con.oid) LIKE '%identity_provider_requirement%'
+  LIMIT 1;
+  IF check_name IS NOT NULL THEN
+    EXECUTE format(
+      'ALTER TABLE institutional_pilot_plan_versions DROP CONSTRAINT %I',
+      check_name
+    );
+  END IF;
+END $$;
+
+ALTER TABLE institutional_pilot_plan_versions
+  ADD CONSTRAINT institutional_pilot_plan_sign_in_method_check CHECK (
+    identity_provider_requirement IN ('undecided','password','oidc','saml')
+  );
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2115,6 +2143,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 6, name: "institutional_evidence_foundation", sql: INSTITUTIONAL_EVIDENCE_FOUNDATION_SQL },
   { id: 7, name: "institutional_policy_and_mfa", sql: INSTITUTIONAL_POLICY_AND_MFA_SQL },
   { id: 8, name: "institutional_pilot_evidence", sql: INSTITUTIONAL_PILOT_EVIDENCE_SQL },
+  { id: 9, name: "pilot_password_sign_in", sql: PILOT_PASSWORD_SIGN_IN_SQL },
 ];
 
 /**
