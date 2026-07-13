@@ -38,7 +38,7 @@
     "@types/react-dom": "^19",
     "jiti": "^2.7.0",
     "tailwindcss": "^4.1.16",
-    "typescript": "^5",
+    "typescript": "^7",
     "vitest": "^4.1.10"
   },
   "overrides": {
