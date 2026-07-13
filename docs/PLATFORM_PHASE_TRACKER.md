@@ -108,8 +108,8 @@ and an institution operate securely. Its four primary experiences are:
 |---|---|---|---|
 | 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **COMPLETE** | — |
 | 1. Spaces and tenancy | Anyone can create a controlled learning space | **COMPLETE** | Phase 0 gates passed |
-| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **IN PROGRESS** | Phase 1 permissions passed |
-| 3. Institutional pilot | An organization completes an auditable training journey | Not started | Phases 1–2 |
+| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **COMPLETE** | Phase 1 permissions passed |
+| 3. Institutional pilot | An organization completes an auditable training journey | **IN PROGRESS** | Phases 1–2 complete |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | Not started | Phase 3 evidence |
 | 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | Not started | Stable contracts |
 | 6. Learning Genome | Evidence improves questions and learning paths | Not started | Representative consented data |
@@ -645,6 +645,34 @@ volume-triggered. Dependency automation and internal security review are complet
 while the independent penetration test remains open. The accessibility statement
 and remediation process are published; independent full-journey assistive-technology
 testing remains open.
+
+### Production evidence to date
+
+- Release commit `74c5abb0cb73aeeb5d368c197a4964ba8b0a61f8` passed
+  [GitHub Actions CI #29244515362](https://github.com/yasinjemal/BookQuest/actions/runs/29244515362)
+  and the independent
+  [production dependency audit #29244515389](https://github.com/yasinjemal/BookQuest/actions/runs/29244515389).
+  CI completed type checking, the production build, migrations 1–7, 134
+  unit/database tests on PostgreSQL 16 and logical backup restoration.
+- Vercel reported a successful production deployment for the same commit at
+  `https://vercel.com/dynasty-built-academy/book-quest/F4cbVuHyRbcDFredZmsSVv3NBFsY`;
+  the production application is `https://book-quest-silk.vercel.app`.
+- Migration 6 (`institutional_evidence_foundation`) applied at
+  `2026-07-13T10:59:45.834Z`; migration 7
+  (`institutional_policy_and_mfa`) applied at `2026-07-13T10:59:46.071Z`.
+- The read-only production gate found all 21 required tables and 13 append-only/
+  version-lock triggers. It reconciled six migrated assignments and nine
+  participations with all eight binding, tenant, policy and credential-expiry
+  failure counters at zero.
+- Production HTTP/browser smoke checks rendered the security, accessibility and
+  opaque credential-verification pages, returned `404` for an unknown private
+  token and recorded no browser warnings or errors.
+- Exact evidence is stored in
+  `docs/evidence/phase3-production-readiness-2026-07-13T110212Z.json`.
+- This does not close Phase 3: production currently has no organization Space,
+  completion, credential or audit-pack rows. A real partner journey, stakeholder
+  audit-pack acceptance, live revocation proof, pilot-selected identity provider,
+  independent penetration test and assistive-technology audit remain required.
 
 ### Release gates
 

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "measuredAt": "2026-07-13T11:02:12.976Z",
+  "release": {
+    "commit": "74c5abb0cb73aeeb5d368c197a4964ba8b0a61f8",
+    "productionUrl": "https://book-quest-silk.vercel.app",
+    "deployment": {
+      "state": "success",
+      "description": "Deployment has completed",
+      "url": "https://vercel.com/dynasty-built-academy/book-quest/F4cbVuHyRbcDFredZmsSVv3NBFsY",
+      "completedAt": "2026-07-13T10:57:33Z"
+    },
+    "ci": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29244515362",
+      "startedAt": "2026-07-13T10:56:52Z",
+      "completedAt": "2026-07-13T10:58:35Z"
+    },
+    "security": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29244515389",
+      "startedAt": "2026-07-13T10:56:52Z",
+      "completedAt": "2026-07-13T10:57:18Z"
+    }
+  },
+  "migrations": [
+    {
+      "id": 6,
+      "name": "institutional_evidence_foundation",
+      "appliedAt": "2026-07-13T10:59:45.834Z"
+    },
+    {
+      "id": 7,
+      "name": "institutional_policy_and_mfa",
+      "appliedAt": "2026-07-13T10:59:46.071Z"
+    }
+  ],
+  "readiness": {
+    "requiredTables": 21,
+    "missingTables": [],
+    "requiredTriggers": 13,
+    "missingTriggers": [],
+    "metrics": {
+      "organizationSpaces": 0,
+      "policyVersions": 0,
+      "assignments": 6,
+      "assignmentVersions": 6,
+      "participations": 9,
+      "completionEvents": 0,
+      "credentials": 0,
+      "auditPacks": 0,
+      "activeMfaMethods": 0,
+      "activeIdentityProviders": 0
+    },
+    "failures": {
+      "organizationSpacesWithoutPolicy": 0,
+      "assignmentsWithoutCurrentVersion": 0,
+      "assignmentRuleOrCourseMismatch": 0,
+      "crossSpaceAssignmentTargets": 0,
+      "crossSpaceParticipations": 0,
+      "completionBindingMismatch": 0,
+      "credentialBindingMismatch": 0,
+      "activeExpiredCredentials": 0
+    },
+    "healthy": true
+  },
+  "httpSmoke": [
+    { "path": "/security", "status": 200 },
+    { "path": "/accessibility", "status": 200 },
+    { "path": "/verify-credential", "status": 200 },
+    {
+      "path": "/api/credentials/verify?token=<unknown-opaque-token>",
+      "status": 404,
+      "result": "Credential not found"
+    }
+  ],
+  "browserSmoke": {
+    "credentialPageRendered": true,
+    "securityPageRendered": true,
+    "accessibilityPageRendered": true,
+    "warningOrErrorCount": 0
+  },
+  "scopeLimit": "Production schema and release health are proven. Production has no organization Space, completion, credential or audit-pack evidence yet, so partner journey, stakeholder acceptance, live revocation and pilot identity-provider gates remain open."
+}

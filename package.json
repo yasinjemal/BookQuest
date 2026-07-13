@@ -14,6 +14,7 @@
     "reliability:baseline": "node scripts/reliability-baseline.mjs",
     "phase1:readiness": "node scripts/phase1-readiness.mjs",
     "phase2:readiness": "node scripts/phase2-readiness.mjs",
+    "phase3:readiness": "node scripts/phase3-readiness.mjs",
     "phase3:audit-sample": "jiti scripts/render-phase3-audit-sample.ts"
   },
   "dependencies": {
