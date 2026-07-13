@@ -87,7 +87,7 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 disabled:opacity-50"
+            className="w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep disabled:opacity-50"
           >
             {busy ? "Saving…" : "Change password"}
           </button>

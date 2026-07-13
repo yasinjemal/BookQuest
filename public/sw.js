@@ -2,7 +2,7 @@
    - Authenticated APIs: network-only so cached data never crosses accounts.
    - Pages and static assets: stale-while-revalidate for low-bandwidth loads.
    - Answer POSTs: the app's account-scoped outbox handles offline replay. */
-const CACHE = "bookquest-v7";
+const CACHE = "bookquest-v8";
 const PRECACHE = [
   "/",
   "/explore",

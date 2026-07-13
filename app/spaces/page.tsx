@@ -48,7 +48,7 @@ export default function SpacesPage() {
     <div className="px-4 pt-6 pb-8">
       <h1 className="text-2xl font-extrabold">Spaces</h1>
       <p className="text-sm text-ink-soft mt-1 mb-5">Your private learning areas, teams, and communities.</p>
-      <form onSubmit={create} className="rounded-2xl bg-card border border-line p-4 shadow-sm space-y-3">
+      <form onSubmit={create} className="rounded-2xl bg-card border border-line p-4 shadow-card space-y-3">
         <h2 className="font-bold">Create a Space</h2>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Economics study group" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5 outline-none focus:border-primary" />
         <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5">
@@ -64,7 +64,7 @@ export default function SpacesPage() {
       <div className="space-y-3">
         {spaces === null && <p className="text-center text-ink-soft py-6">Loading…</p>}
         {spaces?.map(({ space, membership }) => (
-          <Link key={space.id} href={`/spaces/${space.id}`} className="block rounded-2xl bg-card border border-line p-4 shadow-sm">
+          <Link key={space.id} href={`/spaces/${space.id}`} className="block rounded-2xl bg-card border border-line p-4 shadow-card">
             <div className="flex items-center justify-between gap-3"><div className="min-w-0"><h3 className="font-bold truncate">{space.name}</h3><p className="text-xs text-ink-soft capitalize">{space.type} · {membership.role}</p></div><span>→</span></div>
           </Link>
         ))}

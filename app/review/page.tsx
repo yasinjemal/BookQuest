@@ -48,7 +48,7 @@ export default function PracticeHubPage() {
       {/* Spaced repetition */}
       <Link
         href="/review/session"
-        className={`block rounded-2xl border p-4 shadow-sm active:scale-[0.99] transition ${
+        className={`block rounded-2xl border p-4 shadow-card active:scale-[0.99] transition ${
           dueReviews > 0
             ? "bg-teal/10 border-teal/30"
             : "bg-card border-line opacity-70"
@@ -88,7 +88,7 @@ export default function PracticeHubPage() {
         {courses?.map((c) => (
           <div
             key={c.courseId}
-            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 shadow-card"
           >
             <div className="flex items-start justify-between gap-2">
               <h3 className="font-bold leading-snug">{c.title}</h3>
@@ -121,7 +121,7 @@ export default function PracticeHubPage() {
             )}
             <Link
               href={`/review/practice/${c.courseId}`}
-              className="mt-3 block rounded-xl bg-primary text-white text-center font-bold py-2.5 border-b-2 border-amber-700 active:scale-[0.98] transition text-sm"
+              className="mt-3 block rounded-xl bg-primary text-white text-center font-bold py-2.5 border-b-2 border-primary-deep active:scale-[0.98] transition text-sm"
             >
               🎯 Practice weak spots
             </Link>

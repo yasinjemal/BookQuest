@@ -85,7 +85,7 @@ export default function ExplorePage() {
         {courses?.map((c) => (
           <div
             key={c.id}
-            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 shadow-card"
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -119,7 +119,7 @@ export default function ExplorePage() {
               ) : (
                 <button
                   onClick={() => enrollIn(c.id)}
-                  className="text-xs font-bold text-white bg-primary rounded-lg px-3 py-1.5 border-b-2 border-amber-700 active:scale-95 transition"
+                  className="text-xs font-bold text-white bg-primary rounded-lg px-3 py-1.5 border-b-2 border-primary-deep active:scale-95 transition"
                 >
                   Start free
                 </button>

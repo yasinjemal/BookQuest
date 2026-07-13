@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import Loading from "@/components/Loading";
 
 interface ClassData {
   classroom: { id: number; name: string; code: string; isOwner: boolean };
@@ -46,7 +47,7 @@ export default function ClassDetailPage() {
     load();
   }
 
-  if (!data) return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+  if (!data) return <Loading />;
 
   const { classroom, assignments, members, weakConcepts, myCourses } = data;
   const unassigned = myCourses.filter(
@@ -132,7 +133,7 @@ export default function ClassDetailPage() {
           <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
             📉 Where your class struggles
           </h2>
-          <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+          <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
             {weakConcepts.map((w) => (
               <div key={w.concept} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="flex-1 font-semibold capitalize truncate">
@@ -161,7 +162,7 @@ export default function ClassDetailPage() {
       <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
         Learners ({members.length})
       </h2>
-      <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+      <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
         {members.length === 0 && (
           <p className="p-4 text-sm text-ink-soft text-center">
             Nobody has joined yet

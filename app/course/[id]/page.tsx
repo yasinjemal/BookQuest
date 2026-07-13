@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import Loading from "@/components/Loading";
 
 interface LessonNode {
   id: number;
@@ -91,8 +92,7 @@ export default function CoursePathPage() {
 
   if (notFound)
     return <p className="p-8 text-center text-ink-soft">Course not found.</p>;
-  if (!data)
-    return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+  if (!data) return <Loading />;
 
   // First not-completed lesson across the whole course is the "current" node
   let currentFound = false;
@@ -205,12 +205,12 @@ export default function CoursePathPage() {
                     style={{ transform: `translateX(${offset}px)` }}
                   >
                     <div
-                      className={`h-16 w-16 rounded-full flex items-center justify-center text-2xl shadow-md border-b-4 transition ${
+                      className={`h-16 w-16 rounded-full flex items-center justify-center text-2xl shadow-card border-b-4 transition ${
                         l.completed
-                          ? "bg-go text-white border-green-800"
+                          ? "bg-go text-white border-go-deep"
                           : isCurrent
-                            ? "bg-primary text-white border-amber-700 pop-in"
-                            : "bg-line text-ink-soft border-stone-300"
+                            ? "bg-primary text-white border-primary-deep pop-in"
+                            : "bg-line text-ink-soft border-line-deep"
                       }`}
                     >
                       {l.completed ? "✓" : isCurrent ? "★" : "🔒"}

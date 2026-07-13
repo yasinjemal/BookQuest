@@ -130,7 +130,7 @@ export default function PracticeSessionPage() {
         <button
           onClick={() => loadSession(true)}
           disabled={loadingFresh}
-          className="mt-6 w-full max-w-xs rounded-2xl bg-teal text-white font-bold py-3.5 border-b-4 border-teal-800 active:scale-[0.98] transition disabled:opacity-50"
+          className="mt-6 w-full max-w-xs rounded-2xl bg-teal text-white font-bold py-3.5 border-b-4 border-teal-deep active:scale-[0.98] transition disabled:opacity-50"
         >
           {loadingFresh
             ? "✨ Writing new questions…"
@@ -164,7 +164,7 @@ export default function PracticeSessionPage() {
       <button
         onClick={next}
         disabled={!answered}
-        className="mt-6 mb-4 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
+        className="mt-6 mb-4 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
       >
         {index + 1 >= items.length ? "Finish" : "Next"}
       </button>

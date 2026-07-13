@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Loading from "@/components/Loading";
 
 interface CourseSummary {
   id: number;
@@ -42,7 +43,7 @@ function CourseCard({
   return (
     <Link
       href={`/course/${c.id}`}
-      className="block rounded-2xl bg-card border border-line p-4 shadow-sm active:scale-[0.99] transition"
+      className="card block p-4 active:scale-[0.99] transition"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -80,7 +81,7 @@ function CourseCard({
                 e.preventDefault();
                 onRetry();
               }}
-              className="mt-2 text-xs font-bold text-primary-deep border border-primary/40 rounded-lg px-3 py-1.5 active:scale-95 transition"
+              className="mt-2 text-xs font-bold text-primary-deep border border-primary/40 rounded-lg px-3 py-1.5 active:scale-95 transition cursor-pointer"
             >
               ↻ Retry
             </button>
@@ -190,23 +191,26 @@ export default function HomePage() {
           offline.
         </p>
         <div className="mt-8 space-y-3">
-          <Link
-            href="/register"
-            className="block rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition"
-          >
+          <Link href="/register" className="btn-primary w-full">
             Get started — it&apos;s free
           </Link>
-          <Link
-            href="/login"
-            className="block rounded-2xl bg-card border-2 border-line font-bold py-3.5 active:scale-[0.98] transition"
-          >
+          <Link href="/login" className="btn-ghost w-full">
             Sign in
           </Link>
         </div>
-        <div className="mt-10 grid grid-cols-3 gap-2 text-xs text-ink-soft">
-          <div>🎮<br />Learn like a game</div>
-          <div>📴<br />Works offline</div>
-          <div>🎁<br />3 free courses</div>
+        <div className="mt-10 grid grid-cols-3 gap-2 text-xs font-semibold text-ink-soft">
+          <div className="card p-3">
+            <div className="text-2xl mb-1">🎮</div>
+            Learn like a game
+          </div>
+          <div className="card p-3">
+            <div className="text-2xl mb-1">📴</div>
+            Works offline
+          </div>
+          <div className="card p-3">
+            <div className="text-2xl mb-1">🎁</div>
+            3 free courses
+          </div>
         </div>
       </div>
     );
@@ -221,17 +225,13 @@ export default function HomePage() {
           The server had a problem responding. Please check your connection and try
           again.
         </p>
-        <button
-          onClick={() => load()}
-          className="mt-6 rounded-2xl bg-primary text-white font-bold py-3 px-6 border-b-4 border-amber-700 active:scale-[0.98] transition"
-        >
+        <button onClick={() => load()} className="btn-primary mt-6">
           Try again
         </button>
       </div>
     );
 
-  if (!loaded || me === null)
-    return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+  if (!loaded || me === null) return <Loading />;
 
   // ---------- Signed-in home ----------
   const isAdmin = me.role === "admin";

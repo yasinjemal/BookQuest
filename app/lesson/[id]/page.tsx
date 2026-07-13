@@ -12,6 +12,7 @@ import {
   submitLessonCompletion,
 } from "@/lib/answer-outbox";
 import QuizCard from "@/components/QuizCard";
+import Loading from "@/components/Loading";
 import RichBlockCard, { type RichCard } from "@/components/RichBlockCard";
 import type { QuizCard as QuizCardType } from "@/lib/learning-types";
 
@@ -105,8 +106,7 @@ export default function LessonPage() {
     }
   }
 
-  if (!lesson)
-    return <p className="p-8 text-center text-ink-soft">Loading lesson…</p>;
+  if (!lesson) return <Loading label="Loading lesson…" />;
 
   // ----- Celebration screen -----
   if (finished) {
@@ -139,14 +139,14 @@ export default function LessonPage() {
         {finished.certificateId && (
           <a
             href={`/cert/${finished.certificateId}`}
-            className="mt-6 block w-full max-w-xs rounded-2xl bg-teal text-white font-bold py-3.5 border-b-4 border-teal-800 active:scale-[0.98] transition"
+            className="btn-teal mt-6 w-full max-w-xs"
           >
             🎓 Course complete — view your certificate
           </a>
         )}
         <button
           onClick={() => router.back()}
-          className="mt-4 w-full max-w-xs rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition"
+          className="btn-primary mt-4 w-full max-w-xs"
         >
           Continue
         </button>
@@ -193,7 +193,7 @@ export default function LessonPage() {
               {card.type === "concept" ? "Learn" : "Example"}
             </span>
             <h2 className="text-xl font-extrabold mt-3">{card.title}</h2>
-            <p className="text-[17px] leading-relaxed mt-3 whitespace-pre-wrap">
+            <p className="reading text-[17px] leading-relaxed mt-3 whitespace-pre-wrap">
               {card.body}
             </p>
           </div>
@@ -205,7 +205,7 @@ export default function LessonPage() {
             <h2 className="text-xl font-extrabold mt-3">{card.title}</h2>
             <ul className="mt-4 space-y-3">
               {card.points.map((p, i) => (
-                <li key={i} className="flex gap-2.5 text-[16px] leading-relaxed">
+                <li key={i} className="reading flex gap-2.5 text-[16px] leading-relaxed">
                   <span className="text-go font-bold">✓</span>
                   {p}
                 </li>
@@ -242,7 +242,7 @@ export default function LessonPage() {
         disabled={
           saving || (card.type.startsWith("quiz_") && results[index] === undefined)
         }
-        className="mt-6 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
+        className="btn-primary mt-6"
       >
         {index + 1 >= lesson.cards.length
           ? saving

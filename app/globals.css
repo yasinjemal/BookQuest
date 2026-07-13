@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  /* --- Brand palette (warm "paper" identity) --- */
   --color-ink: #1f2440;
   --color-ink-soft: #5a6080;
   --color-paper: #faf7f0;
@@ -8,11 +9,30 @@
   --color-primary: #f59e0b;
   --color-primary-deep: #d97706;
   --color-go: #16a34a;
+  --color-go-deep: #15803d;
   --color-go-soft: #dcfce7;
   --color-no: #dc2626;
+  --color-no-deep: #b91c1c;
   --color-no-soft: #fee2e2;
   --color-teal: #0d9488;
+  --color-teal-deep: #0f766e;
   --color-line: #e8e2d4;
+  --color-line-deep: #d8cfb8;
+
+  /* --- Typography --- */
+  --font-display: var(--font-rounded), "Baloo 2", ui-rounded, "Segoe UI",
+    system-ui, sans-serif;
+  --font-reading: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+
+  /* --- Elevation (warm, ink-tinted so it reads on cream) --- */
+  --shadow-card: 0 1px 2px rgba(31, 36, 64, 0.04),
+    0 6px 16px rgba(31, 36, 64, 0.05);
+  --shadow-pop: 0 8px 28px rgba(31, 36, 64, 0.1);
+
+  /* --- Radius scale --- */
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
 }
 
 html {
@@ -21,11 +41,87 @@ html {
 
 body {
   color: var(--color-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
+  font-family: var(--font-display);
   -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: color-mix(in srgb, var(--color-primary) 28%, transparent);
+}
+
+/* Long-form lesson prose reads better in a neutral sans than the rounded
+   display face; opt into it explicitly on reading surfaces. */
+.reading {
+  font-family: var(--font-reading);
+}
+
+/* --- Accessibility: a single, consistent focus ring everywhere --- */
+@layer base {
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-primary) 65%, white);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* Tailwind v4 Preflight no longer sets this; keep clickable affordance. */
+  button:not(:disabled),
+  label[role="button"],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* --- Reusable components so buttons/cards/chips stay consistent --- */
+@layer components {
+  .card {
+    @apply rounded-2xl bg-card border border-line shadow-card;
+  }
+
+  /* Pressable, Duolingo-style buttons: a darker bottom edge gives a tactile
+     3D lip, and the press animation depresses it. Tailwind v4 can't @apply one
+     custom class into another, so the shared base is declared on the group. */
+  .btn,
+  .btn-primary,
+  .btn-go,
+  .btn-teal,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl font-extrabold
+      py-3.5 px-5 transition-transform duration-100 active:scale-[0.98]
+      disabled:opacity-40 disabled:pointer-events-none select-none cursor-pointer;
+  }
+  .btn-primary {
+    @apply bg-primary text-white border-b-4 border-primary-deep active:border-b-2;
+  }
+  .btn-go {
+    @apply bg-go text-white border-b-4 border-go-deep active:border-b-2;
+  }
+  .btn-teal {
+    @apply bg-teal text-white border-b-4 border-teal-deep active:border-b-2;
+  }
+  .btn-ghost {
+    @apply bg-card border-2 border-line text-ink;
+  }
+
+  /* Small status pills (PUBLISHED, %, Quiz, Learn…). */
+  .chip {
+    @apply inline-flex items-center gap-1 text-[11px] font-bold uppercase
+      tracking-wide rounded-full px-2.5 py-1;
+  }
+
+  /* Progress bars share one look. */
+  .track {
+    @apply rounded-full bg-line overflow-hidden;
+  }
+  .track > .fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+  }
+}
+
+/* --- Motion --- */
 @keyframes pop-in {
   0% {
     transform: scale(0.6);
@@ -57,4 +153,46 @@ body {
 
 .slide-up {
   animation: slide-up 0.25s ease-out both;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Skeleton placeholder for async content (reserves space, no layout jump). */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-line) 60%, var(--color-paper));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, white 55%, transparent),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+/* Respect users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .pop-in,
+  .slide-up {
+    animation: none;
+  }
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import Loading from "@/components/Loading";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import {
   clearAnswerOutboxAccount,
@@ -190,7 +191,7 @@ function ProfileInner() {
     await load();
   }
 
-  if (!data) return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+  if (!data) return <Loading />;
 
   const { user, stats } = data;
   const isAdmin = user.role === "admin";
@@ -228,7 +229,7 @@ function ProfileInner() {
       )}
 
       {/* Level */}
-      <div className="rounded-2xl bg-card border border-line p-5 shadow-sm">
+      <div className="rounded-2xl bg-card border border-line p-5 shadow-card">
         <div className="flex items-baseline justify-between">
           <span className="font-extrabold text-lg">Level {level}</span>
           <span className="text-sm text-ink-soft">{xp} / {next} XP</span>
@@ -242,17 +243,17 @@ function ProfileInner() {
       </div>
 
       <div className="grid grid-cols-3 gap-3 mt-3">
-        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm">
+        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-card">
           <div className="text-2xl">🔥</div>
           <div className="text-xl font-extrabold">{stats.streak}</div>
           <div className="text-[10px] text-ink-soft">streak</div>
         </div>
-        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm">
+        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-card">
           <div className="text-2xl">⚡</div>
           <div className="text-xl font-extrabold">{isAdmin ? "∞" : user.credits}</div>
           <div className="text-[10px] text-ink-soft">credits</div>
         </div>
-        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm">
+        <div className="rounded-2xl bg-card border border-line p-4 text-center shadow-card">
           <div className="text-2xl">🏆</div>
           <div className="text-xl font-extrabold">{xp}</div>
           <div className="text-[10px] text-ink-soft">total XP</div>
@@ -271,7 +272,7 @@ function ProfileInner() {
       {/* Store */}
       <section className="mt-6">
         <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">Account security</h2>
-        <div className="rounded-2xl bg-card border border-line p-4 shadow-sm space-y-3">
+        <div className="rounded-2xl bg-card border border-line p-4 shadow-card space-y-3">
           <p className="text-sm font-bold">Authenticator MFA {mfaActive ? "is active" : "is not active"}</p>
           {!mfaActive && !mfaSecret && <button onClick={() => void mfaAction("begin")} className="rounded-lg bg-primary text-white px-3 py-2 text-xs font-bold">Set up authenticator</button>}
           {mfaSecret && <div className="space-y-2">
@@ -301,7 +302,7 @@ function ProfileInner() {
               key={p.id}
               onClick={() => buy(p.id)}
               disabled={buying !== null}
-              className="w-full flex items-center gap-3 rounded-2xl bg-card border border-line p-4 shadow-sm active:scale-[0.99] transition disabled:opacity-50 text-left"
+              className="w-full flex items-center gap-3 rounded-2xl bg-card border border-line p-4 shadow-card active:scale-[0.99] transition disabled:opacity-50 text-left"
             >
               <span className="text-2xl">{p.icon}</span>
               <span className="flex-1 min-w-0">
@@ -330,7 +331,7 @@ function ProfileInner() {
               <Link
                 key={c.id}
                 href={`/cert/${c.id}`}
-                className="flex items-center gap-3 rounded-2xl bg-card border border-line p-4 shadow-sm active:scale-[0.99] transition"
+                className="flex items-center gap-3 rounded-2xl bg-card border border-line p-4 shadow-card active:scale-[0.99] transition"
               >
                 <span className="text-2xl">🎓</span>
                 <span className="flex-1 min-w-0 font-semibold truncate">
@@ -350,7 +351,7 @@ function ProfileInner() {
         <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">
           This week&apos;s leaderboard
         </h2>
-        <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+        <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
           {data.leaderboard.length === 0 && (
             <p className="p-4 text-sm text-ink-soft text-center">
               Complete a lesson to appear here!
@@ -380,7 +381,7 @@ function ProfileInner() {
         <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mb-2">
           Privacy &amp; your data
         </h2>
-        <div className="rounded-2xl bg-card border border-line p-4 shadow-sm space-y-4">
+        <div className="rounded-2xl bg-card border border-line p-4 shadow-card space-y-4">
           <div>
             <p className="text-sm font-bold">Portable account export</p>
             <p className="text-xs text-ink-soft mt-1">
@@ -470,7 +471,7 @@ function ProfileInner() {
 
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<p className="p-8 text-center text-ink-soft">Loading…</p>}>
+    <Suspense fallback={<Loading />}>
       <ProfileInner />
     </Suspense>
   );

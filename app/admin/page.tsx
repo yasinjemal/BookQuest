@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Loading from "@/components/Loading";
 
 interface AdminData {
   counts: { users: number; courses: number; published: number; revenue_cents: number };
@@ -89,7 +90,7 @@ export default function AdminPage() {
     load();
   }
 
-  if (!data) return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+  if (!data) return <Loading />;
 
   const c = data.counts;
   return (
@@ -105,7 +106,7 @@ export default function AdminPage() {
         ].map(([label, value]) => (
           <div
             key={String(label)}
-            className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 text-center shadow-card"
           >
             <div className="text-xl font-extrabold">{value}</div>
             <div className="text-xs text-ink-soft">{label}</div>
@@ -125,7 +126,7 @@ export default function AdminPage() {
         ].map(([label, value]) => (
           <div
             key={String(label)}
-            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 shadow-card"
           >
             <div className="text-xl font-extrabold">{value ?? 0}</div>
             <div className="text-xs text-ink-soft">{label}</div>
@@ -150,7 +151,7 @@ export default function AdminPage() {
         ].map(([label, value]) => (
           <div
             key={String(label)}
-            className="rounded-2xl bg-card border border-line p-4 shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 shadow-card"
           >
             <div className="text-xl font-extrabold">{value ?? 0}</div>
             <div className="text-xs text-ink-soft">{label}</div>
@@ -163,7 +164,7 @@ export default function AdminPage() {
         </p>
       ))}
       {data.operations.recent.length > 0 && (
-        <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line mt-3">
+        <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line mt-3">
           {data.operations.recent.map((event, index) => (
             <div key={`${event.occurred_at}-${index}`} className="px-4 py-3">
               <div className="flex justify-between gap-3 text-sm">
@@ -191,7 +192,7 @@ export default function AdminPage() {
         ].map(([label, value]) => (
           <div
             key={String(label)}
-            className="rounded-2xl bg-card border border-line p-4 text-center shadow-sm"
+            className="rounded-2xl bg-card border border-line p-4 text-center shadow-card"
           >
             <div className="text-xl font-extrabold">{value ?? 0}</div>
             <div className="text-xs text-ink-soft">{label}</div>
@@ -208,7 +209,7 @@ export default function AdminPage() {
           <p className="mt-3 mb-1 text-xs font-bold text-ink-soft uppercase tracking-wide">
             Most delayed answers
           </p>
-          <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+          <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
             {data.delivery.delayed_sample.map((event, index) => (
               <div
                 key={`delayed-${event.recorded_at}-${index}`}
@@ -233,7 +234,7 @@ export default function AdminPage() {
           <p className="mt-3 mb-1 text-xs font-bold text-ink-soft uppercase tracking-wide">
             Recent answer failures
           </p>
-          <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+          <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
             {data.delivery.failure_sample.map((event, index) => (
               <div key={`failure-${event.occurred_at}-${index}`} className="px-4 py-3">
                 <div className="flex justify-between gap-3 text-sm">
@@ -257,7 +258,7 @@ export default function AdminPage() {
       <h2 className="font-bold text-sm text-ink-soft uppercase tracking-wide mt-6 mb-2">
         Users
       </h2>
-      <div className="rounded-2xl bg-card border border-line shadow-sm divide-y divide-line">
+      <div className="rounded-2xl bg-card border border-line shadow-card divide-y divide-line">
         {data.users.map((u) => (
           <div key={u.id} className="px-4 py-3 flex items-center gap-3">
             <div className="flex-1 min-w-0">

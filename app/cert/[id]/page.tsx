@@ -2,6 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import Loading from "@/components/Loading";
 
 interface Cert {
   id: string;
@@ -24,7 +25,7 @@ export default function CertificatePage() {
   }, [id]);
 
   if (cert === null)
-    return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+    return <Loading />;
   if (cert === "missing")
     return (
       <div className="p-8 text-center">
@@ -83,7 +84,7 @@ export default function CertificatePage() {
             /* clipboard unavailable */
           }
         }}
-        className="mt-4 w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition"
+        className="mt-4 w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep active:scale-[0.98] transition"
       >
         {copied ? "✓ Link copied!" : "🔗 Copy share link"}
       </button>

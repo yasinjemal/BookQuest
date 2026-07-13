@@ -64,7 +64,7 @@ export default function ClassesPage() {
       </p>
 
       {/* Join */}
-      <div className="rounded-2xl bg-card border border-line p-4 shadow-sm">
+      <div className="rounded-2xl bg-card border border-line p-4 shadow-card">
         <h2 className="font-bold text-sm mb-2">Join a class</h2>
         <form
           onSubmit={(e) => {
@@ -91,7 +91,7 @@ export default function ClassesPage() {
       </div>
 
       {/* Create */}
-      <div className="rounded-2xl bg-card border border-line p-4 shadow-sm mt-3">
+      <div className="rounded-2xl bg-card border border-line p-4 shadow-card mt-3">
         <h2 className="font-bold text-sm mb-2">
           Create a class <span className="text-ink-soft font-normal">(you become the teacher)</span>
         </h2>
@@ -136,7 +136,7 @@ export default function ClassesPage() {
           <Link
             key={c.id}
             href={`/class/${c.id}`}
-            className="block rounded-2xl bg-card border border-line p-4 shadow-sm active:scale-[0.99] transition"
+            className="block rounded-2xl bg-card border border-line p-4 shadow-card active:scale-[0.99] transition"
           >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">

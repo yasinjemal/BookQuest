@@ -95,7 +95,7 @@ export default function QuizCard({
       {card.type === "quiz_truefalse" && (
         <>
           <h2 className="text-lg font-extrabold mt-3">True or false?</h2>
-          <p className="text-[17px] leading-relaxed mt-3">{card.statement}</p>
+          <p className="reading text-[17px] leading-relaxed mt-3">{card.statement}</p>
           <div className="mt-5 grid grid-cols-2 gap-3">
             {[true, false].map((val) => {
               let style = "border-line bg-card hover:border-primary/50";
@@ -122,7 +122,7 @@ export default function QuizCard({
       {card.type === "quiz_fillblank" && (
         <>
           <h2 className="text-lg font-extrabold mt-3">Fill in the blank</h2>
-          <p className="text-[17px] leading-relaxed mt-3">
+          <p className="reading text-[17px] leading-relaxed mt-3">
             {card.sentence.split("___").map((part, i, arr) => (
               <span key={i}>
                 {part}
@@ -170,7 +170,7 @@ export default function QuizCard({
           <div className="font-extrabold">
             {correct ? "✓ Correct!" : "✗ Not quite"}
           </div>
-          <p className="text-sm mt-1">{card.explanation}</p>
+          <p className="reading text-sm mt-1">{card.explanation}</p>
         </div>
       )}
     </div>

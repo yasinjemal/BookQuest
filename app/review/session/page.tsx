@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Loading from "@/components/Loading";
 import type { Card } from "@/lib/schemas";
 import type { QuizAnswerResult } from "@/lib/learning-types";
 import {
@@ -79,7 +80,7 @@ export default function ReviewSessionPage() {
   }
 
   if (items === null)
-    return <p className="p-8 text-center text-ink-soft">Loading…</p>;
+    return <Loading />;
 
   if (items.length === 0 || done)
     return (
@@ -111,7 +112,7 @@ export default function ReviewSessionPage() {
       <button
         onClick={next}
         disabled={!answered}
-        className="mt-6 mb-4 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-amber-700 active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
+        className="mt-6 mb-4 rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep active:scale-[0.98] transition disabled:opacity-40 disabled:border-b-0"
       >
         {index + 1 >= items.length ? "Finish" : "Next"}
       </button>
