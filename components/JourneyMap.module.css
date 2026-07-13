@@ -36,7 +36,7 @@
 }
 
 .routeDone {
-  stroke: var(--color-teal);
+  stroke: var(--course-accent, var(--color-teal));
   filter: drop-shadow(0 0 4px rgb(36 140 141 / 0.2));
   transition: stroke-dashoffset 700ms ease-out;
 }
@@ -73,9 +73,9 @@
 }
 
 .current .landmark {
-  border-color: var(--color-signal);
-  background: var(--color-signal);
-  color: var(--color-ink);
+  border-color: var(--course-accent, var(--color-signal));
+  background: var(--course-accent, var(--color-signal));
+  color: var(--course-accent-contrast, var(--color-ink));
   box-shadow: 0 0 0 6px rgb(216 255 99 / 0.15), 0 12px 26px rgb(24 48 41 / 0.18);
 }
 

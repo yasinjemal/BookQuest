@@ -4,12 +4,14 @@ import {
   canAccessCourse,
   getCompletedLessonIds,
   getCourse,
+  getCourseAppearanceJson,
   listLessons,
   listModules,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { authorizeCourseAction } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
+import { parseCourseAppearance } from "@/lib/course-appearance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +46,11 @@ export async function GET(
     }))
   );
   return NextResponse.json({
-    course: { ...course, isOwner },
+    course: {
+      ...course,
+      isOwner,
+      appearance: parseCourseAppearance(await getCourseAppearanceJson(course.id, isOwner)),
+    },
     modules,
   });
 }

@@ -2,6 +2,11 @@ import Link from "next/link";
 import AppIcon from "@/components/AppIcon";
 import CourseWorld, { resolveWorldTheme } from "@/components/CourseWorld";
 import styles from "./JourneyMap.module.css";
+import {
+  COURSE_ACCENT_HEX,
+  DEFAULT_COURSE_APPEARANCE,
+  type CourseAppearance,
+} from "@/lib/course-appearance";
 
 export interface JourneyLesson {
   id: number;
@@ -39,9 +44,10 @@ function LessonStop({ lesson, current, index }: { lesson: JourneyLesson; current
   );
 }
 
-export default function JourneyMap({ modules, courseId, courseTitle }: { modules: JourneyModule[]; courseId: string | number; courseTitle: string }) {
+export default function JourneyMap({ modules, courseId, courseTitle, appearance = DEFAULT_COURSE_APPEARANCE }: { modules: JourneyModule[]; courseId: string | number; courseTitle: string; appearance?: CourseAppearance }) {
   const firstIncomplete = modules.flatMap((module) => module.lessons).find((lesson) => !lesson.completed)?.id;
-  const courseTheme = resolveWorldTheme(`${courseId}:${courseTitle}`);
+  const courseTheme = appearance.worldTheme ?? resolveWorldTheme(`${courseId}:${courseTitle}`);
+  const accent = COURSE_ACCENT_HEX[appearance.accent];
 
   if (modules.length === 0) return <div className="rounded-[1.5rem] border border-line bg-card px-6 py-12 text-center shadow-card"><p className="section-label">The map is being drawn</p><h2 className="display mt-3 text-3xl">Your first region will appear here.</h2></div>;
 
@@ -53,7 +59,7 @@ export default function JourneyMap({ modules, courseId, courseTitle }: { modules
         return (
           <section key={module.id} className={styles.region} aria-labelledby={`region-${module.id}`}>
             <div className="grid bg-pine text-white sm:grid-cols-[.8fr_1.2fr]">
-              <CourseWorld seed={`${courseId}:${module.id}`} title={module.title} theme={courseTheme} progress={progress} mood={moduleIndex % 3 === 1 ? "dusk" : "calm"} className="min-h-36 sm:min-h-44" />
+              <CourseWorld seed={`${courseId}:${module.id}`} title={module.title} theme={courseTheme} accent={accent} progress={progress} mood={appearance.atmosphere === "quiet" ? "calm" : moduleIndex % 3 === 1 ? "dusk" : "calm"} className="min-h-36 sm:min-h-44" />
               <div className="flex flex-col justify-center p-5 sm:p-7">
                 <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-signal">Region {moduleIndex + 1} · {completed}/{module.lessons.length} discovered</p>
                 <h2 id={`region-${module.id}`} className="display mt-2 text-3xl leading-none sm:text-4xl">{module.title}</h2>

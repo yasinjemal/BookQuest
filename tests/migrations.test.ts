@@ -22,6 +22,14 @@ describe("migration list", () => {
     expect(MIGRATIONS[0].sql).toContain("CREATE TABLE IF NOT EXISTS learning_events");
   });
 
+  it("adds versioned course appearance without rewriting shipped migrations", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "versioned_course_appearance");
+    expect(migration).toMatchObject({ id: 10 });
+    expect(migration?.sql).toContain("ALTER TABLE courses");
+    expect(migration?.sql).toContain("ALTER TABLE course_versions");
+    expect(migration?.sql).toContain("appearance_json");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },

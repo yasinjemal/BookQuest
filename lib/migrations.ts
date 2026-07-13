@@ -2130,6 +2130,13 @@ ALTER TABLE institutional_pilot_plan_versions
   );
 `;
 
+const COURSE_APPEARANCE_SQL = `
+ALTER TABLE courses
+  ADD COLUMN appearance_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE course_versions
+  ADD COLUMN appearance_json TEXT NOT NULL DEFAULT '{}';
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2144,6 +2151,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 7, name: "institutional_policy_and_mfa", sql: INSTITUTIONAL_POLICY_AND_MFA_SQL },
   { id: 8, name: "institutional_pilot_evidence", sql: INSTITUTIONAL_PILOT_EVIDENCE_SQL },
   { id: 9, name: "pilot_password_sign_in", sql: PILOT_PASSWORD_SIGN_IN_SQL },
+  { id: 10, name: "versioned_course_appearance", sql: COURSE_APPEARANCE_SQL },
 ];
 
 /**

@@ -4,8 +4,14 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
+import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import { BLOCK_CHANNELS, type BlockType } from "@/lib/block-registry";
+import {
+  COURSE_ACCENT_HEX,
+  DEFAULT_COURSE_APPEARANCE,
+  type CourseAppearance,
+} from "@/lib/course-appearance";
 
 interface SourceItem { source_version_id: string; title: string; kind: string }
 interface BlockItem {
@@ -15,7 +21,7 @@ interface BlockItem {
   sourceRefs: Array<{ sourceVersionId?: string }>; editOrigin: string;
 }
 interface StudioData {
-  version: { id: string; version_number: number; parent_version_id: string | null; lifecycle_status: string; title: string; description: string };
+  version: { id: string; version_number: number; parent_version_id: string | null; lifecycle_status: string; title: string; description: string; appearance: CourseAppearance };
   versions: Array<{ id: string; version_number: number; parent_version_id: string | null; lifecycle_status: string }>;
   reviews: Array<{ id: string; decision: string; summary: string; reviewer_name: string; created_at: string }>;
   comments: Array<{ id: string; body: string; status: string; author_name: string }>;
@@ -112,15 +118,15 @@ function OutlineEditor({ section, onSaved, onRegenerate }: {
   </article>;
 }
 
-function CoursePreview({ blocks, mode }: { blocks: BlockItem[]; mode: "mobile" | "desktop" | "offline" }) {
-  return <div className={`mx-auto rounded-2xl border-4 border-ink/80 bg-paper p-4 transition-all ${mode === "mobile" ? "max-w-sm" : "max-w-4xl"}`}>
+function CoursePreview({ blocks, mode, appearance }: { blocks: BlockItem[]; mode: "mobile" | "desktop" | "offline"; appearance: CourseAppearance }) {
+  return <CourseAppearanceFrame appearance={appearance} className={`course-page-bg mx-auto rounded-2xl border-4 border-ink/80 p-4 transition-all ${mode === "mobile" ? "max-w-sm" : "max-w-4xl"}`}><div>
     <div className="mb-4 flex items-center justify-between text-xs font-bold text-ink-soft"><span>{mode === "mobile" ? "Mobile learner view" : mode === "desktop" ? "Desktop learner view" : "Offline learner view"}</span><span>{blocks.length} blocks</span></div>
     <div className={mode === "desktop" ? "grid grid-cols-2 gap-3" : "space-y-3"}>{blocks.map((block) => {
       const channel = BLOCK_CHANNELS[block.blockType];
       const unavailable = mode === "offline" && !channel.offline;
       return <article key={block.id} className="rounded-xl bg-card border border-line p-3"><p className="text-xs font-bold uppercase text-primary-deep">{LABELS[block.blockType]}</p><h3 className="font-bold mt-1">{block.lessonTitle}</h3>{unavailable ? <p className="mt-2 text-sm text-ink-soft">Offline fallback: {channel.fallback ? LABELS[channel.fallback] : "Reconnect to use this block"}</p> : <div className="mt-2 space-y-1 text-sm">{Object.entries(block.content).filter(([key]) => key !== "type").slice(0, 4).map(([key, value]) => <p key={key}><span className="font-semibold">{key.replace(/([A-Z])/g, " $1")}:</span> {Array.isArray(value) ? value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" · ") : String(value)}</p>)}</div>}</article>;
     })}</div>
-  </div>;
+  </div></CourseAppearanceFrame>;
 }
 
 export default function StudioPage() {
@@ -132,7 +138,7 @@ export default function StudioPage() {
   const [moduleTitle, setModuleTitle] = useState("Module 1");
   const [lessonTitle, setLessonTitle] = useState("Lesson 1");
   const [comment, setComment] = useState("");
-  const [versionDiff, setVersionDiff] = useState<{ added: string[]; removed: string[]; changed: string[] } | null>(null);
+  const [versionDiff, setVersionDiff] = useState<{ added: string[]; removed: string[]; changed: string[]; appearanceChanged: boolean } | null>(null);
   const [error, setError] = useState("");
   const [regenerating, setRegenerating] = useState("");
   const [previewMode, setPreviewMode] = useState<"edit" | "mobile" | "desktop" | "offline">("edit");
@@ -266,7 +272,7 @@ export default function StudioPage() {
   return <div className="page-wrap"><div className="mx-auto max-w-[88rem] space-y-5">
     <header className="grid overflow-hidden rounded-[1.6rem] border border-line bg-card shadow-card lg:grid-cols-[1.2fr_.8fr]">
       <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10"><Link href={`/course/${id}`} className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft hover:text-ink"><span aria-hidden="true">←</span> Course journey</Link><div className="mt-7 flex flex-wrap items-center gap-2"><span className="rounded-full bg-ink px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-white">Studio</span><span className="rounded-full border border-line px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-ink-soft">Version {data.version.version_number}</span><span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-go-deep">{data.version.lifecycle_status.replaceAll("_", " ")}</span></div><h1 className="display mt-4 text-[clamp(2.8rem,8vw,5rem)] leading-[0.9]">{data.version.title}</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-ink-soft">{data.version.description || "Shape the course with full source, review, accessibility, and version control."}</p></div>
-      <div className="relative min-h-56"><CourseWorld seed={`studio:${id}`} title={data.version.title} theme="workshop" progress={analysis && analysis.totalBlocks > 0 ? Math.round((analysis.tracedBlocks / analysis.totalBlocks) * 100) : 0} className="absolute inset-0" /><Link href={`/course/${id}`} className="absolute bottom-5 right-5 z-10 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-pine/70 px-5 text-sm font-semibold text-white backdrop-blur-sm">Preview learner world <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
+      <div className="relative min-h-56"><CourseWorld seed={`studio:${id}`} title={data.version.title} theme={(data.version.appearance ?? DEFAULT_COURSE_APPEARANCE).worldTheme} accent={COURSE_ACCENT_HEX[(data.version.appearance ?? DEFAULT_COURSE_APPEARANCE).accent]} progress={analysis && analysis.totalBlocks > 0 ? Math.round((analysis.tracedBlocks / analysis.totalBlocks) * 100) : 0} className="absolute inset-0" /><Link href={`/course/${id}#course-appearance`} className="absolute bottom-5 right-5 z-10 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-pine/70 px-5 text-sm font-semibold text-white backdrop-blur-sm">Preview & design learner world <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
     </header>
 
     {analysis && <section className="grid gap-3 sm:grid-cols-3" aria-label="Course quality summary"><div className="rounded-[1.2rem] bg-signal p-4"><p className="section-label text-ink/55">Source coverage</p><p className="display mt-3 text-3xl">{analysis.tracedBlocks}/{analysis.totalBlocks}</p><p className="text-xs text-ink/60">blocks linked</p></div><div className="rounded-[1.2rem] bg-sky p-4"><p className="section-label text-ink/55">Accessibility</p><p className="display mt-3 text-3xl">{analysis.accessibilityIssueBlockIds.length === 0 ? "Ready" : analysis.accessibilityIssueBlockIds.length}</p><p className="text-xs text-ink/60">{analysis.accessibilityIssueBlockIds.length === 0 ? "checks pass" : "issues to resolve"}</p></div><div className="rounded-[1.2rem] border border-line bg-card p-4 shadow-card"><p className="section-label">Estimated duration</p><p className="display mt-3 text-3xl">{analysis.estimatedDurationMinutes}</p><p className="text-xs text-ink-soft">minutes</p></div></section>}
@@ -274,7 +280,7 @@ export default function StudioPage() {
     <section className="sticky top-[4.5rem] z-20 flex flex-col gap-3 rounded-[1.2rem] border border-line bg-paper/92 p-2 shadow-card backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between lg:top-2"><div className="flex gap-1 overflow-x-auto rounded-full bg-card p-1">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} aria-pressed={previewMode === mode} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold capitalize ${previewMode === mode ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{mode === "edit" ? "Editorial view" : `${mode} preview`}</button>)}</div><p className="hidden px-3 text-xs text-ink-soft sm:block">{editable ? "Draft changes remain private until review and publishing." : "This version is read-only."}</p></section>
 
     {error && <p role="alert" className="rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
-    {previewMode !== "edit" && <section className="rounded-[1.5rem] border border-line bg-card p-4 shadow-card sm:p-6"><CoursePreview blocks={data.blocks} mode={previewMode} /></section>}
+    {previewMode !== "edit" && <section className="rounded-[1.5rem] border border-line bg-card p-4 shadow-card sm:p-6"><CoursePreview blocks={data.blocks} mode={previewMode} appearance={data.version.appearance ?? DEFAULT_COURSE_APPEARANCE} /></section>}
 
     {previewMode === "edit" && <>
       <nav className="grid grid-cols-3 gap-1 rounded-[1.1rem] border border-line bg-card p-1 xl:hidden" aria-label="Studio panels">{([ ["outline", "Outline", "layers"], ["canvas", "Canvas", "create"], ["inspector", "Inspector", "settings"] ] as const).map(([panel, label, icon]) => <button key={panel} type="button" onClick={() => setStudioPanel(panel)} aria-pressed={studioPanel === panel} className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold ${studioPanel === panel ? "bg-ink text-white" : "text-ink-soft"}`}><AppIcon name={icon} className="h-4 w-4" /><span className="truncate">{label}</span></button>)}</nav>
@@ -296,7 +302,7 @@ export default function StudioPage() {
 
           <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Review notes <span className="float-right text-xs font-normal text-ink-soft">{data.comments.filter((item) => item.status === "open").length} open</span></summary><div className="mt-3 space-y-3 border-t border-line pt-3">{data.reviews.map((review) => <div key={review.id} className="rounded-lg bg-paper p-3 text-xs"><p className="font-semibold">{review.reviewer_name} · {review.decision.replaceAll("_", " ")}</p>{review.summary && <p className="mt-1 leading-5 text-ink-soft">{review.summary}</p>}</div>)}{data.comments.map((item) => <div key={item.id} className="rounded-lg border border-line p-3 text-xs"><p><strong>{item.author_name}:</strong> {item.body}</p><p className="mt-1 uppercase tracking-wide text-ink-soft">{item.status}</p>{item.status === "open" && <button onClick={() => void resolveComment(item.id)} className="mt-2 font-semibold text-teal">Mark resolved</button>}</div>)}<label className="block text-xs font-semibold">Add a review note<textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="field mt-2" /></label><button type="button" onClick={() => void addComment()} disabled={!comment.trim()} className="btn-teal w-full">Add note</button></div></details>
 
-          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Version history <span className="float-right text-xs font-normal text-ink-soft">{data.versions.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{versionDiff && <div className="rounded-lg bg-sky/45 p-3 text-xs"><p className="font-semibold">Changes from version {data.versions.find((version) => version.id === data.version.parent_version_id)?.version_number}</p><p className="mt-1 text-ink-soft">{versionDiff.changed.length} changed · {versionDiff.added.length} added · {versionDiff.removed.length} removed</p></div>}{data.versions.map((version) => <div key={version.id} className="rounded-lg bg-paper p-3 text-xs"><p><strong>Version {version.version_number}</strong> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="mt-2 font-semibold text-teal-deep">Restore as draft</button>}</div>)}</div></details>
+          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Version history <span className="float-right text-xs font-normal text-ink-soft">{data.versions.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{versionDiff && <div className="rounded-lg bg-sky/45 p-3 text-xs"><p className="font-semibold">Changes from version {data.versions.find((version) => version.id === data.version.parent_version_id)?.version_number}</p><p className="mt-1 text-ink-soft">{versionDiff.changed.length} changed · {versionDiff.added.length} added · {versionDiff.removed.length} removed{versionDiff.appearanceChanged ? " · appearance changed" : ""}</p></div>}{data.versions.map((version) => <div key={version.id} className="rounded-lg bg-paper p-3 text-xs"><p><strong>Version {version.version_number}</strong> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="mt-2 font-semibold text-teal-deep">Restore as draft</button>}</div>)}</div></details>
         </aside>
       </div>
     </>}

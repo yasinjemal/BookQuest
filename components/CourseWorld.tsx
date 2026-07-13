@@ -1,25 +1,9 @@
 import type { CSSProperties, ReactNode } from "react";
 import styles from "./CourseWorld.module.css";
+import { COURSE_WORLD_THEMES, type CourseWorldTheme } from "@/lib/course-appearance";
 
-export const WORLD_THEMES = [
-  "forest",
-  "mountain",
-  "ocean",
-  "desert",
-  "city-night",
-  "archive",
-  "cosmic",
-  "workshop",
-  "laboratory",
-  "garden",
-  "village",
-  "sunrise-plains",
-  "winter",
-  "manuscript",
-  "knowledge-city",
-] as const;
-
-export type WorldTheme = (typeof WORLD_THEMES)[number];
+export const WORLD_THEMES = COURSE_WORLD_THEMES;
+export type WorldTheme = CourseWorldTheme;
 export type WorldMood = "calm" | "bright" | "dusk";
 
 type WorldPalette = {
@@ -115,6 +99,7 @@ export default function CourseWorld({
   title,
   mood = "calm",
   artworkUrl,
+  accent,
   className = "",
 }: {
   theme?: WorldTheme | string;
@@ -123,6 +108,7 @@ export default function CourseWorld({
   title?: string;
   mood?: WorldMood;
   artworkUrl?: string | null;
+  accent?: string;
   className?: string;
 }) {
   const combinedSeed = `${seed}:${title ?? ""}`;
@@ -137,7 +123,7 @@ export default function CourseWorld({
     "--world-far": palette.far,
     "--world-mid": palette.mid,
     "--world-near": palette.near,
-    "--world-accent": palette.accent,
+    "--world-accent": accent ?? palette.accent,
     "--world-light": palette.light,
     "--world-light-x": `${lightX}%`,
   } as CSSProperties;
@@ -158,7 +144,7 @@ export default function CourseWorld({
       <svg className={styles.scene} viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
         <circle className={styles.light} cx={lightX} cy={22 + variant % 10} r={5 + variant % 4} />
         <circle className={styles.halo} cx={lightX} cy={22 + variant % 10} r={10 + variant % 4} />
-        {sparks.map((spark, index) => <circle key={index} className={styles.spark} cx={spark.x} cy={spark.y} r={spark.r} />)}
+        {sparks.map((spark, index) => <circle key={index} data-atmospheric-detail="optional" className={styles.spark} cx={spark.x} cy={spark.y} r={spark.r} />)}
         {landscape(resolvedTheme, variant)}
         <path className={styles.trailBase} pathLength="100" d="M8 92 C25 72 36 89 51 71 S75 58 92 42" />
         <path className={styles.trailProgress} pathLength="100" strokeDasharray="100" strokeDashoffset={100 - safeProgress} d="M8 92 C25 72 36 89 51 71 S75 58 92 42" />

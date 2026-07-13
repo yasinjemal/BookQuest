@@ -397,6 +397,25 @@ export interface PlatformCourseCols {
   price_cents: number;
   content_version: number;
   generation_run_id: string;
+  authoring_status: string;
+  current_draft_version_id: string | null;
+  published_version_id: string | null;
+  appearance_json: string;
+}
+
+export async function getCourseAppearanceJson(id: number, preferDraft = false): Promise<string> {
+  const row = await one<{ appearance_json: string }>(
+    `SELECT COALESCE(version.appearance_json, course.appearance_json, '{}') AS appearance_json
+     FROM courses course
+     LEFT JOIN course_versions version ON version.id = CASE
+       WHEN $2::boolean AND course.current_draft_version_id IS NOT NULL
+         THEN course.current_draft_version_id
+       ELSE course.published_version_id
+     END
+     WHERE course.id = $1`,
+    [id, preferDraft]
+  );
+  return row?.appearance_json ?? "{}";
 }
 
 export async function listOwnedCourses(

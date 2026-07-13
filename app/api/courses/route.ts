@@ -16,6 +16,7 @@ import {
   kickGeneration,
   resolveBaseUrl,
 } from "@/lib/generation";
+import { parseCourseAppearance } from "@/lib/course-appearance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,13 @@ async function withProgress(
         totalLessons += lessons.length;
         doneLessons += lessons.filter((l) => completed.has(l.id)).length;
       }
-      return { ...c, totalLessons, doneLessons, moduleCount: modules.length };
+      return {
+        ...c,
+        appearance: parseCourseAppearance(c.appearance_json),
+        totalLessons,
+        doneLessons,
+        moduleCount: modules.length,
+      };
     })
   );
 }

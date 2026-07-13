@@ -290,6 +290,103 @@ h3 {
   margin-inline: auto;
 }
 
+/* Course appearance is versioned content. These variables let a creator tune
+   the learner world without putting essential information inside decoration. */
+.course-appearance {
+  --course-page: #f4f0e6;
+  --course-canvas: #fbf8f1;
+  --course-line: #ded7c9;
+  --course-accent: #d8ff63;
+  --course-accent-contrast: #183029;
+  background-color: var(--course-page);
+}
+
+.course-preview-bg,
+.course-page-bg {
+  background-color: var(--course-page);
+  background-image:
+    radial-gradient(circle at 8% 8%, color-mix(in srgb, var(--course-accent) 9%, transparent), transparent 24rem),
+    linear-gradient(115deg, transparent 0 72%, color-mix(in srgb, var(--course-line) 30%, transparent));
+}
+
+.course-appearance[data-course-surface="parchment"] {
+  background-image: radial-gradient(rgba(24, 48, 41, 0.035) 0.6px, transparent 0.6px);
+  background-size: 8px 8px;
+}
+
+.course-appearance[data-course-surface="herbarium"] {
+  background-image:
+    radial-gradient(circle at 4% 16%, rgba(110, 139, 114, 0.12), transparent 18rem),
+    radial-gradient(circle at 96% 82%, rgba(110, 139, 114, 0.1), transparent 20rem);
+}
+
+.course-appearance[data-course-surface="rose"] {
+  background-image: linear-gradient(140deg, rgba(201, 140, 131, 0.08), transparent 45%);
+}
+
+.course-reading-surface {
+  background-color: var(--course-canvas);
+  border-color: var(--course-line);
+}
+
+.course-appearance .course-accent-bg {
+  background-color: var(--course-accent);
+}
+
+.course-appearance .course-accent-text {
+  color: var(--course-accent);
+}
+
+.course-appearance .course-accent-button {
+  background-color: var(--course-accent);
+  color: var(--course-accent-contrast);
+}
+
+.course-appearance[data-course-typography="editorial"] .display {
+  font-family: var(--font-editorial), Georgia, serif;
+}
+
+.course-appearance[data-course-typography="literary"] .display,
+.course-appearance[data-course-typography="literary"] .reading {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.course-appearance[data-course-typography="modern"] .display,
+.course-appearance[data-course-typography="modern"] .reading {
+  font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+.course-appearance[data-course-typography="modern"] .display {
+  font-weight: 650;
+  letter-spacing: -0.045em;
+}
+
+.course-appearance[data-course-typography="clear"] .display,
+.course-appearance[data-course-typography="clear"] .reading {
+  font-family: Verdana, Arial, sans-serif;
+  letter-spacing: -0.018em;
+}
+
+.course-appearance[data-course-typography="clear"] .reading {
+  line-height: 1.85;
+}
+
+.course-appearance[data-course-reading-width="focused"] .reading-measure {
+  width: min(100%, 38rem);
+}
+
+.course-appearance[data-course-reading-width="balanced"] .reading-measure {
+  width: min(100%, 43rem);
+}
+
+.course-appearance[data-course-reading-width="wide"] .reading-measure {
+  width: min(100%, 48rem);
+}
+
+.course-appearance[data-course-atmosphere="quiet"] [data-atmospheric-detail="optional"] {
+  display: none;
+}
+
 .screen-reader-text {
   position: absolute;
   width: 1px;

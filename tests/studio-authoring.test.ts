@@ -102,6 +102,24 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
     expect(firstSourceVersionId).not.toBe(firstCurrent);
   });
 
+  it("versions appearance choices inside the authorized course draft", async () => {
+    const appearance = {
+      template: "modern-atlas" as const,
+      worldTheme: "knowledge-city" as const,
+      typography: "modern" as const,
+      surface: "ivory" as const,
+      accent: "teal" as const,
+      atmosphere: "quiet" as const,
+      readingWidth: "balanced" as const,
+    };
+    const updated = await studio.updateCourseAppearance(ownerId, courseId, appearance);
+    expect(updated.appearance).toEqual(appearance);
+    expect((await studio.getCourseStudio(ownerId, courseId)).version.appearance).toEqual(appearance);
+    await expect(studio.updateCourseAppearance(outsiderId, courseId, appearance)).rejects.toMatchObject({
+      reason: "membership_required",
+    });
+  });
+
   it("adds, edits and reorders validated blocks with optimistic revisions", async () => {
     const studioData = await studio.getCourseStudio(ownerId, courseId);
     const sourceVersionId = String((studioData.sources[0] as { source_version_id: string }).source_version_id);

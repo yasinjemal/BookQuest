@@ -5,12 +5,18 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import CompletionMoment from "@/components/CompletionMoment";
+import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import LessonBlock from "@/components/LessonBlock";
 import Loading from "@/components/Loading";
 import type { Card } from "@/lib/schemas";
 import type { QuizAnswerResult } from "@/lib/learning-types";
 import { flushAnswerOutbox, setAnswerOutboxAccount, startAnswerOutboxSync, submitAnswer, submitLessonCompletion } from "@/lib/answer-outbox";
+import {
+  COURSE_ACCENT_HEX,
+  DEFAULT_COURSE_APPEARANCE,
+  type CourseAppearance,
+} from "@/lib/course-appearance";
 
 interface LessonData {
   id: number;
@@ -19,7 +25,7 @@ interface LessonData {
   cards: Card[];
   answerSessionId: string;
   viewerId: number;
-  course: { id: number; title: string };
+  course: { id: number; title: string; appearance: CourseAppearance };
   moduleTitle: string;
   position: number;
   totalLessons: number;
@@ -96,25 +102,26 @@ export default function LessonPage() {
 
   if (finished) {
     const score = quizIndexes.filter((quizIndex) => results[quizIndex]?.correct).length;
-    return <CompletionMoment course={lesson.course} lessonId={lesson.id} lessonTitle={lesson.title} nextLessonId={lesson.nextLessonId} score={score} total={quizIndexes.length} xp={finished.xp} streak={finished.streak} certificateId={finished.certificateId} concepts={discoveredConcepts(lesson.cards)} />;
+    return <CompletionMoment course={lesson.course} appearance={lesson.course.appearance} lessonId={lesson.id} lessonTitle={lesson.title} nextLessonId={lesson.nextLessonId} score={score} total={quizIndexes.length} xp={finished.xp} streak={finished.streak} certificateId={finished.certificateId} concepts={discoveredConcepts(lesson.cards)} />;
   }
 
   if (lesson.cards.length === 0) return <div className="min-h-dvh bg-paper px-6 py-20 text-center"><h1 className="display text-4xl">This lesson is still being shaped.</h1><Link href={`/course/${lesson.course.id}`} className="btn-primary mt-6">Return to the journey</Link></div>;
 
   const card = lesson.cards[index];
+  const appearance = lesson.course.appearance ?? DEFAULT_COURSE_APPEARANCE;
   const progress = Math.round(((index + 1) / lesson.cards.length) * 100);
   const quizUnanswered = card.type.startsWith("quiz_") && results[index] === undefined;
 
   return (
-    <div className="min-h-dvh bg-paper">
-      <header className="sticky top-0 z-30 border-b border-line bg-paper/92 px-3 py-3 backdrop-blur-xl sm:px-6" aria-label="Lesson progress">
+    <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
+      <header className="sticky top-0 z-30 border-b border-[var(--course-line)] bg-[color-mix(in_srgb,var(--course-page)_92%,transparent)] px-3 py-3 backdrop-blur-xl sm:px-6" aria-label="Lesson progress">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link href={`/course/${lesson.course.id}`} className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line text-ink-soft hover:bg-card" aria-label={`Exit lesson and return to ${lesson.course.title}`}><span aria-hidden="true">×</span></Link>
-          <div className="min-w-0 flex-1"><div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold text-ink-soft"><span className="truncate">{lesson.moduleTitle}</span><span>{index + 1}/{lesson.cards.length}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-label={`Progress through ${lesson.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-teal transition-[width] duration-300" style={{ width: `${progress}%` }} /></div></div>
+          <div className="min-w-0 flex-1"><div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold text-ink-soft"><span className="truncate">{lesson.moduleTitle}</span><span>{index + 1}/{lesson.cards.length}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-label={`Progress through ${lesson.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-[var(--course-accent)] transition-[width] duration-300" style={{ width: `${progress}%` }} /></div></div>
         </div>
       </header>
 
-      {index === 0 ? <section className="relative min-h-[19rem] overflow-hidden bg-pine text-white sm:min-h-[23rem]" aria-labelledby="lesson-title"><CourseWorld seed={`${lesson.course.id}:${lesson.id}`} title={lesson.title} progress={0} mood="bright" className="absolute inset-0" /><div className="absolute inset-0 bg-gradient-to-t from-pine via-pine/40 to-transparent" aria-hidden="true" /><div className="relative mx-auto flex min-h-[19rem] max-w-5xl flex-col justify-end px-5 py-8 sm:min-h-[23rem] sm:px-8 sm:py-10"><p className="text-[10px] font-bold uppercase tracking-[0.17em] text-signal">{lesson.course.title} · Lesson {lesson.position} of {lesson.totalLessons}</p><h1 id="lesson-title" className="display mt-3 max-w-3xl text-[clamp(3rem,11vw,5.8rem)] leading-[0.88]">{lesson.title}</h1><p className="mt-4 text-sm text-white/70">{lesson.moduleTitle}</p></div></section> : <div className="mx-auto max-w-3xl px-5 pt-8 sm:px-8"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-soft">{lesson.title} · {lesson.moduleTitle}</p></div>}
+      {index === 0 ? <section className="relative min-h-[19rem] overflow-hidden bg-pine text-white sm:min-h-[23rem]" aria-labelledby="lesson-title"><CourseWorld seed={`${lesson.course.id}:${lesson.id}`} title={lesson.title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={0} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="absolute inset-0" /><div className="absolute inset-0 bg-gradient-to-t from-pine via-pine/40 to-transparent" aria-hidden="true" /><div className="relative mx-auto flex min-h-[19rem] max-w-5xl flex-col justify-end px-5 py-8 sm:min-h-[23rem] sm:px-8 sm:py-10"><p className="course-accent-text text-[10px] font-bold uppercase tracking-[0.17em]">{lesson.course.title} · Lesson {lesson.position} of {lesson.totalLessons}</p><h1 id="lesson-title" className="display mt-3 max-w-3xl text-[clamp(3rem,11vw,5.8rem)] leading-[0.88]">{lesson.title}</h1><p className="mt-4 text-sm text-white/70">{lesson.moduleTitle}</p></div></section> : <div className="mx-auto max-w-3xl px-5 pt-8 sm:px-8"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-soft">{lesson.title} · {lesson.moduleTitle}</p></div>}
 
       <div className="reading-measure px-4 py-8 sm:px-6 sm:py-11">
         <div key={index} className="slide-up"><LessonBlock card={card} onAnswered={(result) => {
@@ -129,6 +136,6 @@ export default function LessonPage() {
         {quizUnanswered && <p className="mt-3 text-center text-xs text-ink-soft">Choose an answer before continuing.</p>}
         {finishError && <p role="alert" className="mt-3 rounded-xl bg-no-soft px-4 py-3 text-center text-sm font-semibold text-no">{finishError}</p>}
       </div>
-    </div>
+    </CourseAppearanceFrame>
   );
 }

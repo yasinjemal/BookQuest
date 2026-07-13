@@ -4,9 +4,16 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import AppIcon from "@/components/AppIcon";
+import CourseAppearanceEditor from "@/components/CourseAppearanceEditor";
+import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
+import {
+  COURSE_ACCENT_HEX,
+  DEFAULT_COURSE_APPEARANCE,
+  type CourseAppearance,
+} from "@/lib/course-appearance";
 
 interface LessonNode {
   id: number;
@@ -31,6 +38,7 @@ interface CourseData {
     isOwner: boolean;
     published: number;
     category: string;
+    appearance: CourseAppearance;
   };
   modules: ModuleData[];
 }
@@ -103,10 +111,13 @@ export default function CoursePathPage() {
     ? Math.round((completedLessons / allLessons.length) * 100)
     : 0;
 
+  const appearance = data.course.appearance ?? DEFAULT_COURSE_APPEARANCE;
+
   return (
-    <div className="page-wrap max-w-6xl">
+    <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
+    <div className="page-wrap mx-auto max-w-6xl">
       <header className="mb-6 grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
-        <CourseWorld seed={data.course.id} title={data.course.title} progress={courseProgress} mood="bright" className="min-h-64 sm:min-h-80 lg:min-h-[27rem]" />
+        <CourseWorld seed={data.course.id} title={data.course.title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={courseProgress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="min-h-64 sm:min-h-80 lg:min-h-[27rem]" />
         <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
           <Link href="/" className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/65 hover:text-white"><span aria-hidden="true">←</span> Your worlds</Link>
           <p className="mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Learning journey</p>
@@ -114,7 +125,7 @@ export default function CoursePathPage() {
           <p className="mt-4 max-w-2xl text-sm leading-6 text-white/70">{data.course.description}</p>
           <div className="mt-7">
             <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/65"><span>{completedLessons} of {allLessons.length} lessons discovered</span><span>{courseProgress}%</span></div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${data.course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={courseProgress}><div className="h-full rounded-full bg-signal" style={{ width: `${courseProgress}%` }} /></div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${data.course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={courseProgress}><div className="course-accent-bg h-full rounded-full" style={{ width: `${courseProgress}%` }} /></div>
           </div>
         </div>
         {["extracting", "outlining", "generating"].includes(
@@ -167,9 +178,22 @@ export default function CoursePathPage() {
           </section>
         )}
 
+      {data.course.isOwner && data.course.status === "ready" && (
+        <CourseAppearanceEditor
+          courseId={data.course.id}
+          courseTitle={data.course.title}
+          value={appearance}
+          onSaved={(nextAppearance) => setData((current) => current ? {
+            ...current,
+            course: { ...current.course, appearance: nextAppearance },
+          } : current)}
+        />
+      )}
+
       {data.course.isOwner && <div className="mb-6 flex justify-end"><button onClick={remove} className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-no hover:bg-no-soft" aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>}
 
-      <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} />
+      <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />
     </div>
+    </CourseAppearanceFrame>
   );
 }

@@ -7,6 +7,11 @@ import {
   type BlockType,
   validateBlockContent,
 } from "./block-registry";
+import {
+  parseCourseAppearance,
+  serializeCourseAppearance,
+  type CourseAppearance,
+} from "./course-appearance";
 
 export type SourceKind =
   | "pdf"
@@ -532,8 +537,9 @@ export async function branchCourseVersionForRegeneration(
         await exec.query<{
           source_collection_version_id: string | null;
           recipe_version_id: string | null;
+          appearance_json: string;
         }>(
-          `SELECT source_collection_version_id, recipe_version_id
+          `SELECT source_collection_version_id, recipe_version_id, appearance_json
            FROM course_versions WHERE id = $1`,
           [parentId]
         )
@@ -546,9 +552,9 @@ export async function branchCourseVersionForRegeneration(
       `INSERT INTO course_versions
         (course_id, version_number, parent_version_id, lifecycle_status,
          title, description, source_collection_version_id, recipe_version_id,
-         outline_json, content_json, content_hash, created_by_user_id,
-         created_at, updated_at)
-       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, '{}', $8, $9, $10, $11, $11)
+         appearance_json, outline_json, content_json, content_hash,
+         created_by_user_id, created_at, updated_at)
+       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, '{}', $9, $10, $11, $12, $12)
        RETURNING id`,
       [
         courseId,
@@ -556,11 +562,12 @@ export async function branchCourseVersionForRegeneration(
         parentId,
         course.title,
         course.description,
-        parent?.source_collection_version_id ?? null,
-        parent?.recipe_version_id ?? null,
-        emptyContent,
-        hash(emptyContent),
-        course.owner_id,
+         parent?.source_collection_version_id ?? null,
+         parent?.recipe_version_id ?? null,
+         parent?.appearance_json ?? "{}",
+         emptyContent,
+         hash(emptyContent),
+         course.owner_id,
         createdAt,
       ]
     )
@@ -1015,7 +1022,7 @@ export async function getCourseStudio(userId: number, courseId: number) {
     const version = (
       await client.query(
         `SELECT id, course_id, version_number, parent_version_id,
-                lifecycle_status, title, description, outline_json,
+                lifecycle_status, title, description, appearance_json, outline_json,
                 source_collection_version_id, recipe_version_id,
                 created_at, updated_at
          FROM course_versions WHERE id = $1`,
@@ -1066,12 +1073,49 @@ export async function getCourseStudio(userId: number, courseId: number) {
     ).rows;
     return {
       course,
-      version,
+      version: { ...version, appearance: parseCourseAppearance(version.appearance_json) },
       versions,
       reviews,
       comments,
       sources,
       blocks: await readStudioBlocks(client, versionId),
+    };
+  });
+}
+
+export async function updateCourseAppearance(
+  userId: number,
+  courseId: number,
+  appearance: CourseAppearance
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) {
+      throw new StudioConflictError("Create a new draft before changing this course appearance");
+    }
+    const version = (
+      await client.query<{ id: string; version_number: number; lifecycle_status: string }>(
+        "SELECT id, version_number, lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (!version || version.lifecycle_status !== "draft") {
+      throw new StudioConflictError("This course version is in review and its appearance is locked");
+    }
+    const appearanceJson = serializeCourseAppearance(appearance);
+    const at = nowIso();
+    await client.query(
+      "UPDATE course_versions SET appearance_json = $2, updated_at = $3 WHERE id = $1",
+      [version.id, appearanceJson, at]
+    );
+    await client.query(
+      "UPDATE courses SET appearance_json = $2 WHERE id = $1 AND published = 0",
+      [courseId, appearanceJson]
+    );
+    return {
+      appearance: parseCourseAppearance(appearanceJson),
+      versionId: version.id,
+      versionNumber: version.version_number,
     };
   });
 }
@@ -1828,6 +1872,7 @@ export async function branchPublishedCourseVersion(
         outline_json: string;
         content_json: string;
         content_hash: string;
+        appearance_json: string;
       }>(
         `SELECT * FROM course_versions
          WHERE id = $1 AND course_id = $2
@@ -1848,14 +1893,14 @@ export async function branchPublishedCourseVersion(
       await client.query<{ id: string }>(
         `INSERT INTO course_versions
           (course_id, version_number, parent_version_id, lifecycle_status, title,
-           description, source_collection_version_id, recipe_version_id, outline_json,
-           content_json, content_hash, created_by_user_id)
-         VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11)
+            description, source_collection_version_id, recipe_version_id, outline_json,
+            content_json, content_hash, appearance_json, created_by_user_id)
+          VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id`,
         [
           courseId, nextVersion, sourceVersionId, parent.title, parent.description,
-          parent.source_collection_version_id, parent.recipe_version_id, parent.outline_json,
-          parent.content_json, parent.content_hash, userId,
+           parent.source_collection_version_id, parent.recipe_version_id, parent.outline_json,
+           parent.content_json, parent.content_hash, parent.appearance_json, userId,
         ]
       )
     ).rows[0];
@@ -1932,8 +1977,8 @@ export async function archiveCourseDraftVersion(userId: number, courseId: number
 export async function diffCourseVersions(userId: number, courseId: number, baseId: string, compareId: string) {
   return tx(async (client) => {
     await authorizeCourseStudio(client, userId, courseId, "content.read");
-    const versions = await client.query<{ id: string }>(
-      "SELECT id FROM course_versions WHERE course_id = $1 AND id = ANY($2::text[])",
+    const versions = await client.query<{ id: string; appearance_json: string }>(
+      "SELECT id, appearance_json FROM course_versions WHERE course_id = $1 AND id = ANY($2::text[])",
       [courseId, [baseId, compareId]]
     );
     if (versions.rowCount !== 2 || baseId === compareId) throw new StudioConflictError("Choose two versions from this course");
@@ -1948,12 +1993,16 @@ export async function diffCourseVersions(userId: number, courseId: number, baseI
       return previous && JSON.stringify({ content: previous.content, position: previous.position, lesson: previous.lessonKey }) !==
         JSON.stringify({ content: block.content, position: block.position, lesson: block.lessonKey });
     });
+    const appearanceByVersion = new Map(
+      versions.rows.map((version) => [version.id, parseCourseAppearance(version.appearance_json)])
+    );
     return {
       baseVersionId: baseId,
       compareVersionId: compareId,
       added: added.map((block) => block.lineageId),
       removed: removed.map((block) => block.lineageId),
       changed: changed.map((block) => block.lineageId),
+      appearanceChanged: JSON.stringify(appearanceByVersion.get(baseId)) !== JSON.stringify(appearanceByVersion.get(compareId)),
     };
   });
 }
@@ -1967,8 +2016,8 @@ export async function publishApprovedCourseVersion(
     const course = await authorizeCourseStudio(client, userId, courseId, "content.publish");
     if (!course.current_draft_version_id) throw new StudioConflictError("Approved version not found");
     const version = (
-      await client.query<{ id: string; version_number: number; lifecycle_status: string; title: string; description: string }>(
-        "SELECT id, version_number, lifecycle_status, title, description FROM course_versions WHERE id = $1 FOR UPDATE",
+      await client.query<{ id: string; version_number: number; lifecycle_status: string; title: string; description: string; appearance_json: string }>(
+        "SELECT id, version_number, lifecycle_status, title, description, appearance_json FROM course_versions WHERE id = $1 FOR UPDATE",
         [course.current_draft_version_id]
       )
     ).rows[0];
@@ -2038,9 +2087,10 @@ export async function publishApprovedCourseVersion(
     await client.query(
       `UPDATE courses SET title = $2, description = $3, category = $4,
          content_version = $5, published = 1, authoring_status = 'published',
-         published_version_id = $6, current_draft_version_id = NULL, status = 'ready'
+         published_version_id = $6, current_draft_version_id = NULL, status = 'ready',
+         appearance_json = $7
        WHERE id = $1`,
-      [courseId, version.title, version.description, category, version.version_number, version.id]
+      [courseId, version.title, version.description, category, version.version_number, version.id, version.appearance_json]
     );
     return { versionId: version.id, versionNumber: version.version_number, publishedAt: at };
   });

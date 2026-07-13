@@ -8,6 +8,7 @@ import {
   listModules,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
+import { parseCourseAppearance } from "@/lib/course-appearance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,11 @@ export async function GET(
     cards: JSON.parse(lesson.cards),
     answerSessionId: answerSession?.id,
     viewerId: user.id,
-    course: { id: lesson.course_id, title: course?.title ?? "Course" },
+    course: {
+      id: lesson.course_id,
+      title: course?.title ?? "Course",
+      appearance: parseCourseAppearance(course?.appearance_json),
+    },
     moduleTitle: lessonLocations[lessonPosition]?.moduleTitle ?? "Current region",
     position: lessonPosition >= 0 ? lessonPosition + 1 : 1,
     totalLessons: lessonLocations.length,

@@ -1,7 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import AppIcon from "@/components/AppIcon";
+import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld, { type WorldTheme } from "@/components/CourseWorld";
+import {
+  COURSE_ACCENT_HEX,
+  DEFAULT_COURSE_APPEARANCE,
+  type CourseAppearance,
+} from "@/lib/course-appearance";
 
 export default function CourseGalleryCard({
   id,
@@ -14,6 +20,7 @@ export default function CourseGalleryCard({
   progress,
   status,
   theme,
+  appearance,
   action,
   className = "",
 }: {
@@ -27,14 +34,17 @@ export default function CourseGalleryCard({
   progress?: number;
   status?: string;
   theme?: WorldTheme | string;
+  appearance?: CourseAppearance;
   action?: ReactNode;
   className?: string;
 }) {
   const safeProgress = progress === undefined ? undefined : Math.min(100, Math.max(0, progress));
+  const resolvedAppearance = appearance ?? DEFAULT_COURSE_APPEARANCE;
   return (
-    <article className={`group overflow-hidden rounded-[1.4rem] border border-line bg-card shadow-card transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-line-deep hover:shadow-pop ${className}`}>
+    <CourseAppearanceFrame appearance={resolvedAppearance} className="h-full rounded-[1.4rem]">
+    <article className={`group h-full overflow-hidden rounded-[1.4rem] border border-line bg-card shadow-card transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-line-deep hover:shadow-pop ${className}`}>
       <Link href={`/course/${id}`} aria-label={`Open ${title}`} className="relative block min-h-44 overflow-hidden">
-        <CourseWorld seed={id} title={title} theme={theme} progress={safeProgress ?? 0} className="absolute inset-0" />
+        <CourseWorld seed={id} title={title} theme={theme ?? resolvedAppearance.worldTheme} accent={COURSE_ACCENT_HEX[resolvedAppearance.accent]} progress={safeProgress ?? 0} mood={resolvedAppearance.atmosphere === "full" ? "bright" : "calm"} className="absolute inset-0" />
         <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-2 p-4">
           {category && <span className="rounded-full border border-white/15 bg-pine/55 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-white backdrop-blur-sm">{category}</span>}
           {status && <span className="rounded-full bg-ivory/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-ink">{status.replaceAll("_", " ")}</span>}
@@ -52,11 +62,12 @@ export default function CourseGalleryCard({
         {safeProgress !== undefined && <div className="mt-4">
           <div className="mb-2 flex items-center justify-between gap-4 text-[11px] font-semibold text-ink-soft"><span>{safeProgress === 100 ? "Journey complete" : "Distance travelled"}</span><span>{safeProgress}%</span></div>
           <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-label={`Progress through ${title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={safeProgress}>
-            <div className="h-full rounded-full bg-teal" style={{ width: `${safeProgress}%` }} />
+            <div className="h-full rounded-full bg-[var(--course-accent)]" style={{ width: `${safeProgress}%` }} />
           </div>
         </div>}
         {action && <div className="mt-5 border-t border-line pt-4">{action}</div>}
       </div>
     </article>
+    </CourseAppearanceFrame>
   );
 }
