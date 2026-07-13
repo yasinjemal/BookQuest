@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import AppIcon from "@/components/AppIcon";
+import CourseWorld from "@/components/CourseWorld";
+import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
 
 interface LessonNode {
@@ -94,67 +97,58 @@ export default function CoursePathPage() {
     return <p className="p-8 text-center text-ink-soft">Course not found.</p>;
   if (!data) return <Loading />;
 
-  // First not-completed lesson across the whole course is the "current" node
-  let currentFound = false;
+  const allLessons = data.modules.flatMap((module) => module.lessons);
+  const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
+  const courseProgress = allLessons.length > 0
+    ? Math.round((completedLessons / allLessons.length) * 100)
+    : 0;
 
   return (
-    <div className="page-wrap max-w-5xl">
-      <header className="paper-card mb-8 p-6 sm:p-8">
-        <Link href="/" className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">
-          ← Courses
-        </Link>
-        <div className="mt-7 flex items-start justify-between gap-4">
-          <div>
-            <p className="section-label mb-3">Learning path</p>
-            <h1 className="page-heading max-w-3xl leading-[0.95]">
-              {data.course.title}
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">{data.course.description}</p>
+    <div className="page-wrap max-w-6xl">
+      <header className="mb-6 grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
+        <CourseWorld seed={data.course.id} title={data.course.title} progress={courseProgress} mood="bright" className="min-h-64 sm:min-h-80 lg:min-h-[27rem]" />
+        <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
+          <Link href="/" className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/65 hover:text-white"><span aria-hidden="true">←</span> Your worlds</Link>
+          <p className="mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Learning journey</p>
+          <h1 className="display mt-3 text-[clamp(2.8rem,9vw,5.2rem)] leading-[0.9]">{data.course.title}</h1>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/70">{data.course.description}</p>
+          <div className="mt-7">
+            <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/65"><span>{completedLessons} of {allLessons.length} lessons discovered</span><span>{courseProgress}%</span></div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${data.course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={courseProgress}><div className="h-full rounded-full bg-signal" style={{ width: `${courseProgress}%` }} /></div>
           </div>
-          {data.course.isOwner && (
-            <button
-              onClick={remove}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-sm text-ink-soft hover:border-no hover:text-no"
-              aria-label="Delete course"
-            >
-              ×
-            </button>
-          )}
         </div>
         {["extracting", "outlining", "generating"].includes(
           data.course.status
         ) && (
-          <div className="mt-3 rounded-xl bg-primary/10 text-primary-deep text-sm font-semibold px-3 py-2 flex items-center gap-2">
+          <div className="col-span-full flex items-center gap-2 border-t border-white/10 bg-white/5 px-6 py-4 text-sm font-semibold text-white/80">
             <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse" />
             Still writing lessons — new ones appear below as they finish.
           </div>
         )}
+      </header>
 
-        {/* Owner publish controls */}
-        {data.course.isOwner && data.course.status === "ready" && (
-          <div className="mt-5 rounded-2xl border border-line bg-paper/70 px-4 py-4">
-            <Link href={`/studio/${id}`} className="mb-3 block rounded-full bg-ink py-2.5 text-center text-sm font-bold text-white transition-transform hover:-translate-y-0.5">
-              Edit in Studio ↗
+      {data.course.isOwner && data.course.status === "ready" && (
+          <section className="mb-8 rounded-[1.35rem] border border-line bg-card p-4 shadow-card sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-5" aria-label="Course publishing controls">
+            <div className="mb-4 sm:mb-0"><p className="section-label">Creator controls</p><p className="mt-1 text-sm text-ink-soft">Edit the source-linked draft or manage who can enter this world.</p></div>
+            <div className="flex flex-col gap-2 sm:min-w-72 sm:flex-row">
+            <Link href={`/studio/${id}`} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5">
+              Edit in Studio <AppIcon name="arrow" className="h-4 w-4" />
             </Link>
             {data.course.published ? (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-teal">
-                  🌍 Published — anyone can learn from this course
-                </span>
                 <button
                   onClick={() => togglePublish(false)}
                   disabled={publishing}
-                  className="shrink-0 text-xs font-bold text-ink-soft border border-line rounded-lg px-3 py-1.5"
+                  className="min-h-11 shrink-0 rounded-full border border-line-deep px-4 py-2.5 text-xs font-bold text-ink-soft"
                 >
                   Unpublish
                 </button>
-              </div>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 gap-2">
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="flex-1 min-w-0 rounded-lg border border-line bg-paper px-2 py-2 text-sm font-semibold"
+                  aria-label="Course category"
+                  className="min-w-0 flex-1 rounded-full border border-line-deep bg-paper px-3 py-2 text-sm font-semibold"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c}>{c}</option>
@@ -163,80 +157,19 @@ export default function CoursePathPage() {
                 <button
                   onClick={() => togglePublish(true)}
                   disabled={publishing}
-                  className="shrink-0 text-xs font-bold text-white bg-teal rounded-lg px-3 py-2 active:scale-95 transition"
+                  className="min-h-11 shrink-0 rounded-full bg-teal px-4 py-2 text-xs font-bold text-white transition active:scale-95"
                 >
-                  {publishing ? "…" : "🌍 Publish"}
+                  {publishing ? "Publishing…" : "Publish"}
                 </button>
               </div>
             )}
-          </div>
-        )}
-      </header>
-
-      <div className="space-y-8 pb-8">
-        {data.modules.map((m, mi) => (
-          <section key={m.id}>
-            <div className="rounded-xl bg-teal/10 border border-teal/20 px-4 py-3 mb-5">
-              <h2 className="font-bold text-teal">
-                Unit {mi + 1}: {m.title}
-              </h2>
-              <p className="text-xs text-ink-soft">{m.summary}</p>
-              {(m.status === "pending" || m.status === "generating") && (
-                <p className="text-xs font-semibold text-primary-deep mt-1">
-                  ✍️ Writing…
-                </p>
-              )}
-              {m.status === "error" && (
-                <p className="text-xs font-semibold text-no mt-1">
-                  Couldn&apos;t generate this unit.
-                </p>
-              )}
-            </div>
-
-            <div className="flex flex-col items-center gap-4">
-              {m.lessons.map((l, li) => {
-                const isCurrent = !l.completed && !currentFound;
-                if (isCurrent) currentFound = true;
-                const locked = !l.completed && !isCurrent;
-                // zig-zag path offsets
-                const offset = [0, 36, 0, -36][li % 4];
-                const node = (
-                  <div
-                    className="flex flex-col items-center"
-                    style={{ transform: `translateX(${offset}px)` }}
-                  >
-                    <div
-                      className={`h-16 w-16 rounded-full flex items-center justify-center text-2xl shadow-card border-b-4 transition ${
-                        l.completed
-                          ? "bg-go text-white border-go-deep"
-                          : isCurrent
-                            ? "bg-primary text-white border-primary-deep pop-in"
-                            : "bg-line text-ink-soft border-line-deep"
-                      }`}
-                    >
-                      {l.completed ? "✓" : isCurrent ? "★" : "🔒"}
-                    </div>
-                    <span
-                      className={`mt-1 text-xs font-semibold max-w-32 text-center leading-tight ${
-                        locked ? "text-ink-soft/60" : "text-ink"
-                      }`}
-                    >
-                      {l.title}
-                    </span>
-                  </div>
-                );
-                return locked ? (
-                  <div key={l.id}>{node}</div>
-                ) : (
-                  <Link key={l.id} href={`/lesson/${l.id}`} className="active:scale-95 transition">
-                    {node}
-                  </Link>
-                );
-              })}
             </div>
           </section>
-        ))}
-      </div>
+        )}
+
+      {data.course.isOwner && <div className="mb-6 flex justify-end"><button onClick={remove} className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-no hover:bg-no-soft" aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>}
+
+      <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} />
     </div>
   );
 }

@@ -365,16 +365,16 @@ export default function SpacePage() {
       <div className="premium-panel mb-8 p-7 sm:p-10">
         <Link
           href="/spaces"
-          className="relative z-10 text-xs font-bold uppercase tracking-[0.15em] text-white/45 hover:text-white"
+          className="relative z-10 text-xs font-bold uppercase tracking-[0.15em] text-white/75 hover:text-white"
         >
           ← Spaces
         </Link>
-        <h1 className="relative z-10 mt-7 font-display text-5xl leading-[0.9] text-white sm:text-7xl">{data.space.name}</h1>
+        <h1 className="relative z-10 mt-7 break-words font-display text-[clamp(3rem,11vw,4.5rem)] leading-[0.9] text-white">{data.space.name}</h1>
         <p className="relative z-10 mt-4 text-[10px] font-bold uppercase tracking-[0.14em] text-signal">
           {data.space.type} · {data.membership.role} · {data.space.status}
         </p>
         {data.space.description && (
-          <p className="relative z-10 mt-4 max-w-2xl text-sm leading-6 text-white/50">{data.space.description}</p>
+          <p className="relative z-10 mt-4 max-w-2xl text-sm leading-6 text-white/75">{data.space.description}</p>
         )}
       </div>
       <nav aria-label="Space sections" className="flex w-fit gap-1 rounded-full border border-line bg-card p-1 shadow-card">
@@ -406,6 +406,7 @@ export default function SpacePage() {
         >
           <h2 className="font-bold">Invite a member</h2>
           <input
+            aria-label="Existing account email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -413,6 +414,7 @@ export default function SpacePage() {
             className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5"
           />
           <select
+            aria-label="Member role"
             value={role}
             onChange={(e) => setRole(e.target.value)}
             className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5"
@@ -445,6 +447,7 @@ export default function SpacePage() {
         >
           <h2 className="font-bold">Create controlled assignment</h2>
           <select
+            aria-label="Course to assign"
             value={courseId}
             onChange={(e) => setCourseId(e.target.value)}
             className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5"
@@ -456,7 +459,7 @@ export default function SpacePage() {
               </option>
             ))}
           </select>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="text-xs text-ink-soft">
               Start
               <input
@@ -495,7 +498,7 @@ export default function SpacePage() {
               />
             </label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label className="text-xs text-ink-soft">
               Minimum score %
               <input
@@ -518,7 +521,7 @@ export default function SpacePage() {
               />
             </label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <select
               aria-label="Audience type"
               value={audienceType}
@@ -568,12 +571,14 @@ export default function SpacePage() {
               Advanced evidence requirements
             </summary>
             <input
+              aria-label="Required attestation block lineage IDs"
               value={attestationIds}
               onChange={(e) => setAttestationIds(e.target.value)}
               placeholder="Attestation block lineage IDs, comma separated"
               className="mt-3 w-full rounded-lg border border-line bg-paper p-2 text-sm"
             />
             <input
+              aria-label="Required practical block lineage IDs"
               value={practicalIds}
               onChange={(e) => setPracticalIds(e.target.value)}
               placeholder="Practical block lineage IDs, comma separated"
@@ -606,6 +611,7 @@ export default function SpacePage() {
           </div>
           <div className="flex gap-2">
             <input
+              aria-label="New team name"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
               placeholder="New team name"
@@ -633,6 +639,7 @@ export default function SpacePage() {
             One existing account per line: email, role
           </p>
           <textarea
+            aria-label="Bulk invitations"
             value={bulkInvites}
             onChange={(e) => setBulkInvites(e.target.value)}
             rows={4}
@@ -672,6 +679,7 @@ export default function SpacePage() {
               className="h-11 w-16 rounded-lg border border-line bg-paper p-1"
             />
             <input
+              aria-label="Brand logo URL"
               value={brandLogo}
               onChange={(e) => setBrandLogo(e.target.value)}
               placeholder="Logo URL (optional)"
@@ -698,7 +706,7 @@ export default function SpacePage() {
           className="mt-4 space-y-3 border-t border-line pt-4"
         >
           <h2 className="font-bold">Organization security policy</h2>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <label className="text-xs text-ink-soft">
               Password length
               <input type="number" min="8" max="128" value={passwordLength} onChange={(event) => setPasswordLength(event.target.value)} className="mt-1 w-full rounded-lg border border-line bg-paper p-2 text-sm" />
@@ -712,7 +720,7 @@ export default function SpacePage() {
               <input type="number" min="30" max="3650" value={retentionDays} onChange={(event) => setRetentionDays(event.target.value)} className="mt-1 w-full rounded-lg border border-line bg-paper p-2 text-sm" />
             </label>
           </div>
-          <input value={mfaRoles} onChange={(event) => setMfaRoles(event.target.value)} placeholder="Roles requiring MFA, comma separated" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5 text-sm" />
+          <input aria-label="Roles requiring MFA" value={mfaRoles} onChange={(event) => setMfaRoles(event.target.value)} placeholder="Roles requiring MFA, comma separated" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5 text-sm" />
           <p className="text-xs text-ink-soft">Policy publication revokes current organization sessions. MFA requirements can activate only after every affected member enrolls.</p>
           <button className="w-full rounded-xl bg-ink text-white font-bold py-2.5">Publish policy version</button>
         </form>
@@ -724,7 +732,7 @@ export default function SpacePage() {
         <form onSubmit={createSpaceHold} className="mt-4 space-y-3 border-t border-line pt-4">
           <h2 className="font-bold">Legal hold</h2>
           <p className="text-xs text-ink-soft">A Space-wide hold blocks deletion scheduling and records the reason immutably.</p>
-          <input value={holdReason} onChange={(event) => setHoldReason(event.target.value)} placeholder="Reason and authority" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5" />
+          <input aria-label="Legal hold reason and authority" value={holdReason} onChange={(event) => setHoldReason(event.target.value)} placeholder="Reason and authority" className="w-full rounded-xl border-2 border-line bg-paper px-4 py-2.5" />
           <button disabled={!holdReason.trim()} className="w-full rounded-xl border border-no text-no font-bold py-2.5 disabled:opacity-40">Create Space-wide hold</button>
         </form>
         </details>
@@ -762,10 +770,10 @@ export default function SpacePage() {
             {data.members.map((member) => (
               <div
                 key={member.user_id}
-                className="rounded-xl bg-card border border-line p-3 flex justify-between gap-3"
+                className="flex flex-col gap-3 rounded-xl border border-line bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
-                  <p className="font-semibold truncate">{member.name}</p>
+                  <p className="break-words font-semibold leading-snug">{member.name}</p>
                   <p className="text-xs text-ink-soft capitalize">
                     {member.role} · {member.status}
                   </p>
@@ -773,7 +781,7 @@ export default function SpacePage() {
                 {manages &&
                   member.role !== "owner" &&
                   member.status === "active" && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                       <select
                         aria-label={`Role for ${member.name}`}
                         value={member.role}

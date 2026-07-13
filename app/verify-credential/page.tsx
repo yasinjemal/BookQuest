@@ -37,7 +37,7 @@ export default function VerifyCredentialPage() {
     }
   }
 
-  return <main className="mx-auto max-w-xl px-5 py-12">
+  return <div className="mx-auto max-w-xl px-5 py-12">
     <h1 className="text-3xl font-extrabold">Verify a BookQuest credential</h1>
     <p className="mt-2 text-sm text-ink-soft">Enter the private verification token supplied by the learner. Display codes cannot be searched or enumerated.</p>
     <form onSubmit={verify} className="mt-6 rounded-2xl bg-card border border-line p-4 space-y-3">
@@ -50,6 +50,5 @@ export default function VerifyCredentialPage() {
       <dl className="grid grid-cols-[9rem_1fr] gap-x-3 gap-y-2 text-sm"><dt className="font-semibold text-ink-soft">Learner</dt><dd>{credential.learnerName}</dd><dt className="font-semibold text-ink-soft">Display code</dt><dd>{credential.displayCode}</dd><dt className="font-semibold text-ink-soft">Course version</dt><dd>{credential.course.version}</dd><dt className="font-semibold text-ink-soft">Issued</dt><dd>{new Date(credential.issuedAt).toLocaleString()}</dd><dt className="font-semibold text-ink-soft">Expires</dt><dd>{credential.expiresAt ? new Date(credential.expiresAt).toLocaleString() : "Never"}</dd>{credential.revocationReason && <><dt className="font-semibold text-ink-soft">Revocation</dt><dd>{credential.revocationReason}</dd></>}</dl>
       <details><summary className="cursor-pointer text-sm font-semibold">Evidence binding</summary><code className="mt-2 block break-all rounded-lg bg-paper p-3 text-xs">{credential.evidenceHash}</code></details>
     </section>}
-  </main>;
+  </div>;
 }
-

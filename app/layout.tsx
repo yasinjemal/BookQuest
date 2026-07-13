@@ -21,13 +21,13 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: "BookQuest",
-  description: "Turn trusted documents into clear, evidence-ready learning.",
+  description: "Turn trusted sources into learning worlds people want to return to.",
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "BookQuest", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#10261f",
+  themeColor: "#102F26",
   width: "device-width",
   initialScale: 1,
 };

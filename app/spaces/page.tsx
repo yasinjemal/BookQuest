@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import AppIcon from "@/components/AppIcon";
+import CourseWorld from "@/components/CourseWorld";
+import SpacePlaceCard from "@/components/SpacePlaceCard";
 
-interface SpaceSummary {
-  space: { id: string; name: string; type: string; status: string };
-  membership: { role: string; status: string };
-}
+interface SpaceSummary { space: { id: string; name: string; type: string; status: string }; membership: { role: string; status: string } }
 
 const typeDescription: Record<string, string> = {
-  private: "A private workspace for your own material or a small invited group.",
-  unlisted: "A hidden workspace that people join through a private link.",
-  organization: "A managed workspace with roles, assignments, and audit evidence.",
-  public: "An open learning community anyone can discover.",
+  private: "A private place for a small invited group.",
+  unlisted: "A quiet place people enter through a private link.",
+  organization: "A governed place with roles, assignments, policy, and audit evidence.",
+  public: "An open learning community people can discover.",
 };
 
 export default function SpacesPage() {
@@ -28,6 +28,7 @@ export default function SpacesPage() {
   const load = useCallback(async () => {
     const response = await fetch("/api/spaces");
     if (response.status === 401) return router.push("/login");
+    if (!response.ok) return setError("Your Spaces could not be opened.");
     const data = await response.json();
     setSpaces(data.spaces ?? []);
   }, [router]);
@@ -35,51 +36,25 @@ export default function SpacesPage() {
   useEffect(() => { void load(); }, [load]);
 
   async function create(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
+    event.preventDefault(); setBusy(true); setError("");
     try {
-      const response = await fetch("/api/spaces", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type }),
-      });
+      const response = await fetch("/api/spaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, type }) });
       const data = await response.json();
       if (!response.ok) return setError(data.error ?? "Could not create Space");
       router.push(`/spaces/${data.space.id}`);
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  return <div className="page-wrap">
-    <header className="premium-panel mb-10 flex min-h-64 flex-wrap items-end justify-between gap-8 p-7 sm:p-10">
-      <div className="relative z-10 max-w-xl"><p className="section-label mb-4 text-signal">Shared knowledge</p><h1 className="display text-6xl leading-[0.9] text-white sm:text-7xl">Spaces that keep everything together.</h1><p className="mt-5 text-sm text-white/45">Courses, people, decisions, and evidence—beautifully organized.</p></div>
-      <button type="button" onClick={() => setShowCreate((open) => !open)} className={`relative z-10 ${showCreate ? "inline-flex rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10" : "inline-flex rounded-full bg-signal px-5 py-3 text-sm font-bold text-ink"}`}>{showCreate ? "Cancel" : "New space ↗"}</button>
+  return <div className="page-wrap"><div className="content-measure">
+    <header className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[.9fr_1.1fr]">
+      <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Spaces</p><h1 className="display mt-3 text-[clamp(3.2rem,11vw,6rem)] leading-[0.88]">Every community needs a place of its own.</h1><p className="mt-5 max-w-xl text-sm leading-6 text-white/70">Personal study, private groups, classrooms, organisations, and public communities—each with clear roles and boundaries.</p><button type="button" onClick={() => setShowCreate((open) => !open)} aria-expanded={showCreate} className={`mt-7 inline-flex min-h-12 w-fit items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold ${showCreate ? "border border-white/20 text-white" : "bg-signal text-ink"}`}>{showCreate ? "Close" : "Create a Space"}<AppIcon name={showCreate ? "spaces" : "arrow"} className="h-4 w-4" /></button></div>
+      <CourseWorld seed="shared-places" theme="village" progress={48} className="min-h-64 lg:min-h-[29rem]" />
     </header>
 
-    {showCreate && <form onSubmit={create} className="mb-10 max-w-2xl space-y-4 rounded-[1.75rem] bg-signal p-6 shadow-card sm:p-8">
-      <div><p className="section-label mb-2 text-ink/50">A new home</p><h2 className="display text-4xl">Create a space</h2><p className="mt-2 text-sm text-ink/65">Choose the simplest type that fits how people will join.</p></div>
-      <label className="block text-sm font-medium">Name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Blacksteel Clothing" className="field mt-1.5" /></label>
-      <label className="block text-sm font-medium">Type<select value={type} onChange={(event) => setType(event.target.value)} className="field mt-1.5"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="organization">Organization</option><option value="public">Public</option></select></label>
-      <p className="rounded-xl bg-ink/7 px-4 py-3 text-sm text-ink/65">{typeDescription[type]}</p>
-      <div className="flex justify-end"><button disabled={busy || name.trim().length < 2} className="btn-primary">{busy ? "Creating..." : "Create space"}</button></div>
-      {error && <p role="alert" className="text-sm font-medium text-no">{error}</p>}
-    </form>}
+    {showCreate && <form onSubmit={create} className="mx-auto mt-6 max-w-3xl space-y-6 rounded-[1.6rem] border border-line bg-card p-6 shadow-pop sm:p-8"><div><p className="section-label">A new place</p><h2 className="display mt-2 text-4xl">Create a Space</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Choose the simplest access model that fits how people will join.</p></div><label className="block text-sm font-semibold">Space name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="A name people will recognise" className="field mt-2" /></label><fieldset><legend className="text-sm font-semibold">Space type</legend><div className="mt-3 grid gap-2 sm:grid-cols-2">{Object.entries(typeDescription).map(([value, description]) => <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 ${type === value ? "border-ink bg-ink text-white" : "border-line bg-ivory"}`}><input type="radio" name="space-type" value={value} checked={type === value} onChange={(event) => setType(event.target.value)} className="mt-1" /><span><strong className="block text-sm capitalize">{value === "unlisted" ? "Invite by link" : value}</strong><span className={`mt-1 block text-xs leading-5 ${type === value ? "text-white/65" : "text-ink-soft"}`}>{description}</span></span></label>)}</div></fieldset><div className="flex justify-end"><button disabled={busy || name.trim().length < 2} className="btn-primary">{busy ? "Creating…" : "Create this Space"}<AppIcon name="arrow" className="h-4 w-4" /></button></div></form>}
 
-    <section>
-      <h2 className="section-label mb-4">Your spaces</h2>
-      {spaces === null && <div className="panel text-sm text-ink-soft">Loading spaces...</div>}
-      {spaces?.length === 0 && <div className="panel py-10 text-center"><p className="font-medium">No spaces yet</p><p className="mt-1 text-sm text-ink-soft">Create one when you need to organize courses or invite people.</p></div>}
-      <div className="grid gap-4 md:grid-cols-2">
-        {spaces?.map(({ space, membership }) => <Link key={space.id} href={`/spaces/${space.id}`} className="group paper-card flex min-h-36 items-center gap-4 p-5 transition-all hover:-translate-y-1 hover:shadow-pop sm:p-6">
-          <span className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl font-display text-2xl ${space.type === "organization" ? "bg-signal text-ink" : space.type === "public" ? "bg-sky text-ink" : "bg-ink text-white"}`}>{space.name.slice(0, 2).toUpperCase()}</span>
-          <div className="min-w-0 flex-1"><h3 className="display truncate text-2xl">{space.name}</h3><p className="mt-1 text-[10px] font-bold uppercase tracking-[0.13em] text-ink-soft">{space.type} · {membership.role}</p></div>
-          <span className="grid h-9 w-9 place-items-center rounded-full border border-line text-ink-soft transition-all group-hover:border-ink group-hover:bg-ink group-hover:text-white" aria-hidden="true">↗</span>
-        </Link>)}
-      </div>
-    </section>
-
-    <Link href="/classes" className="mt-8 inline-block text-sm text-ink-soft underline decoration-line-deep underline-offset-4 hover:text-ink">Legacy classes</Link>
-  </div>;
+    {error && <p role="alert" className="mt-6 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
+    <section className="mt-14" aria-labelledby="your-spaces-heading"><div className="mb-5"><p className="section-label">Your places</p><h2 id="your-spaces-heading" className="display mt-2 text-4xl">Communities you belong to</h2></div>{spaces === null && <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((item) => <div key={item} className="h-[23rem] rounded-[1.45rem] skeleton" />)}</div>}{spaces?.length === 0 && <div className="rounded-[1.5rem] border border-line bg-card px-6 py-14 text-center shadow-card"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-sky text-dusk"><AppIcon name="spaces" className="h-5 w-5" /></span><h3 className="display mt-5 text-3xl">No shared places yet.</h3><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-ink-soft">Your personal study Space is created automatically when available.</p></div>}<div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{spaces?.map(({ space, membership }) => <SpacePlaceCard key={space.id} space={space} membership={membership} />)}</div></section>
+    <Link href="/classes" className="mt-10 inline-flex min-h-11 items-center text-sm font-semibold text-ink-soft underline decoration-line-deep underline-offset-4 hover:text-ink">Open legacy classes</Link>
+  </div></div>;
 }

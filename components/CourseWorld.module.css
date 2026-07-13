@@ -1,0 +1,143 @@
+.world {
+  --world-light-x: 72%;
+  position: relative;
+  isolation: isolate;
+  min-height: 9rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at var(--world-light-x) 18%, color-mix(in srgb, var(--world-accent) 54%, transparent) 0 4%, transparent 25%),
+    linear-gradient(155deg, var(--world-sky-top), var(--world-sky-bottom));
+}
+
+.world::before {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    repeating-linear-gradient(112deg, transparent 0 17px, rgb(255 255 255 / 0.025) 18px 19px),
+    linear-gradient(to bottom, transparent 54%, rgb(6 24 19 / 0.18));
+  content: "";
+  pointer-events: none;
+}
+
+.world::after {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 3;
+  height: 45%;
+  background: linear-gradient(to top, rgb(4 18 14 / 0.34), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.artwork {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.72;
+  filter: saturate(0.82) contrast(1.04);
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.light {
+  fill: var(--world-light);
+  opacity: 0.78;
+}
+
+.halo {
+  fill: none;
+  stroke: var(--world-light);
+  stroke-width: 0.7;
+  opacity: 0.25;
+}
+
+.far {
+  fill: var(--world-far);
+  opacity: 0.72;
+}
+
+.middle {
+  fill: var(--world-mid);
+  opacity: 0.9;
+}
+
+.near {
+  fill: var(--world-near);
+}
+
+.detail {
+  fill: none;
+  stroke: color-mix(in srgb, var(--world-light) 75%, white);
+  stroke-width: 0.8;
+  opacity: 0.5;
+}
+
+.trailBase,
+.trailProgress {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 1.4;
+}
+
+.trailBase {
+  stroke: rgb(255 255 255 / 0.22);
+}
+
+.trailProgress {
+  stroke: var(--world-accent);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--world-accent) 52%, transparent));
+  transition: stroke-dashoffset 700ms ease-out;
+}
+
+.spark {
+  fill: var(--world-light);
+  opacity: 0.58;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: breathe 7s ease-in-out infinite alternate;
+}
+
+.spark:nth-of-type(2n) {
+  animation-delay: -2.7s;
+}
+
+.spark:nth-of-type(3n) {
+  animation-delay: -4.4s;
+}
+
+.calm {
+  filter: saturate(0.86);
+}
+
+.bright {
+  filter: saturate(1.08) brightness(1.03);
+}
+
+.dusk {
+  filter: saturate(0.82) brightness(0.88);
+}
+
+@keyframes breathe {
+  from { opacity: 0.28; transform: scale(0.8); }
+  to { opacity: 0.68; transform: scale(1.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spark { animation: none; }
+  .trailProgress { transition: none; }
+}
+
+@media (prefers-reduced-data: reduce) {
+  .world::before,
+  .spark { display: none; }
+  .artwork { display: none; }
+}

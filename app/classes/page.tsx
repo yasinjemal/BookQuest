@@ -140,7 +140,7 @@ export default function ClassesPage() {
           >
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <h3 className="font-bold truncate">
+                <h3 className="break-words font-bold leading-snug">
                   {c.is_owner ? "🧑‍🏫 " : ""}
                   {c.name}
                 </h3>

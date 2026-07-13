@@ -84,15 +84,15 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <Link href="/" className="relative z-10 flex items-center gap-3 font-semibold text-white"><span className="brand-mark text-white" aria-hidden="true" />BookQuest</Link>
           <div className="relative z-10">
             <span className="eyebrow text-signal">Learning, with proof</span>
-            <p className="display mt-7 text-6xl leading-[0.9] text-white">Make useful knowledge <em className="text-signal">last.</em></p>
-            <p className="mt-6 max-w-sm text-sm leading-6 text-white/45">A beautifully clear home for trusted training, deliberate learning, and evidence that holds up.</p>
+            <p className="display mt-7 text-[clamp(3.25rem,5vw,4.5rem)] leading-[0.9] text-white">Make useful knowledge <em className="text-signal">last.</em></p>
+            <p className="mt-6 max-w-sm text-sm leading-6 text-white/75">A beautifully clear home for trusted training, deliberate learning, and evidence that holds up.</p>
           </div>
-          <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25">BookQuest · South Africa</p>
+          <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.18em] text-white/65">BookQuest · South Africa</p>
         </aside>
         <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-14 sm:px-10 lg:py-16">
       <Link href="/" className="mb-12 flex items-center gap-3 font-semibold lg:hidden"><span className="brand-mark text-ink" aria-hidden="true" />BookQuest</Link>
       <p className="section-label mb-4">{mode === "login" ? "Welcome back" : "Your workspace awaits"}</p>
-      <h1 className="display text-5xl leading-[0.95] sm:text-6xl">
+        <h1 className="display text-[clamp(2.75rem,12vw,3.75rem)] leading-[0.95]">
         {mode === "login" ? "Welcome back" : "Create your account"}
       </h1>
       <p className="mt-4 text-sm leading-6 text-ink-soft">
@@ -104,6 +104,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       {mfaChallenge ? <form onSubmit={completeMfa} className="mt-6 space-y-3">
         <p className="text-sm text-ink-soft">Enter the 6-digit code from your authenticator, or one unused recovery code.</p>
         <input
+          aria-label="Authenticator or recovery code"
           value={mfaCode}
           onChange={(e) => setMfaCode(e.target.value)}
           placeholder="Authenticator or recovery code"
@@ -119,6 +120,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       </form> : <form onSubmit={submit} className="mt-6 space-y-3">
         {mode === "register" && (
           <input
+            aria-label="Your name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
@@ -127,6 +129,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           />
         )}
         <input
+          aria-label="Email address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
@@ -157,6 +160,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </div>
         )}
         <input
+          aria-label="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={mode === "register" ? "Password (min 8 characters)" : "Password"}

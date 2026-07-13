@@ -89,7 +89,7 @@ export default function ClassDetailPage() {
             key={a.id}
             className="flex items-center gap-2 rounded-xl bg-card border border-line p-3"
           >
-            <Link href={`/course/${a.id}`} className="flex-1 font-semibold truncate">
+            <Link href={`/course/${a.id}`} className="min-w-0 flex-1 break-words font-semibold leading-snug">
               {a.title}
             </Link>
             {classroom.isOwner && (

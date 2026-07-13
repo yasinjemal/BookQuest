@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import AppIcon from "@/components/AppIcon";
+import CourseWorld from "@/components/CourseWorld";
 import { BLOCK_CHANNELS, type BlockType } from "@/lib/block-registry";
 
 interface SourceItem { source_version_id: string; title: string; kind: string }
@@ -78,7 +80,7 @@ function BlockEditor({ block, sources, onSaved }: { block: BlockItem; sources: S
       await onSaved();
     } finally { setSaving(false); }
   }
-  return <article className="rounded-2xl bg-card border border-line p-4 space-y-3"><div className="flex justify-between"><div><p className="text-xs text-ink-soft">{LABELS[block.blockType]} · revision {block.revision}</p><h3 className="font-bold">{block.lessonTitle}</h3></div>{block.editOrigin === "manual" && <span className="text-xs text-teal font-semibold">Edited</span>}</div><FieldEditor content={content} onChange={setContent} />{sources.length > 0 && <fieldset><legend className="text-xs font-semibold mb-1">Source links</legend><div className="space-y-1">{sources.map((source) => <label key={source.source_version_id} className="flex gap-2 text-xs"><input type="checkbox" checked={refs.includes(source.source_version_id)} onChange={(event) => setRefs((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} />{source.title}</label>)}</div></fieldset>}<button onClick={() => void save()} disabled={saving} className="w-full rounded-xl bg-primary text-white font-bold py-2 disabled:opacity-40">{saving ? "Saving…" : "Save block"}</button>{error && <p className="text-xs text-no font-semibold">{error}</p>}</article>;
+  return <article id={`block-${block.id}`} className="scroll-mt-28 space-y-5 rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal">{LABELS[block.blockType]} · revision {block.revision}</p><h3 className="display mt-2 text-3xl">{block.lessonTitle}</h3></div>{block.editOrigin === "manual" && <span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-go-deep">Edited by a human</span>}</div><FieldEditor content={content} onChange={setContent} />{sources.length > 0 && <fieldset className="rounded-xl bg-paper/65 p-4"><legend className="px-1 text-xs font-semibold">Source traceability</legend><div className="mt-2 space-y-2">{sources.map((source) => <label key={source.source_version_id} className="flex min-h-9 items-start gap-2 text-xs"><input type="checkbox" checked={refs.includes(source.source_version_id)} onChange={(event) => setRefs((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} className="mt-0.5" /><span>{source.title}</span></label>)}</div></fieldset>}<button onClick={() => void save()} disabled={saving} className="btn-primary w-full">{saving ? "Saving this block…" : "Save block"}</button>{error && <p role="alert" className="text-xs font-semibold text-no">{error}</p>}</article>;
 }
 
 function OutlineEditor({ section, onSaved, onRegenerate }: {
@@ -106,7 +108,7 @@ function OutlineEditor({ section, onSaved, onRegenerate }: {
   }
   return <article className="rounded-2xl bg-card border border-line p-4 space-y-3">
     <div><p className="text-xs font-bold uppercase text-ink-soft">Module and lesson</p><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} aria-label="Module title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-bold" /><textarea value={moduleSummary} onChange={(event) => setModuleSummary(event.target.value)} aria-label="Module summary" rows={2} className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm" /><input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} aria-label="Lesson title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-semibold" /></div>
-    <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => void save()} disabled={saving} className="rounded-xl bg-teal text-white text-xs font-bold py-2">{saving ? "Saving…" : "Save outline"}</button><button type="button" onClick={() => void onRegenerate("lesson", section.lessonKey)} className="rounded-xl border border-line text-xs font-bold py-2">Regenerate lesson</button><button type="button" onClick={() => void onRegenerate("module", section.moduleKey)} className="rounded-xl border border-line text-xs font-bold py-2">Regenerate module</button></div>
+    <div className="flex flex-wrap gap-2"><button type="button" onClick={() => void save()} disabled={saving} className="min-h-11 flex-1 rounded-full bg-teal px-4 text-xs font-bold text-white">{saving ? "Saving…" : "Save outline"}</button><button type="button" onClick={() => void onRegenerate("lesson", section.lessonKey)} className="min-h-11 flex-1 rounded-full border border-line px-4 text-xs font-bold">Regenerate lesson</button><button type="button" onClick={() => void onRegenerate("module", section.moduleKey)} className="min-h-11 flex-1 rounded-full border border-line px-4 text-xs font-bold">Regenerate module</button></div>
   </article>;
 }
 
@@ -134,6 +136,8 @@ export default function StudioPage() {
   const [error, setError] = useState("");
   const [regenerating, setRegenerating] = useState("");
   const [previewMode, setPreviewMode] = useState<"edit" | "mobile" | "desktop" | "offline">("edit");
+  const [selectedLessonKey, setSelectedLessonKey] = useState("");
+  const [studioPanel, setStudioPanel] = useState<"outline" | "canvas" | "inspector">("canvas");
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/studio/courses/${id}`);
@@ -152,10 +156,26 @@ export default function StudioPage() {
   }, [id, router]);
   useEffect(() => { void load(); }, [load]);
   const lessons = useMemo(() => data ? [...new Map(data.blocks.map((block) => [block.lessonKey, block])).values()] : [], [data]);
+  useEffect(() => {
+    if (lessons.length > 0 && !lessons.some((lesson) => lesson.lessonKey === selectedLessonKey)) {
+      setSelectedLessonKey(lessons[0].lessonKey);
+    }
+  }, [lessons, selectedLessonKey]);
+  const selectedLesson = lessons.find((lesson) => lesson.lessonKey === selectedLessonKey) ?? lessons[0];
+  const visibleBlocks = data?.blocks.filter((block) => block.lessonKey === selectedLesson?.lessonKey) ?? [];
+  const outlineModules = useMemo(() => {
+    const groups = new Map<string, { title: string; lessons: BlockItem[] }>();
+    for (const lesson of lessons) {
+      const group = groups.get(lesson.moduleKey) ?? { title: lesson.moduleTitle, lessons: [] };
+      group.lessons.push(lesson);
+      groups.set(lesson.moduleKey, group);
+    }
+    return [...groups.entries()];
+  }, [lessons]);
 
   async function addBlock(event: FormEvent) {
     event.preventDefault(); setError("");
-    const existing = lessons[0];
+    const existing = selectedLesson ?? lessons[0];
     const response = await fetch(`/api/studio/courses/${id}/blocks`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "add", moduleKey: existing?.moduleKey ?? "module:1", moduleTitle: existing?.moduleTitle ?? moduleTitle, moduleSummary: existing?.moduleSummary ?? "", lessonKey: existing?.lessonKey ?? "lesson:1", lessonTitle: existing?.lessonTitle ?? lessonTitle, modulePosition: existing?.modulePosition ?? 0, lessonPosition: existing?.lessonPosition ?? 0, blockType, content: template(blockType), sourceRefs: [] }),
@@ -243,61 +263,42 @@ export default function StudioPage() {
 
   if (!data) return <div className="p-6 text-ink-soft">{error || "Opening Studio…"}</div>;
   const editable = data.version.lifecycle_status === "draft";
-  return <div className="page-wrap max-w-6xl space-y-5">
-    <header className="premium-panel p-7 sm:p-10">
-      <Link href={`/course/${id}`} className="relative z-10 text-[10px] font-bold uppercase tracking-[0.15em] text-white/45 hover:text-white">← Course</Link>
-      <p className="relative z-10 mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Studio · Version {data.version.version_number}</p>
-      <h1 className="relative z-10 mt-3 font-display text-5xl leading-[0.9] text-white sm:text-7xl">{data.version.title}</h1>
-      <p className="relative z-10 mt-5 text-sm text-white/45">{data.version.lifecycle_status} · {data.blocks.length} blocks · Every detail remains yours</p>
+  return <div className="page-wrap"><div className="mx-auto max-w-[88rem] space-y-5">
+    <header className="grid overflow-hidden rounded-[1.6rem] border border-line bg-card shadow-card lg:grid-cols-[1.2fr_.8fr]">
+      <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10"><Link href={`/course/${id}`} className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft hover:text-ink"><span aria-hidden="true">←</span> Course journey</Link><div className="mt-7 flex flex-wrap items-center gap-2"><span className="rounded-full bg-ink px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-white">Studio</span><span className="rounded-full border border-line px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-ink-soft">Version {data.version.version_number}</span><span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[0.13em] text-go-deep">{data.version.lifecycle_status.replaceAll("_", " ")}</span></div><h1 className="display mt-4 text-[clamp(2.8rem,8vw,5rem)] leading-[0.9]">{data.version.title}</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-ink-soft">{data.version.description || "Shape the course with full source, review, accessibility, and version control."}</p></div>
+      <div className="relative min-h-56"><CourseWorld seed={`studio:${id}`} title={data.version.title} theme="workshop" progress={analysis && analysis.totalBlocks > 0 ? Math.round((analysis.tracedBlocks / analysis.totalBlocks) * 100) : 0} className="absolute inset-0" /><Link href={`/course/${id}`} className="absolute bottom-5 right-5 z-10 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/20 bg-pine/70 px-5 text-sm font-semibold text-white backdrop-blur-sm">Preview learner world <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
     </header>
-    {analysis && <section className="grid gap-3 sm:grid-cols-3">
-      <div className="rounded-2xl bg-signal p-5"><p className="section-label text-ink/50">Source coverage</p><p className="display mt-5 text-3xl">{analysis.tracedBlocks}/{analysis.totalBlocks}</p><p className="text-xs text-ink/55">blocks linked</p></div>
-      <div className="rounded-2xl bg-sky p-5"><p className="section-label text-ink/50">Accessibility</p><p className="display mt-5 text-3xl">{analysis.accessibilityIssueBlockIds.length === 0 ? "Ready" : analysis.accessibilityIssueBlockIds.length}</p><p className="text-xs text-ink/55">{analysis.accessibilityIssueBlockIds.length === 0 ? "checks pass" : "issues to resolve"}</p></div>
-      <div className="paper-card p-5"><p className="section-label">Estimated duration</p><p className="display mt-5 text-3xl">{analysis.estimatedDurationMinutes}</p><p className="text-xs text-ink-soft">minutes</p></div>
-    </section>}
-    <section><div className="flex w-fit gap-1 overflow-x-auto rounded-full border border-line bg-card p-1 shadow-card">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-full px-4 py-2 text-sm font-semibold capitalize transition-all ${previewMode === mode ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{mode}</button>)}</div></section>
-    {previewMode !== "edit" && <CoursePreview blocks={data.blocks} mode={previewMode} />}
-    <section className="paper-card space-y-3 p-5 sm:p-6">
-      <p className="section-label">Release desk</p><h2 className="display text-3xl">Review and publish</h2>
-      {data.version.lifecycle_status === "draft" && <button onClick={() => void runLifecycle("submit")} className="w-full rounded-xl bg-primary text-white font-bold py-2.5">Submit for review</button>}
-      {data.version.lifecycle_status === "review" && <div className="grid grid-cols-2 gap-2"><button onClick={() => void runLifecycle("review", "changes_requested")} className="rounded-xl border border-line font-bold py-2.5">Request changes</button><button onClick={() => void runLifecycle("review", "approved")} className="rounded-xl bg-teal text-white font-bold py-2.5">Approve</button></div>}
-      {data.version.lifecycle_status === "approved" && <button onClick={() => void publish()} className="w-full rounded-xl bg-go text-white font-bold py-2.5">Publish approved version</button>}
-      {data.version.lifecycle_status === "published" && <button onClick={() => void runLifecycle("branch")} className="w-full rounded-xl bg-primary text-white font-bold py-2.5">Create a new draft</button>}
-      {["draft", "review", "approved"].includes(data.version.lifecycle_status) && <button onClick={() => void runLifecycle("archive")} className="w-full rounded-xl border border-line font-bold py-2.5">Archive this working version</button>}
-    </section>
-    {versionDiff && <section className="rounded-2xl bg-card border border-line p-4">
-      <h2 className="font-bold">Changes from version {data.versions.find((version) => version.id === data.version.parent_version_id)?.version_number}</h2>
-      <p className="text-sm mt-1">{versionDiff.changed.length} changed · {versionDiff.added.length} added · {versionDiff.removed.length} removed</p>
-    </section>}
-    <section className="rounded-2xl bg-card border border-line p-4 space-y-3">
-      <h2 className="font-bold">Review notes</h2>
-      {data.reviews.map((review) => <div key={review.id} className="rounded-xl bg-paper border border-line p-3 text-sm"><p className="font-semibold">{review.reviewer_name} · {review.decision.replace("_", " ")}</p>{review.summary && <p className="text-ink-soft mt-1">{review.summary}</p>}</div>)}
-      {data.comments.map((item) => <div key={item.id} className="rounded-xl bg-paper border border-line p-3 text-sm"><div className="flex justify-between gap-2"><p><span className="font-semibold">{item.author_name}:</span> {item.body}</p><span className="text-xs text-ink-soft">{item.status}</span></div>{item.status === "open" && <button onClick={() => void resolveComment(item.id)} className="mt-2 text-xs font-bold text-teal">Mark resolved</button>}</div>)}
-      <div className="flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a review note" className="min-w-0 flex-1 rounded-xl border-2 border-line bg-paper px-3 py-2" /><button type="button" onClick={() => void addComment()} className="rounded-xl bg-teal text-white font-bold px-4">Add</button></div>
-    </section>
-    <section className="rounded-2xl bg-card border border-line p-4 space-y-2">
-      <h2 className="font-bold">Version history</h2>
-      {data.versions.map((version) => <div key={version.id} className="flex items-center justify-between rounded-xl bg-paper border border-line px-3 py-2"><p className="text-sm"><span className="font-semibold">Version {version.version_number}</span> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="text-xs font-bold text-primary-deep">Restore as draft</button>}</div>)}
-    </section>
-    {previewMode === "edit" && <section className="space-y-3">
-      {editable && lessons.map((section) => <OutlineEditor key={`outline:${section.lessonKey}`} section={section} onSaved={load} onRegenerate={regenerate} />)}
-      {data.blocks.length === 0 && <p className="rounded-xl bg-paper border border-line p-4 text-sm text-ink-soft">This draft is empty. Add its first block below.</p>}
-      {data.blocks.map((block) => {
-        const lessonBlocks = data.blocks.filter((candidate) => candidate.lessonKey === block.lessonKey);
-        const lessonIndex = lessonBlocks.findIndex((candidate) => candidate.id === block.id);
-        return <div key={`${block.id}:${block.revision}`} className="space-y-2">
-          {editable && <div className="flex justify-end gap-2"><button type="button" onClick={() => void moveBlock(block, -1)} disabled={lessonIndex === 0} className="rounded-lg border border-line px-3 py-1 text-xs font-bold disabled:opacity-30">Move up</button><button type="button" onClick={() => void moveBlock(block, 1)} disabled={lessonIndex === lessonBlocks.length - 1} className="rounded-lg border border-line px-3 py-1 text-xs font-bold disabled:opacity-30">Move down</button></div>}
-          <BlockEditor block={block} sources={data.sources} onSaved={load} />
-          {editable && <button type="button" onClick={() => void regenerate("block", block.id)} disabled={!!regenerating} className="w-full rounded-xl border border-primary/40 text-primary-deep font-bold py-2 disabled:opacity-40">{regenerating === `block:${block.id}` ? "Regenerating…" : "Regenerate this block"}</button>}
-        </div>;
-      })}
-    </section>}
-    {previewMode === "edit" && editable && <form onSubmit={addBlock} className="rounded-2xl bg-card border border-line p-4 space-y-3">
-      <h2 className="font-bold">Add a block</h2>
-      {lessons.length === 0 && <><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} placeholder="Module title" className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2" /><input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} placeholder="Lesson title" className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2" /></>}
-      <select value={blockType} onChange={(event) => setBlockType(event.target.value as BlockType)} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5">{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-      <button className="w-full rounded-xl bg-teal text-white font-bold py-2.5">Add block</button>
-    </form>}
-    {error && <p className="text-sm text-no font-semibold">{error}</p>}
-  </div>;
+
+    {analysis && <section className="grid gap-3 sm:grid-cols-3" aria-label="Course quality summary"><div className="rounded-[1.2rem] bg-signal p-4"><p className="section-label text-ink/55">Source coverage</p><p className="display mt-3 text-3xl">{analysis.tracedBlocks}/{analysis.totalBlocks}</p><p className="text-xs text-ink/60">blocks linked</p></div><div className="rounded-[1.2rem] bg-sky p-4"><p className="section-label text-ink/55">Accessibility</p><p className="display mt-3 text-3xl">{analysis.accessibilityIssueBlockIds.length === 0 ? "Ready" : analysis.accessibilityIssueBlockIds.length}</p><p className="text-xs text-ink/60">{analysis.accessibilityIssueBlockIds.length === 0 ? "checks pass" : "issues to resolve"}</p></div><div className="rounded-[1.2rem] border border-line bg-card p-4 shadow-card"><p className="section-label">Estimated duration</p><p className="display mt-3 text-3xl">{analysis.estimatedDurationMinutes}</p><p className="text-xs text-ink-soft">minutes</p></div></section>}
+
+    <section className="sticky top-[4.5rem] z-20 flex flex-col gap-3 rounded-[1.2rem] border border-line bg-paper/92 p-2 shadow-card backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between lg:top-2"><div className="flex gap-1 overflow-x-auto rounded-full bg-card p-1">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} aria-pressed={previewMode === mode} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold capitalize ${previewMode === mode ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>{mode === "edit" ? "Editorial view" : `${mode} preview`}</button>)}</div><p className="hidden px-3 text-xs text-ink-soft sm:block">{editable ? "Draft changes remain private until review and publishing." : "This version is read-only."}</p></section>
+
+    {error && <p role="alert" className="rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
+    {previewMode !== "edit" && <section className="rounded-[1.5rem] border border-line bg-card p-4 shadow-card sm:p-6"><CoursePreview blocks={data.blocks} mode={previewMode} /></section>}
+
+    {previewMode === "edit" && <>
+      <nav className="grid grid-cols-3 gap-1 rounded-[1.1rem] border border-line bg-card p-1 xl:hidden" aria-label="Studio panels">{([ ["outline", "Outline", "layers"], ["canvas", "Canvas", "create"], ["inspector", "Inspector", "settings"] ] as const).map(([panel, label, icon]) => <button key={panel} type="button" onClick={() => setStudioPanel(panel)} aria-pressed={studioPanel === panel} className={`flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold ${studioPanel === panel ? "bg-ink text-white" : "text-ink-soft"}`}><AppIcon name={icon} className="h-4 w-4" /><span className="truncate">{label}</span></button>)}</nav>
+
+      <div className="grid items-start gap-5 xl:grid-cols-[17rem_minmax(0,1fr)_20rem]">
+        <aside className={`${studioPanel === "outline" ? "block" : "hidden"} space-y-4 xl:sticky xl:top-24 xl:block`} aria-label="Course outline"><div className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><div className="flex items-center justify-between gap-3"><div><p className="section-label">Outline</p><h2 className="display mt-1 text-3xl">Course structure</h2></div><span className="text-xs font-semibold text-ink-soft">{lessons.length}</span></div><nav className="mt-5 space-y-5" aria-label="Modules and lessons">{outlineModules.length === 0 && <p className="text-sm leading-6 text-ink-soft">Add the first block to create a module and lesson.</p>}{outlineModules.map(([moduleKey, module]) => <section key={moduleKey}><h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">{module.title}</h3><div className="mt-2 space-y-1">{module.lessons.map((lesson) => <button key={lesson.lessonKey} type="button" onClick={() => { setSelectedLessonKey(lesson.lessonKey); setStudioPanel("canvas"); }} aria-pressed={selectedLesson?.lessonKey === lesson.lessonKey} className={`flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm ${selectedLesson?.lessonKey === lesson.lessonKey ? "bg-ink text-white" : "hover:bg-paper"}`}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${selectedLesson?.lessonKey === lesson.lessonKey ? "bg-signal" : "bg-moss"}`} /><span className="min-w-0 flex-1 leading-snug">{lesson.lessonTitle}</span><span className="text-[10px] opacity-60">{data.blocks.filter((block) => block.lessonKey === lesson.lessonKey).length}</span></button>)}</div></section>)}</nav></div></aside>
+
+        <section className={`${studioPanel === "canvas" ? "block" : "hidden"} min-w-0 space-y-5 xl:block`} aria-labelledby="studio-canvas-heading"><div className="rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><p className="section-label">Editable canvas</p><h2 id="studio-canvas-heading" className="display mt-2 text-4xl">{selectedLesson?.lessonTitle ?? "First lesson"}</h2><p className="mt-2 text-sm text-ink-soft">{selectedLesson?.moduleTitle ?? "Start by naming the first module and lesson."}</p></div>
+          {editable && selectedLesson && <OutlineEditor key={`outline:${selectedLesson.lessonKey}`} section={selectedLesson} onSaved={load} onRegenerate={regenerate} />}
+          {visibleBlocks.length === 0 && <p className="rounded-[1.35rem] border border-dashed border-line-deep bg-card px-5 py-10 text-center text-sm text-ink-soft">This lesson is empty. Add its first block below.</p>}
+          {visibleBlocks.map((block) => { const lessonIndex = visibleBlocks.findIndex((candidate) => candidate.id === block.id); return <div key={`${block.id}:${block.revision}`} className="space-y-2"><div className="flex flex-wrap justify-end gap-2">{editable && <><button type="button" onClick={() => void moveBlock(block, -1)} disabled={lessonIndex === 0} className="min-h-10 rounded-full border border-line px-4 text-xs font-semibold disabled:opacity-30">Move up</button><button type="button" onClick={() => void moveBlock(block, 1)} disabled={lessonIndex === visibleBlocks.length - 1} className="min-h-10 rounded-full border border-line px-4 text-xs font-semibold disabled:opacity-30">Move down</button></>}</div><BlockEditor block={block} sources={data.sources} onSaved={load} />{editable && <button type="button" onClick={() => void regenerate("block", block.id)} disabled={!!regenerating} className="min-h-11 w-full rounded-full border border-teal/40 px-5 text-sm font-semibold text-teal-deep disabled:opacity-40">{regenerating === `block:${block.id}` ? "Regenerating this block…" : "Regenerate only this block"}</button>}</div>; })}
+          {editable && <form onSubmit={addBlock} className="space-y-4 rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6"><div><p className="section-label">Add to the canvas</p><h2 className="display mt-2 text-3xl">New content block</h2></div>{lessons.length === 0 && <><label className="block text-xs font-semibold">Module title<input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} className="field mt-2" /></label><label className="block text-xs font-semibold">Lesson title<input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} className="field mt-2" /></label></>}<label className="block text-xs font-semibold">Block type<select value={blockType} onChange={(event) => setBlockType(event.target.value as BlockType)} className="field mt-2">{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><button className="btn-teal w-full">Add block</button></form>}
+        </section>
+
+        <aside className={`${studioPanel === "inspector" ? "block" : "hidden"} space-y-4 xl:sticky xl:top-24 xl:block`} aria-label="Course inspector">
+          <section className="rounded-[1.35rem] border border-line bg-card p-4 shadow-card"><p className="section-label">Release desk</p><h2 className="display mt-2 text-3xl">Review & publish</h2><div className="mt-4 space-y-2">{data.version.lifecycle_status === "draft" && <button onClick={() => void runLifecycle("submit")} className="btn-primary w-full">Submit for review</button>}{data.version.lifecycle_status === "review" && <><button onClick={() => void runLifecycle("review", "changes_requested")} className="min-h-11 w-full rounded-full border border-line px-4 text-sm font-semibold">Request changes</button><button onClick={() => void runLifecycle("review", "approved")} className="btn-teal w-full">Approve version</button></>}{data.version.lifecycle_status === "approved" && <button onClick={() => void publish()} className="btn-go w-full">Publish approved version</button>}{data.version.lifecycle_status === "published" && <button onClick={() => void runLifecycle("branch")} className="btn-primary w-full">Create a new draft</button>}{["draft", "review", "approved"].includes(data.version.lifecycle_status) && <button onClick={() => void runLifecycle("archive")} className="min-h-11 w-full rounded-full border border-line px-4 text-sm font-semibold">Archive working version</button>}</div></section>
+
+          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card" open><summary className="min-h-10 text-sm font-semibold">Source traceability <span className="float-right text-xs font-normal text-ink-soft">{data.sources.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{data.sources.length === 0 && <p className="text-xs leading-5 text-ink-soft">No source versions are attached to this course.</p>}{data.sources.map((source) => <div key={source.source_version_id} className="rounded-lg bg-paper p-3"><p className="text-xs font-semibold">{source.title}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-ink-soft">{source.kind}</p></div>)}</div></details>
+
+          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Review notes <span className="float-right text-xs font-normal text-ink-soft">{data.comments.filter((item) => item.status === "open").length} open</span></summary><div className="mt-3 space-y-3 border-t border-line pt-3">{data.reviews.map((review) => <div key={review.id} className="rounded-lg bg-paper p-3 text-xs"><p className="font-semibold">{review.reviewer_name} · {review.decision.replaceAll("_", " ")}</p>{review.summary && <p className="mt-1 leading-5 text-ink-soft">{review.summary}</p>}</div>)}{data.comments.map((item) => <div key={item.id} className="rounded-lg border border-line p-3 text-xs"><p><strong>{item.author_name}:</strong> {item.body}</p><p className="mt-1 uppercase tracking-wide text-ink-soft">{item.status}</p>{item.status === "open" && <button onClick={() => void resolveComment(item.id)} className="mt-2 font-semibold text-teal">Mark resolved</button>}</div>)}<label className="block text-xs font-semibold">Add a review note<textarea value={comment} onChange={(event) => setComment(event.target.value)} rows={3} className="field mt-2" /></label><button type="button" onClick={() => void addComment()} disabled={!comment.trim()} className="btn-teal w-full">Add note</button></div></details>
+
+          <details className="rounded-[1.25rem] border border-line bg-card p-4 shadow-card"><summary className="min-h-10 text-sm font-semibold">Version history <span className="float-right text-xs font-normal text-ink-soft">{data.versions.length}</span></summary><div className="mt-3 space-y-2 border-t border-line pt-3">{versionDiff && <div className="rounded-lg bg-sky/45 p-3 text-xs"><p className="font-semibold">Changes from version {data.versions.find((version) => version.id === data.version.parent_version_id)?.version_number}</p><p className="mt-1 text-ink-soft">{versionDiff.changed.length} changed · {versionDiff.added.length} added · {versionDiff.removed.length} removed</p></div>}{data.versions.map((version) => <div key={version.id} className="rounded-lg bg-paper p-3 text-xs"><p><strong>Version {version.version_number}</strong> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="mt-2 font-semibold text-teal-deep">Restore as draft</button>}</div>)}</div></details>
+        </aside>
+      </div>
+    </>}
+  </div></div>;
 }

@@ -1,0 +1,130 @@
+.region {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 1.6rem;
+  background: var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.route {
+  position: relative;
+  margin: 0;
+  padding: 1.2rem 1rem 1.4rem;
+  list-style: none;
+}
+
+.routeLine {
+  position: absolute;
+  top: 1.4rem;
+  bottom: 1.4rem;
+  left: 0.7rem;
+  width: 4.9rem;
+  pointer-events: none;
+}
+
+.routeBase,
+.routeDone {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.routeBase {
+  stroke: color-mix(in srgb, var(--color-moss) 22%, var(--color-line));
+  stroke-dasharray: 3 5;
+}
+
+.routeDone {
+  stroke: var(--color-teal);
+  filter: drop-shadow(0 0 4px rgb(36 140 141 / 0.2));
+  transition: stroke-dashoffset 700ms ease-out;
+}
+
+.stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.4rem minmax(0, 1fr);
+  align-items: center;
+  min-height: 6.5rem;
+  gap: 0.5rem;
+}
+
+.landmark {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  justify-self: center;
+  border: 1px solid var(--color-line-deep);
+  border-radius: 42% 58% 48% 52%;
+  background: var(--color-ivory);
+  color: var(--color-ink-soft);
+  box-shadow: 0 8px 20px rgb(24 48 41 / 0.08);
+  transform: translateX(var(--stop-offset));
+}
+
+.complete .landmark {
+  border-color: color-mix(in srgb, var(--color-teal) 38%, var(--color-line));
+  background: var(--color-forest);
+  color: white;
+}
+
+.current .landmark {
+  border-color: var(--color-signal);
+  background: var(--color-signal);
+  color: var(--color-ink);
+  box-shadow: 0 0 0 6px rgb(216 255 99 / 0.15), 0 12px 26px rgb(24 48 41 / 0.18);
+}
+
+.current .landmark::after {
+  position: absolute;
+  inset: -0.55rem;
+  border: 1px solid rgb(216 255 99 / 0.45);
+  border-radius: inherit;
+  content: "";
+  animation: current-pulse 2.8s ease-in-out infinite;
+}
+
+.future {
+  opacity: 0.72;
+}
+
+.lessonCard {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+  padding: 0.8rem 0.9rem;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+a.lessonCard:hover {
+  border-color: var(--color-line);
+  background: var(--color-paper);
+  transform: translateX(2px);
+}
+
+.current .lessonCard {
+  border-color: color-mix(in srgb, var(--color-teal) 24%, var(--color-line));
+  background: color-mix(in srgb, var(--color-teal) 6%, var(--color-card));
+}
+
+@keyframes current-pulse {
+  0%, 100% { opacity: 0.28; transform: scale(0.96); }
+  50% { opacity: 0.7; transform: scale(1.04); }
+}
+
+@media (min-width: 40rem) {
+  .route { padding: 1.5rem 2rem 1.8rem; }
+  .routeLine { left: 1.75rem; width: 5.2rem; }
+  .stop { grid-template-columns: 5.2rem minmax(0, 1fr); gap: 0.8rem; min-height: 7rem; }
+  .landmark { width: 3.3rem; height: 3.3rem; }
+  .lessonCard { padding: 1rem 1.1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current .landmark::after { animation: none; }
+  .routeDone { transition: none; }
+}

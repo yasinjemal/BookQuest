@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import AppIcon from "@/components/AppIcon";
+import CourseGalleryCard from "@/components/CourseGalleryCard";
+import CourseWorld from "@/components/CourseWorld";
 import Loading from "@/components/Loading";
 
 interface CourseSummary {
@@ -12,9 +15,12 @@ interface CourseSummary {
   status: string;
   error: string | null;
   published: number;
+  category: string;
   totalLessons: number;
   doneLessons: number;
+  moduleCount?: number;
 }
+
 interface Me {
   id: number;
   name: string;
@@ -23,81 +29,81 @@ interface Me {
   premium_until: string | null;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  extracting: "Reading your document…",
-  outlining: "Designing the course…",
-  generating: "Writing lessons & quizzes…",
-  error: "Something went wrong",
-};
+function progressFor(course: CourseSummary) {
+  return course.totalLessons > 0
+    ? Math.round((course.doneLessons / course.totalLessons) * 100)
+    : 0;
+}
 
-function CourseCard({
-  c,
-  onRetry,
-}: {
-  c: CourseSummary;
-  onRetry?: () => void;
-}) {
-  const busy = ["extracting", "outlining", "generating"].includes(c.status);
-  const pct =
-    c.totalLessons > 0 ? Math.round((c.doneLessons / c.totalLessons) * 100) : 0;
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function PublicHome() {
   return (
-    <Link
-      href={`/course/${c.id}`}
-      className="group block rounded-2xl border border-line bg-card p-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:border-line-deep hover:shadow-pop sm:p-5"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3.5">
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-ink font-display text-xl text-signal">{c.title.charAt(0).toUpperCase()}</span>
-          <div className="min-w-0">
-            <h2 className="truncate font-semibold tracking-[-0.015em]">{c.title}</h2>
-            <p className="mt-0.5 truncate text-xs text-ink-soft">{c.description || c.source_filename}</p>
+    <div className="min-h-dvh bg-paper pb-20">
+      <header className="mx-auto flex min-h-20 max-w-[92rem] items-center justify-between gap-4 px-4 py-4 sm:px-8">
+        <Link href="/" className="flex min-w-0 items-center gap-3 font-semibold tracking-[-0.02em]"><span className="brand-mark text-ink" aria-hidden="true" /><span>BookQuest</span></Link>
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3"><Link href="/verify-credential" className="hidden text-sm font-semibold text-ink-soft transition-colors hover:text-ink sm:block">Verify credential</Link><Link href="/login" className="quiet-button">Sign in</Link></div>
+      </header>
+
+      <div className="px-3 sm:px-6">
+        <section className="relative mx-auto grid max-w-[92rem] overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:min-h-[44rem] lg:grid-cols-[1.04fr_.96fr]">
+          <div className="relative z-10 flex flex-col justify-center px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
+            <span className="eyebrow w-fit text-signal">Living story worlds</span>
+            <h1 className="display mt-7 max-w-[12ch] text-[clamp(3.2rem,15vw,6.9rem)] leading-[0.87] text-white">Every course is a <em className="text-signal">world.</em></h1>
+            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Turn trusted sources into calm, memorable journeys people can read, practise, and return to.</p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <Link href="/register" className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5">Begin with a source <AppIcon name="arrow" className="h-4 w-4" /></Link>
+              <Link href="/verify-credential" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">Verify learning evidence</Link>
+            </div>
+            <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55"><span>Human reviewed</span><span>Source traceable</span><span>Offline ready</span></div>
           </div>
-        </div>
-        <div className="shrink-0 flex items-center gap-1.5">
-          {!!c.published && (
-            <span className="rounded-full bg-teal/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-teal">
-              Published
-            </span>
-          )}
-          {c.status === "ready" && (
-            <span className="rounded-full bg-go-soft px-2.5 py-1 text-[10px] font-bold text-go">
-              {pct}%
-            </span>
-          )}
-        </div>
+          <div className="relative min-h-80 lg:min-h-full">
+            <CourseWorld seed="bookquest-living-world" theme="forest" mood="bright" progress={68} className="absolute inset-0" />
+            <div className="absolute inset-x-5 bottom-5 z-10 rounded-[1.35rem] border border-white/15 bg-pine/70 p-5 backdrop-blur-md sm:inset-x-10 sm:bottom-10 sm:p-6 lg:left-8 lg:right-12">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-signal">Current destination</p>
+              <h2 className="display mt-2 text-3xl leading-none sm:text-4xl">A world built from what you trust.</h2>
+              <p className="mt-3 text-sm leading-6 text-white/68">Sources remain visible. Drafts remain editable. Progress remains safe.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto grid max-w-[92rem] gap-10 px-3 py-20 sm:px-6 lg:grid-cols-[.8fr_1.2fr] lg:gap-20 lg:py-28">
+          <div><p className="section-label">One idea at a time</p><h2 className="display mt-4 text-[clamp(2.8rem,8vw,5.2rem)] leading-[0.92]">Reading should feel like going somewhere.</h2><p className="mt-6 max-w-md text-sm leading-7 text-ink-soft">BookQuest gives each subject its own atmosphere while keeping creation, review, permissions, versions, and evidence precise.</p></div>
+          <div className="grid gap-px overflow-hidden rounded-[1.6rem] border border-line bg-line sm:grid-cols-2">
+            {[
+              { icon: "source" as const, title: "Begin with truth", body: "Bring a policy, handbook, guide, transcript, or your own carefully written notes." },
+              { icon: "layers" as const, title: "Shape the journey", body: "Edit every lesson, link it to its source, and preview the learner world before release." },
+              { icon: "trail" as const, title: "Learn in places", body: "Move through readable chapters, purposeful practice, and a path that remembers progress." },
+              { icon: "shield" as const, title: "Carry the proof", body: "Keep completion evidence tied to the exact reviewed course version." },
+            ].map((item, index) => <article key={item.title} className={`min-h-64 p-7 sm:p-8 ${index === 0 ? "bg-signal" : index === 1 ? "bg-sky" : "bg-card"}`}><AppIcon name={item.icon} className="h-6 w-6" /><h3 className="display mt-14 text-3xl">{item.title}</h3><p className="mt-3 max-w-xs text-sm leading-6 text-ink-soft">{item.body}</p></article>)}
+          </div>
+        </section>
       </div>
-      {busy && (
-        <div className="mt-3 flex items-center gap-2 text-xs font-semibold text-primary-deep">
-          <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse" />
-          {STATUS_LABEL[c.status]}
-          {c.totalLessons > 0 && ` (${c.totalLessons} lessons so far)`}
+    </div>
+  );
+}
+
+function ContinueJourney({ course }: { course: CourseSummary }) {
+  const progress = progressFor(course);
+  return (
+    <section aria-labelledby="continue-journey-heading" className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.1fr_.9fr]">
+      <CourseWorld seed={course.id} title={course.title} progress={progress} mood="bright" className="min-h-64 sm:min-h-80 lg:min-h-[25rem]" />
+      <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Continue your journey</p>
+        <h2 id="continue-journey-heading" className="display mt-3 text-[clamp(2.35rem,8vw,4.4rem)] leading-[0.92]">{course.title}</h2>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-white/70">{course.description || "Return to where you paused. Your progress is safe."}</p>
+        <div className="mt-7">
+          <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/65"><span>{course.doneLessons} of {course.totalLessons} chapters discovered</span><span>{progress}%</span></div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-signal" style={{ width: `${progress}%` }} /></div>
         </div>
-      )}
-      {c.status === "error" && (
-        <div className="mt-2">
-          <p className="text-xs text-no">{c.error ?? STATUS_LABEL.error}</p>
-          {onRetry && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                onRetry();
-              }}
-              className="mt-2 text-xs font-bold text-primary-deep border border-primary/40 rounded-lg px-3 py-1.5 active:scale-95 transition cursor-pointer"
-            >
-              ↻ Retry
-            </button>
-          )}
-        </div>
-      )}
-      {c.status === "ready" && (
-        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-line">
-          <div
-            className="h-full rounded-full bg-go transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      )}
-    </Link>
+        <Link href={`/course/${course.id}`} className="mt-8 inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5 sm:w-fit">Return to where you paused <AppIcon name="arrow" className="h-4 w-4" /></Link>
+      </div>
+    </section>
   );
 }
 
@@ -122,8 +128,6 @@ export default function HomePage() {
         return;
       }
       if (!meRes.ok) {
-        // The server is reachable but erroring (e.g. 500). Surface it instead of
-        // hanging on "Loading…" forever with me stuck at null.
         setFailed(true);
         return;
       }
@@ -136,8 +140,6 @@ export default function HomePage() {
         setEnrolled(data.enrolled);
       }
     } catch {
-      // Network failure. If we have never loaded, show the error state; an
-      // offline reload with cached SW data keeps whatever already rendered.
       if (!hasLoadedRef.current) setFailed(true);
     } finally {
       hasLoadedRef.current = true;
@@ -145,19 +147,16 @@ export default function HomePage() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (!owned.some((c) => ["extracting", "outlining", "generating"].includes(c.status)))
-      return;
-    const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    if (!owned.some((course) => ["extracting", "outlining", "generating"].includes(course.status))) return;
+    const timer = setInterval(load, 4000);
+    return () => clearInterval(timer);
   }, [owned, load]);
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function onFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
     setUploading(true);
     setUploadError(null);
@@ -165,9 +164,9 @@ export default function HomePage() {
     form.append("file", file);
     form.append("generate", String(generateWithAi));
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await res.json();
-      if (!res.ok) setUploadError(data.error ?? "Upload failed");
+      const response = await fetch("/api/upload", { method: "POST", body: form });
+      const data = await response.json();
+      if (!response.ok) setUploadError(data.error ?? "Upload failed");
       else if (data.studioUrl) window.location.href = data.studioUrl;
       await load();
     } catch {
@@ -178,160 +177,41 @@ export default function HomePage() {
     }
   }
 
-  if (me === "anon") return <div className="min-h-dvh overflow-hidden bg-paper">
-    <header className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
-      <Link href="/" className="flex items-center gap-3 font-semibold tracking-[-0.02em]"><span className="brand-mark text-ink" aria-hidden="true" /><span>BookQuest</span></Link>
-      <div className="flex items-center gap-2 sm:gap-3"><Link href="/verify-credential" className="hidden text-sm font-semibold text-ink-soft transition-colors hover:text-ink sm:block">Verify credential</Link><Link href="/login" className="quiet-button">Sign in</Link></div>
-    </header>
-
-    <main className="px-3 pb-20 sm:px-6">
-      <section className="premium-panel mx-auto grid max-w-7xl items-center gap-14 px-6 py-14 sm:px-10 sm:py-16 lg:min-h-[720px] lg:grid-cols-[1.02fr_.98fr] lg:px-16 lg:py-20">
-        <div className="relative z-10">
-          <span className="eyebrow text-signal">Documents in. Capability out.</span>
-          <h1 className="display mt-8 max-w-3xl text-[4.25rem] leading-[0.88] text-white sm:text-[5.8rem] lg:text-[6.7rem]">Knowledge, beautifully made <em className="text-signal">useful.</em></h1>
-          <p className="mt-8 max-w-xl text-base leading-7 text-white/58 sm:text-lg sm:leading-8">BookQuest turns the documents your organization trusts into courses people can finish—and evidence you can stand behind.</p>
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row"><Link href="/register" className="inline-flex items-center justify-center gap-3 rounded-full bg-signal px-6 py-3.5 text-sm font-bold text-ink transition-all hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(220,250,114,.22)]">Create your first course <span aria-hidden="true">↗</span></Link><Link href="/verify-credential" className="inline-flex items-center justify-center rounded-full border border-white/15 px-6 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/10">Verify evidence</Link></div>
-          <div className="mt-12 flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-bold uppercase tracking-[0.15em] text-white/35"><span>Editable by design</span><span>Works offline</span><span>Evidence linked</span></div>
-        </div>
-
-        <div className="relative z-10 mx-auto w-full max-w-[520px] py-10 lg:py-0">
-          <div className="absolute left-4 top-0 h-28 w-28 rounded-full bg-coral blur-[70px]" />
-          <div className="paper-card rotate-[-2deg] p-5 text-ink sm:p-7">
-            <div className="flex items-start justify-between gap-5 border-b border-line pb-5">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">Live course</p><h2 className="display mt-2 text-3xl sm:text-4xl">Employee onboarding</h2><p className="mt-1 text-xs text-ink-soft">Blacksteel Clothing · Version 1.0</p></div>
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-go-soft text-go">✓</span>
-            </div>
-            <div className="space-y-3 py-5">
-              {[{ n: "01", t: "Welcome to the floor", c: "4 min" }, { n: "02", t: "Opening the shop", c: "6 min" }, { n: "03", t: "Customer and stock care", c: "8 min" }].map((lesson, index) => <div key={lesson.n} className={`flex items-center gap-4 rounded-xl p-3 ${index === 0 ? "bg-ink text-white" : "border border-line bg-paper/60"}`}><span className={`text-[10px] font-bold ${index === 0 ? "text-signal" : "text-ink-soft"}`}>{lesson.n}</span><span className="min-w-0 flex-1 text-sm font-semibold">{lesson.t}</span><span className={`text-[10px] ${index === 0 ? "text-white/45" : "text-ink-soft"}`}>{lesson.c}</span></div>)}
-            </div>
-            <div className="grid grid-cols-3 gap-2 border-t border-line pt-5 text-center"><div><strong className="display block text-2xl">3</strong><span className="text-[9px] uppercase tracking-wider text-ink-soft">Learners</span></div><div><strong className="display block text-2xl">100%</strong><span className="text-[9px] uppercase tracking-wider text-ink-soft">Evidence</span></div><div><strong className="display block text-2xl">1</strong><span className="text-[9px] uppercase tracking-wider text-ink-soft">Source</span></div></div>
-          </div>
-          <div className="absolute -bottom-2 -left-3 rotate-[4deg] rounded-2xl bg-primary px-5 py-4 text-white shadow-pop sm:-left-10"><p className="text-[9px] font-bold uppercase tracking-[0.16em] text-white/60">Audit pack</p><p className="mt-1 text-sm font-semibold">Ready to export ↗</p></div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-3 py-20 sm:px-6 lg:py-28">
-        <div className="grid gap-10 lg:grid-cols-[.72fr_1.28fr] lg:gap-20">
-          <div><p className="section-label">One beautiful flow</p><h2 className="display mt-4 text-5xl leading-[0.95] sm:text-6xl">From source to proof, without the mess.</h2></div>
-          <div className="grid gap-px overflow-hidden rounded-3xl border border-line bg-line sm:grid-cols-2">
-            {[{ n: "01", title: "Bring the truth", body: "Upload the policy, handbook, procedure, or guide you already trust.", color: "bg-signal" }, { n: "02", title: "Shape the learning", body: "Review every lesson and question before anyone sees it.", color: "bg-sky" }, { n: "03", title: "Invite the team", body: "Assign the right version to the right people in a few deliberate clicks.", color: "bg-card" }, { n: "04", title: "Carry the proof", body: "Export completion evidence tied to the exact course version.", color: "bg-card" }].map((item) => <article key={item.n} className={`${item.color} min-h-60 p-7 sm:p-8`}><span className="text-[10px] font-bold tracking-[0.18em] text-ink-soft">{item.n}</span><h3 className="display mt-12 text-3xl">{item.title}</h3><p className="mt-3 max-w-xs text-sm leading-6 text-ink-soft">{item.body}</p></article>)}
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>;
-
-  if (failed)
-    return (
-      <div className="px-6 pt-20 text-center">
-        <div className="text-5xl">⚠️</div>
-        <h1 className="text-xl font-extrabold mt-4">Couldn&apos;t reach BookQuest</h1>
-        <p className="text-ink-soft mt-2 text-sm">
-          The server had a problem responding. Please check your connection and try
-          again.
-        </p>
-        <button onClick={() => load()} className="btn-primary mt-6">
-          Try again
-        </button>
-      </div>
-    );
-
+  if (me === "anon") return <PublicHome />;
+  if (failed) return <div className="page-wrap mx-auto max-w-xl pt-20 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-no-soft text-no"><AppIcon name="compass" className="h-6 w-6" /></span><h1 className="display mt-5 text-4xl">We lost the trail for a moment.</h1><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest could not reach the server. Your saved progress has not moved.</p><button onClick={() => void load()} className="btn-primary mt-6">Try again</button></div>;
   if (!loaded || me === null) return <Loading />;
 
-  // ---------- Signed-in home ----------
-  const isAdmin = me.role === "admin";
+  const current = enrolled.find((course) => course.status === "ready" && course.doneLessons < course.totalLessons) ?? enrolled.find((course) => course.status === "ready");
+  const discovered = enrolled.reduce((total, course) => total + course.doneLessons, 0);
+  const firstName = me.name.split(" ")[0];
+
   return (
     <div className="page-wrap">
-      <header className="mb-10 flex items-start justify-between gap-5">
-        <div>
-          <p className="section-label mb-3">Your workspace</p>
-          <h1 className="page-heading">
-            Welcome back, {me.name.split(" ")[0]}
-          </h1>
-          <p className="mt-3 text-sm text-ink-soft">Continue learning or make something worth remembering.</p>
-        </div>
-        <Link
-          href="/profile"
-          className="quiet-button shrink-0"
-        >
-          {isAdmin ? "Unlimited credits" : `${me.credits} credits`}
-        </Link>
-      </header>
+      <div className="content-measure">
+        <header className="mb-9 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="section-label mb-3">{greeting()}</p><h1 className="page-heading">Welcome back, {firstName}.</h1><p className="mt-4 max-w-xl text-sm leading-6 text-ink-soft">Every chapter you finish leaves the path a little clearer.</p></div>
+          <div className="flex items-center gap-3 rounded-full border border-line bg-card px-4 py-2.5 text-xs font-semibold text-ink-soft shadow-card"><AppIcon name="bookmark" className="h-4 w-4 text-teal" />{discovered > 0 ? `${discovered} chapter${discovered === 1 ? "" : "s"} discovered` : "Your progress is safe"}</div>
+        </header>
 
-      <label
-        className={`premium-panel group block cursor-pointer p-7 text-center transition-all hover:-translate-y-0.5 sm:p-10 ${
-          uploading ? "opacity-60 pointer-events-none" : ""
-        }`}
-      >
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf,.docx,.pptx,.md,.txt,.markdown"
-          className="hidden"
-          onChange={onFile}
-        />
-        <div className="relative z-10 mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-signal text-2xl text-ink transition-transform group-hover:rotate-6 group-hover:scale-105">{uploading ? "…" : "+"}</div>
-        <div className="relative z-10 display text-3xl text-white sm:text-4xl">
-          {uploading ? "Uploading…" : "Turn a document into a course"}
-        </div>
-        <div className="relative z-10 mt-2 text-xs text-white/45">
-          PDF, DOCX, PPTX, MD or TXT · {generateWithAi ? "costs 1 credit" : "no AI, no credit"}
-        </div>
-      </label>
-      <label className="mt-3 flex items-start gap-3 rounded-xl px-3 py-3 text-sm">
-        <input type="checkbox" checked={generateWithAi} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1" />
-        <span><span className="block font-bold">Generate lessons with AI</span><span className="block text-xs text-ink-soft">Turn this off to extract the document into an editable Studio draft without using a credit.</span></span>
-      </label>
-      {uploadError && (
-        <p className="mt-2 text-sm text-no font-medium">
-          {uploadError}{" "}
-          {uploadError.includes("credit") && (
-            <Link href="/profile" className="font-bold underline">
-              Get credits
-            </Link>
-          )}
-        </p>
-      )}
+        {current ? <ContinueJourney course={current} /> : <section className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop sm:grid-cols-[.9fr_1.1fr]"><CourseWorld seed={`${me.id}:first-world`} theme="sunrise-plains" progress={0} className="min-h-60 sm:min-h-80" /><div className="flex flex-col justify-center p-7 sm:p-10"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Your first destination</p><h2 className="display mt-3 text-4xl leading-none sm:text-5xl">A new world is waiting quietly.</h2><p className="mt-4 text-sm leading-6 text-white/70">Choose a course from the library when you are ready.</p><Link href="/explore" className="mt-7 inline-flex min-h-12 w-fit items-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink">Explore the library <AppIcon name="arrow" className="h-4 w-4" /></Link></div></section>}
 
-      {enrolled.length > 0 && (
-        <section className="mt-10">
-          <h2 className="section-label mb-4">
-            Learning
-          </h2>
-          <div className="grid gap-3 xl:grid-cols-2">
-            {enrolled.map((c) => (
-              <CourseCard key={c.id} c={c} />
-            ))}
-          </div>
+        {enrolled.length > 0 && <section className="mt-14" aria-labelledby="your-worlds-heading"><div className="mb-5 flex items-end justify-between gap-5"><div><p className="section-label">Your worlds</p><h2 id="your-worlds-heading" className="display mt-2 text-4xl">Places you can return to</h2></div><Link href="/explore" className="hidden text-sm font-semibold text-teal sm:inline-flex sm:items-center sm:gap-2">Open library <AppIcon name="arrow" className="h-4 w-4" /></Link></div><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{enrolled.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} action={<Link href={`/course/${course.id}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white">{progressFor(course) > 0 ? "Continue journey" : "Enter this world"}<AppIcon name="arrow" className="h-4 w-4" /></Link>} />)}</div></section>}
+
+        <section className="mt-14 grid gap-5 lg:grid-cols-[1.15fr_.85fr]" aria-labelledby="quiet-step-heading">
+          <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-go-soft text-go"><AppIcon name="practice" className="h-5 w-5" /></span><div><p className="section-label">A quiet next step</p><h2 id="quiet-step-heading" className="display mt-2 text-3xl">Keep one idea close.</h2><p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">A short review can strengthen what you have already discovered without starting something new.</p><Link href="/review" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep px-5 py-2.5 text-sm font-semibold hover:bg-paper">Open practice <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
+          <div className="rounded-[1.5rem] bg-sky/75 p-6 sm:p-8"><p className="section-label">Make something worth exploring</p><h2 className="display mt-2 text-3xl">A new world begins with a source.</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Create manually, work from saved sources, or use AI for a draft you review.</p><Link href="/create" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Open Create <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
         </section>
-      )}
 
-      <section className="mt-10 pb-6">
-        <h2 className="section-label mb-4">
-          My courses
-        </h2>
-        <div className="grid gap-3 xl:grid-cols-2">
-          {owned.length === 0 && (
-            <p className="mx-auto max-w-lg py-8 text-center text-sm text-ink-soft">
-              No courses yet — upload your first document above, or{" "}
-              <Link href="/explore" className="font-bold text-primary-deep">
-                explore the library
-              </Link>
-              .
-            </p>
-          )}
-          {owned.map((c) => (
-            <CourseCard
-              key={c.id}
-              c={c}
-              onRetry={async () => {
-                await fetch(`/api/courses/${c.id}/retry`, { method: "POST" });
-                load();
-              }}
-            />
-          ))}
-        </div>
-      </section>
+        <section className="mt-14" aria-labelledby="creator-shelf-heading"><div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="section-label">Creator shelf</p><h2 id="creator-shelf-heading" className="display mt-2 text-4xl">Courses you are shaping</h2></div><span className="text-xs font-semibold text-ink-soft">{me.role === "admin" ? "Creator access" : `${me.credits} creation credit${me.credits === 1 ? "" : "s"}`}</span></div>
+          <label className={`group relative flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed border-line-deep bg-card/60 p-6 text-center transition-colors hover:border-teal hover:bg-card focus-within:border-teal focus-within:ring-4 focus-within:ring-teal/15 ${uploading ? "pointer-events-none opacity-60" : ""}`}>
+            <input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" className="absolute inset-0 cursor-pointer opacity-0" aria-label="Upload a document to create a course" onChange={onFile} />
+            <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="display mt-4 text-2xl">{uploading ? "Opening your source…" : "Quick start from a document"}</span><span className="mt-1 text-xs text-ink-soft">PDF, DOCX, PPTX, Markdown, or text</span>
+          </label>
+          <label className="mt-3 flex items-start gap-3 rounded-xl px-2 py-2 text-sm"><input type="checkbox" checked={generateWithAi} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1 h-4 w-4" /><span><span className="block font-semibold">Create an AI-assisted draft</span><span className="block text-xs leading-5 text-ink-soft">Uses one credit. Turn this off for an editable source-only draft. You remain the author.</span></span></label>
+          {uploadError && <p role="alert" className="mt-2 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{uploadError} {uploadError.includes("credit") && <Link href="/profile" className="underline">View plan</Link>}</p>}
+          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing on the shelf yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description || course.source_filename} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Edit in Studio</Link>}{course.status === "error" && <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>}<Link href={`/course/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link></div>} />)}</div>}
+        </section>
+      </div>
     </div>
   );
 }
