@@ -500,15 +500,31 @@ unique learning experiences with source traceability.
 - [x] Separate Learn, Create, Manage and Discover contexts.
   (Navigation now exposes Create and Studio alongside Learn, Spaces/Manage and
   Explore without changing learner routes.)
-- [ ] Edit the outline before full generation.
+- [x] Edit the outline before full generation.
+  (Draft module titles, summaries, ordering and lesson titles are editable in
+  Studio and are resnapshotted transactionally before review/publication.)
 - [x] Edit and reorder lesson blocks.
   (Studio provides validated field editors, optimistic revision checks, source
   links and per-lesson move controls backed by a complete-order transaction.)
-- [ ] Regenerate only a selected block, lesson or module.
-- [ ] Preserve manual edits outside regeneration scope.
-- [ ] Preview mobile, desktop and offline experiences.
-- [ ] Show estimated duration, accessibility and source-coverage checks.
-- [ ] Make AI optional in every creation path.
+- [x] Regenerate only a selected block, lesson or module.
+  (Scope-specific jobs snapshot target revisions, ground each replacement in the
+  pinned source versions, validate the returned block schema and reject stale
+  writes; Studio exposes block, lesson and module actions.)
+- [x] Preserve manual edits outside regeneration scope.
+  (Scoped application writes revisions only for job targets. The authoring test
+  edits an unrelated block after job start, applies regeneration, and proves the
+  manual revision and origin remain intact.)
+- [x] Preview mobile, desktop and offline experiences.
+  (Studio switches between editable, narrow mobile, wide desktop and offline
+  learner previews; offline-incompatible blocks show their declared fallback.)
+- [x] Show estimated duration, accessibility and source-coverage checks.
+  (The analysis panel uses pinned recipe timing when present, otherwise a
+  deterministic block estimate, alongside schema/accessibility and source-link
+  results.)
+- [x] Make AI optional in every creation path.
+  (Blank and Source Library drafts remain AI-free, while direct document upload
+  now has an explicit AI toggle; the off path extracts into Studio, charges no
+  generation credit and schedules no model work.)
 
 ### Release gates
 
@@ -531,7 +547,9 @@ unique learning experiences with source traceability.
   (`tests/recipes.test.ts` creates, publishes, appends, forks and attaches an
   exact version to a course while proving the recipe tables contain no learner
   state.)
-- [ ] Manual edits survive unrelated regeneration.
+- [x] Manual edits survive unrelated regeneration.
+  (`tests/studio-authoring.test.ts` exercises the concurrent manual-edit case and
+  verifies only the selected block receives a regenerated revision.)
 - [x] Starter recipes pass accessibility, mobile and offline checks.
   (The starter-contract test requires every starter to declare WCAG 2.2 AA,
   mobile, low-bandwidth and offline defaults plus at least one safety boundary;

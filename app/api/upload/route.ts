@@ -36,8 +36,10 @@ export async function POST(req: NextRequest) {
   );
   if (!ipLimit.allowed) return tooManyRequests(ipLimit);
 
+  const form = await req.formData();
+  const generateWithAi = form.get("generate") !== "false";
   const isAdmin = user.role === "admin";
-  if (!isAdmin && user.credits < 1) {
+  if (generateWithAi && !isAdmin && user.credits < 1) {
     return NextResponse.json(
       {
         error:
@@ -48,7 +50,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -81,6 +82,15 @@ export async function POST(req: NextRequest) {
         chapter_count: chapters.length,
       },
     });
+    if (!generateWithAi) {
+      await setCourseStatus(courseId, "ready");
+      return NextResponse.json({
+        courseId,
+        chapters: chapters.length,
+        mode: "manual",
+        studioUrl: `/studio/${courseId}`,
+      });
+    }
     // Charge only after extraction succeeds; a failed generation can be
     // retried free of charge from the course card.
     if (!isAdmin) await adjustCredits(user.id, -1);

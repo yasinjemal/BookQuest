@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, tooManyRequests } from "@/lib/rate-limit";
 import { studioApiError } from "@/lib/studio-api";
-import { addCourseBlock, reorderLessonBlocks } from "@/lib/studio";
+import { addCourseBlock, reorderLessonBlocks, updateCourseOutline } from "@/lib/studio";
 import type { BlockType } from "@/lib/block-registry";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!limit.allowed) return tooManyRequests(limit);
   const courseId = Number((await params).id);
   const body = (await req.json()) as {
-    action?: "add" | "reorder";
+    action?: "add" | "reorder" | "outline";
     lessonKey?: string;
     orderedBlockIds?: string[];
     moduleKey?: string;
@@ -29,6 +29,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (body.action === "reorder" && body.lessonKey && body.orderedBlockIds) {
       await reorderLessonBlocks(user.id, courseId, body.lessonKey, body.orderedBlockIds);
       return NextResponse.json({ ok: true });
+    }
+    if (body.action === "outline" && body.moduleKey && body.moduleTitle && body.lessonKey && body.lessonTitle) {
+      return NextResponse.json(await updateCourseOutline(user.id, courseId, {
+        moduleKey: body.moduleKey,
+        moduleTitle: body.moduleTitle,
+        moduleSummary: body.moduleSummary,
+        modulePosition: body.modulePosition,
+        lessonKey: body.lessonKey,
+        lessonTitle: body.lessonTitle,
+        lessonPosition: body.lessonPosition,
+      }));
     }
     if (
       body.action === "add" && body.moduleKey && body.moduleTitle && body.lessonKey &&

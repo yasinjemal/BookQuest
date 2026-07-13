@@ -1281,6 +1281,228 @@ export async function reorderLessonBlocks(
   });
 }
 
+export async function updateCourseOutline(
+  userId: number,
+  courseId: number,
+  input: {
+    moduleKey: string;
+    moduleTitle: string;
+    moduleSummary?: string;
+    modulePosition?: number;
+    lessonKey: string;
+    lessonTitle: string;
+    lessonPosition?: number;
+  }
+) {
+  const moduleTitle = input.moduleTitle.trim();
+  const lessonTitle = input.lessonTitle.trim();
+  if (!moduleTitle || !lessonTitle) throw new StudioConflictError("Module and lesson titles are required");
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Branch a draft before editing the outline");
+    const version = (
+      await client.query<{ lifecycle_status: string }>(
+        "SELECT lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (version?.lifecycle_status !== "draft") throw new StudioConflictError("Return this version to draft before editing its outline");
+    const result = await client.query(
+      `UPDATE course_blocks SET module_title = $4, module_summary = $5,
+         module_position = COALESCE($6, module_position), lesson_title = $7,
+         lesson_position = COALESCE($8, lesson_position), updated_at = $9
+       WHERE course_version_id = $1 AND module_key = $2 AND lesson_key = $3`,
+      [
+        course.current_draft_version_id,
+        input.moduleKey,
+        input.lessonKey,
+        moduleTitle,
+        input.moduleSummary?.trim() ?? "",
+        input.modulePosition ?? null,
+        lessonTitle,
+        input.lessonPosition ?? null,
+        nowIso(),
+      ]
+    );
+    if (result.rowCount === 0) throw new StudioConflictError("Outline section not found");
+    await snapshotCourseVersion(client, course.current_draft_version_id);
+    return { updatedBlocks: result.rowCount };
+  });
+}
+
+export type RegenerationScope =
+  | { type: "block"; key: string }
+  | { type: "lesson"; key: string }
+  | { type: "module"; key: string };
+
+export interface RegenerationTarget {
+  id: string;
+  blockType: BlockType;
+  expectedRevision: number;
+  content: unknown;
+  sourceRefs: unknown[];
+}
+
+export async function beginScopedRegeneration(
+  userId: number,
+  courseId: number,
+  scope: RegenerationScope
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Branch a draft before regenerating");
+    const version = (
+      await client.query<{ lifecycle_status: string }>(
+        "SELECT lifecycle_status FROM course_versions WHERE id = $1 FOR UPDATE",
+        [course.current_draft_version_id]
+      )
+    ).rows[0];
+    if (version?.lifecycle_status !== "draft") throw new StudioConflictError("Only a draft can be regenerated");
+    const predicate = scope.type === "block" ? "block.id = $2" : scope.type === "lesson" ? "block.lesson_key = $2" : "block.module_key = $2";
+    const targets = (
+      await client.query<{
+        id: string;
+        block_type: BlockType;
+        current_revision: number;
+        content_json: string;
+        source_refs_json: string;
+      }>(
+        `SELECT block.id, block.block_type, block.current_revision,
+                revision.content_json, revision.source_refs_json
+         FROM course_blocks block JOIN course_block_revisions revision
+           ON revision.block_id = block.id AND revision.revision = block.current_revision
+         WHERE block.course_version_id = $1 AND ${predicate}
+         ORDER BY block.module_position, block.lesson_position, block.position
+         FOR UPDATE OF block`,
+        [course.current_draft_version_id, scope.key]
+      )
+    ).rows;
+    if (targets.length === 0) throw new StudioConflictError("Regeneration scope is empty");
+    if (targets.length > 20) throw new StudioConflictError("Regenerate at most 20 blocks at once");
+    const runId = newGenerationRunId();
+    const job = (
+      await client.query<{ id: string }>(
+        `INSERT INTO course_generation_jobs
+          (course_version_id, scope_type, scope_key, base_revision, run_id,
+           status, model, prompt_version, requested_by_user_id, started_at)
+         VALUES ($1,$2,$3,$4,$5,'running','claude-opus-4-8','studio-scope-v1',$6,$7)
+         RETURNING id`,
+        [
+          course.current_draft_version_id,
+          scope.type,
+          scope.key,
+          scope.type === "block" ? targets[0].current_revision : null,
+          runId,
+          userId,
+          nowIso(),
+        ]
+      )
+    ).rows[0];
+    const sources = (
+      await client.query<{ id: string; title: string; extracted_content_json: string | null }>(
+        `SELECT version.id, source.title, version.extracted_content_json
+         FROM course_version_sources link
+         JOIN source_versions version ON version.id = link.source_version_id
+         JOIN source_assets source ON source.id = version.source_id
+         WHERE link.course_version_id = $1 ORDER BY link.position`,
+        [course.current_draft_version_id]
+      )
+    ).rows;
+    return {
+      jobId: job.id,
+      courseVersionId: course.current_draft_version_id,
+      targets: targets.map((target): RegenerationTarget => ({
+        id: target.id,
+        blockType: target.block_type,
+        expectedRevision: target.current_revision,
+        content: JSON.parse(target.content_json),
+        sourceRefs: JSON.parse(target.source_refs_json),
+      })),
+      sources,
+    };
+  });
+}
+
+export async function applyScopedRegeneration(
+  userId: number,
+  courseId: number,
+  jobId: string,
+  replacements: Array<{ blockId: string; expectedRevision: number; content: unknown }>
+) {
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    const job = (
+      await client.query<{ course_version_id: string; status: string; requested_by_user_id: number; scope_type: string; scope_key: string }>(
+        "SELECT course_version_id, status, requested_by_user_id, scope_type, scope_key FROM course_generation_jobs WHERE id = $1 FOR UPDATE",
+        [jobId]
+      )
+    ).rows[0];
+    if (!job || job.course_version_id !== course.current_draft_version_id || job.requested_by_user_id !== userId) {
+      throw new StudioConflictError("Regeneration job is unavailable");
+    }
+    if (job.status !== "running") throw new StudioConflictError("Regeneration job is no longer active");
+    for (const replacement of replacements) {
+      const block = (
+        await client.query<{ id: string; block_type: BlockType; current_revision: number; lesson_key: string; module_key: string }>(
+          "SELECT id, block_type, current_revision, lesson_key, module_key FROM course_blocks WHERE id = $1 AND course_version_id = $2 FOR UPDATE",
+          [replacement.blockId, job.course_version_id]
+        )
+      ).rows[0];
+      const insideScope = !!block && (
+        (job.scope_type === "block" && block.id === job.scope_key) ||
+        (job.scope_type === "lesson" && block.lesson_key === job.scope_key) ||
+        (job.scope_type === "module" && block.module_key === job.scope_key)
+      );
+      if (!insideScope || !block || block.current_revision !== replacement.expectedRevision) {
+        throw new StudioConflictError("A targeted block changed while regeneration was running");
+      }
+      const validation = validateBlockContent(block.block_type, replacement.content);
+      if (!validation.valid) throw new StudioConflictError(validation.issues.join("; "));
+      const previous = (
+        await client.query<{ source_refs_json: string }>(
+          "SELECT source_refs_json FROM course_block_revisions WHERE block_id = $1 AND revision = $2",
+          [block.id, block.current_revision]
+        )
+      ).rows[0];
+      const nextRevision = block.current_revision + 1;
+      await client.query(
+        `INSERT INTO course_block_revisions
+          (block_id, revision, content_json, source_refs_json, accessibility_json,
+           provenance_json, edit_origin, created_by_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'regenerated',$7)`,
+        [
+          block.id,
+          nextRevision,
+          JSON.stringify(replacement.content),
+          previous.source_refs_json,
+          JSON.stringify({ status: "checked", issues: validation.issues }),
+          JSON.stringify({ jobId, promptVersion: "studio-scope-v1" }),
+          userId,
+        ]
+      );
+      await client.query("UPDATE course_blocks SET current_revision = $2, updated_at = $3 WHERE id = $1", [
+        block.id,
+        nextRevision,
+        nowIso(),
+      ]);
+    }
+    await snapshotCourseVersion(client, job.course_version_id);
+    await client.query(
+      "UPDATE course_generation_jobs SET status = 'complete', completed_at = $2 WHERE id = $1",
+      [jobId, nowIso()]
+    );
+    return { jobId, updatedBlocks: replacements.length };
+  });
+}
+
+export async function failScopedRegeneration(jobId: string, error: string) {
+  await pool.query(
+    `UPDATE course_generation_jobs SET status = 'error', error = $2, completed_at = $3
+     WHERE id = $1 AND status = 'running'`,
+    [jobId, error.slice(0, 2000), nowIso()]
+  );
+}
+
 export async function analyzeCourseVersion(
   userId: number,
   courseId: number
@@ -1290,6 +1512,15 @@ export async function analyzeCourseVersion(
     const versionId = course.current_draft_version_id ?? course.published_version_id;
     if (!versionId) throw new StudioConflictError("Course version not found");
     const blocks = await readStudioBlocks(client, versionId);
+    const recipeTiming = (
+      await client.query<{ duration_minutes: number | null; lesson_size_minutes: number | null }>(
+        `SELECT recipe.duration_minutes, recipe.lesson_size_minutes
+         FROM course_versions version LEFT JOIN recipe_versions recipe
+           ON recipe.id = version.recipe_version_id
+         WHERE version.id = $1`,
+        [versionId]
+      )
+    ).rows[0];
     const linked = new Set(
       (
         await client.query<{ source_version_id: string }>(
@@ -1328,6 +1559,8 @@ export async function analyzeCourseVersion(
       accessibilityIssueBlockIds: results
         .filter((result) => !result.accessibilityValid)
         .map((result) => result.blockId),
+      estimatedDurationMinutes: recipeTiming?.duration_minutes ?? Math.max(1, Math.ceil(blocks.length * 1.5)),
+      estimatedLessonMinutes: recipeTiming?.lesson_size_minutes ?? Math.max(1, Math.ceil(blocks.length * 1.5)),
       blocks: results,
     };
   });

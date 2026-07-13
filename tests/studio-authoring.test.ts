@@ -13,6 +13,8 @@ let firstSourceId: string;
 let firstSourceVersionId: string;
 let secondSourceVersionId: string;
 let courseId: number;
+let explanationBlockId: string;
+let recapBlockId: string;
 
 describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
   beforeAll(async () => {
@@ -114,6 +116,7 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
       content: { type: "explanation", heading: "Start", body: "Grounded content" },
       sourceRefs: [{ sourceVersionId, locator: { section: "Policy" } }],
     });
+    explanationBlockId = explanation.id;
     const recap = await studio.addCourseBlock(ownerId, courseId, {
       moduleKey: "module:intro",
       moduleTitle: "Introduction",
@@ -125,6 +128,7 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
       content: { type: "recap", heading: "Remember", points: ["One point"] },
       sourceRefs: [{ sourceVersionId }],
     });
+    recapBlockId = recap.id;
     await expect(
       studio.addCourseBlock(ownerId, courseId, {
         moduleKey: "module:intro",
@@ -156,6 +160,48 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
     expect(reordered.map((block) => block.id)).toEqual([recap.id, explanation.id]);
     await expect(studio.getCourseStudio(outsiderId, courseId)).rejects.toMatchObject({
       reason: "membership_required",
+    });
+  });
+
+  it("edits the outline and regenerates only the selected scope", async () => {
+    await studio.updateCourseOutline(ownerId, courseId, {
+      moduleKey: "module:intro",
+      moduleTitle: "Getting started",
+      moduleSummary: "A revised outline summary",
+      lessonKey: "lesson:first",
+      lessonTitle: "Core ideas",
+    });
+    const outlined = await studio.getCourseStudio(ownerId, courseId);
+    expect(outlined.blocks.every((block) =>
+      block.moduleTitle === "Getting started" && block.lessonTitle === "Core ideas"
+    )).toBe(true);
+
+    const job = await studio.beginScopedRegeneration(ownerId, courseId, {
+      type: "block",
+      key: recapBlockId,
+    });
+    expect(job.targets).toHaveLength(1);
+    const explanation = outlined.blocks.find((block) => block.id === explanationBlockId)!;
+    await studio.updateCourseBlock(ownerId, courseId, explanationBlockId, {
+      expectedRevision: explanation.revision,
+      content: { type: "explanation", heading: "Start", body: "Manual work outside the scope survives." },
+      sourceRefs: explanation.sourceRefs,
+    });
+    await studio.applyScopedRegeneration(ownerId, courseId, job.jobId, [{
+      blockId: recapBlockId,
+      expectedRevision: job.targets[0].expectedRevision,
+      content: { type: "recap", heading: "Updated recap", points: ["Regenerated point"] },
+    }]);
+    const after = await studio.getCourseStudio(ownerId, courseId);
+    expect(after.blocks.find((block) => block.id === explanationBlockId)).toMatchObject({
+      revision: explanation.revision + 1,
+      content: { body: "Manual work outside the scope survives." },
+      editOrigin: "manual",
+    });
+    expect(after.blocks.find((block) => block.id === recapBlockId)).toMatchObject({
+      revision: 2,
+      content: { heading: "Updated recap" },
+      editOrigin: "regenerated",
     });
   });
 

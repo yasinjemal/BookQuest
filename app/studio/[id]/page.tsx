@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { BlockType } from "@/lib/block-registry";
+import { BLOCK_CHANNELS, type BlockType } from "@/lib/block-registry";
 
 interface SourceItem { source_version_id: string; title: string; kind: string }
 interface BlockItem {
@@ -81,17 +81,59 @@ function BlockEditor({ block, sources, onSaved }: { block: BlockItem; sources: S
   return <article className="rounded-2xl bg-card border border-line p-4 space-y-3"><div className="flex justify-between"><div><p className="text-xs text-ink-soft">{LABELS[block.blockType]} · revision {block.revision}</p><h3 className="font-bold">{block.lessonTitle}</h3></div>{block.editOrigin === "manual" && <span className="text-xs text-teal font-semibold">Edited</span>}</div><FieldEditor content={content} onChange={setContent} />{sources.length > 0 && <fieldset><legend className="text-xs font-semibold mb-1">Source links</legend><div className="space-y-1">{sources.map((source) => <label key={source.source_version_id} className="flex gap-2 text-xs"><input type="checkbox" checked={refs.includes(source.source_version_id)} onChange={(event) => setRefs((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} />{source.title}</label>)}</div></fieldset>}<button onClick={() => void save()} disabled={saving} className="w-full rounded-xl bg-primary text-white font-bold py-2 disabled:opacity-40">{saving ? "Saving…" : "Save block"}</button>{error && <p className="text-xs text-no font-semibold">{error}</p>}</article>;
 }
 
+function OutlineEditor({ section, onSaved, onRegenerate }: {
+  section: BlockItem;
+  onSaved: () => Promise<void>;
+  onRegenerate: (scope: "lesson" | "module", key: string) => Promise<void>;
+}) {
+  const [moduleTitle, setModuleTitle] = useState(section.moduleTitle);
+  const [moduleSummary, setModuleSummary] = useState(section.moduleSummary);
+  const [lessonTitle, setLessonTitle] = useState(section.lessonTitle);
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    setSaving(true);
+    const courseId = window.location.pathname.split("/").pop();
+    const response = await fetch(`/api/studio/courses/${courseId}/blocks`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "outline", moduleKey: section.moduleKey, moduleTitle, moduleSummary,
+        modulePosition: section.modulePosition, lessonKey: section.lessonKey,
+        lessonTitle, lessonPosition: section.lessonPosition,
+      }),
+    });
+    setSaving(false);
+    if (response.ok) await onSaved();
+  }
+  return <article className="rounded-2xl bg-card border border-line p-4 space-y-3">
+    <div><p className="text-xs font-bold uppercase text-ink-soft">Module and lesson</p><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} aria-label="Module title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-bold" /><textarea value={moduleSummary} onChange={(event) => setModuleSummary(event.target.value)} aria-label="Module summary" rows={2} className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 text-sm" /><input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} aria-label="Lesson title" className="mt-2 w-full rounded-xl border-2 border-line bg-paper px-3 py-2 font-semibold" /></div>
+    <div className="grid grid-cols-3 gap-2"><button type="button" onClick={() => void save()} disabled={saving} className="rounded-xl bg-teal text-white text-xs font-bold py-2">{saving ? "Saving…" : "Save outline"}</button><button type="button" onClick={() => void onRegenerate("lesson", section.lessonKey)} className="rounded-xl border border-line text-xs font-bold py-2">Regenerate lesson</button><button type="button" onClick={() => void onRegenerate("module", section.moduleKey)} className="rounded-xl border border-line text-xs font-bold py-2">Regenerate module</button></div>
+  </article>;
+}
+
+function CoursePreview({ blocks, mode }: { blocks: BlockItem[]; mode: "mobile" | "desktop" | "offline" }) {
+  return <div className={`mx-auto rounded-2xl border-4 border-ink/80 bg-paper p-4 transition-all ${mode === "mobile" ? "max-w-sm" : "max-w-4xl"}`}>
+    <div className="mb-4 flex items-center justify-between text-xs font-bold text-ink-soft"><span>{mode === "mobile" ? "Mobile learner view" : mode === "desktop" ? "Desktop learner view" : "Offline learner view"}</span><span>{blocks.length} blocks</span></div>
+    <div className={mode === "desktop" ? "grid grid-cols-2 gap-3" : "space-y-3"}>{blocks.map((block) => {
+      const channel = BLOCK_CHANNELS[block.blockType];
+      const unavailable = mode === "offline" && !channel.offline;
+      return <article key={block.id} className="rounded-xl bg-card border border-line p-3"><p className="text-xs font-bold uppercase text-primary-deep">{LABELS[block.blockType]}</p><h3 className="font-bold mt-1">{block.lessonTitle}</h3>{unavailable ? <p className="mt-2 text-sm text-ink-soft">Offline fallback: {channel.fallback ? LABELS[channel.fallback] : "Reconnect to use this block"}</p> : <div className="mt-2 space-y-1 text-sm">{Object.entries(block.content).filter(([key]) => key !== "type").slice(0, 4).map(([key, value]) => <p key={key}><span className="font-semibold">{key.replace(/([A-Z])/g, " $1")}:</span> {Array.isArray(value) ? value.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(" · ") : String(value)}</p>)}</div>}</article>;
+    })}</div>
+  </div>;
+}
+
 export default function StudioPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<StudioData | null>(null);
-  const [analysis, setAnalysis] = useState<{ totalBlocks: number; tracedBlocks: number; unsupportedBlockIds: string[]; accessibilityIssueBlockIds: string[] } | null>(null);
+  const [analysis, setAnalysis] = useState<{ totalBlocks: number; tracedBlocks: number; unsupportedBlockIds: string[]; accessibilityIssueBlockIds: string[]; estimatedDurationMinutes: number; estimatedLessonMinutes: number } | null>(null);
   const [blockType, setBlockType] = useState<BlockType>("explanation");
   const [moduleTitle, setModuleTitle] = useState("Module 1");
   const [lessonTitle, setLessonTitle] = useState("Lesson 1");
   const [comment, setComment] = useState("");
   const [versionDiff, setVersionDiff] = useState<{ added: string[]; removed: string[]; changed: string[] } | null>(null);
   const [error, setError] = useState("");
+  const [regenerating, setRegenerating] = useState("");
+  const [previewMode, setPreviewMode] = useState<"edit" | "mobile" | "desktop" | "offline">("edit");
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/studio/courses/${id}`);
@@ -156,6 +198,22 @@ export default function StudioPage() {
     await load();
   }
 
+  async function regenerate(scopeType: "block" | "lesson" | "module", scopeKey: string) {
+    setError("");
+    setRegenerating(`${scopeType}:${scopeKey}`);
+    try {
+      const response = await fetch(`/api/studio/courses/${id}/regenerate`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scopeType, scopeKey }),
+      });
+      const result = await response.json();
+      if (!response.ok) return setError(result.error ?? "Could not regenerate this selection");
+      await load();
+    } finally {
+      setRegenerating("");
+    }
+  }
+
   async function publish() {
     setError("");
     const response = await fetch(`/api/courses/${id}/publish`, {
@@ -195,7 +253,10 @@ export default function StudioPage() {
       <h2 className="font-bold">Version checks</h2>
       <p className="text-sm mt-1">{analysis.tracedBlocks}/{analysis.totalBlocks} blocks linked to sources</p>
       <p className="text-sm">{analysis.accessibilityIssueBlockIds.length === 0 ? "Accessibility checks pass" : `${analysis.accessibilityIssueBlockIds.length} accessibility issues need attention`}</p>
+      <p className="text-sm">Estimated duration: {analysis.estimatedDurationMinutes} minutes</p>
     </section>}
+    <section className="rounded-2xl bg-card border border-line p-3"><div className="grid grid-cols-4 gap-2">{(["edit", "mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => setPreviewMode(mode)} className={`rounded-lg px-2 py-2 text-xs font-bold capitalize ${previewMode === mode ? "bg-primary text-white" : "bg-paper border border-line"}`}>{mode}</button>)}</div></section>
+    {previewMode !== "edit" && <CoursePreview blocks={data.blocks} mode={previewMode} />}
     <section className="rounded-2xl bg-card border border-line p-4 space-y-2">
       <h2 className="font-bold">Review and publish</h2>
       {data.version.lifecycle_status === "draft" && <button onClick={() => void runLifecycle("submit")} className="w-full rounded-xl bg-primary text-white font-bold py-2.5">Submit for review</button>}
@@ -218,7 +279,8 @@ export default function StudioPage() {
       <h2 className="font-bold">Version history</h2>
       {data.versions.map((version) => <div key={version.id} className="flex items-center justify-between rounded-xl bg-paper border border-line px-3 py-2"><p className="text-sm"><span className="font-semibold">Version {version.version_number}</span> · {version.lifecycle_status}</p>{data.version.lifecycle_status === "published" && version.lifecycle_status === "superseded" && <button onClick={() => void runLifecycle("branch", undefined, version.id)} className="text-xs font-bold text-primary-deep">Restore as draft</button>}</div>)}
     </section>
-    <section className="space-y-3">
+    {previewMode === "edit" && <section className="space-y-3">
+      {editable && lessons.map((section) => <OutlineEditor key={`outline:${section.lessonKey}`} section={section} onSaved={load} onRegenerate={regenerate} />)}
       {data.blocks.length === 0 && <p className="rounded-xl bg-paper border border-line p-4 text-sm text-ink-soft">This draft is empty. Add its first block below.</p>}
       {data.blocks.map((block) => {
         const lessonBlocks = data.blocks.filter((candidate) => candidate.lessonKey === block.lessonKey);
@@ -226,10 +288,11 @@ export default function StudioPage() {
         return <div key={`${block.id}:${block.revision}`} className="space-y-2">
           {editable && <div className="flex justify-end gap-2"><button type="button" onClick={() => void moveBlock(block, -1)} disabled={lessonIndex === 0} className="rounded-lg border border-line px-3 py-1 text-xs font-bold disabled:opacity-30">Move up</button><button type="button" onClick={() => void moveBlock(block, 1)} disabled={lessonIndex === lessonBlocks.length - 1} className="rounded-lg border border-line px-3 py-1 text-xs font-bold disabled:opacity-30">Move down</button></div>}
           <BlockEditor block={block} sources={data.sources} onSaved={load} />
+          {editable && <button type="button" onClick={() => void regenerate("block", block.id)} disabled={!!regenerating} className="w-full rounded-xl border border-primary/40 text-primary-deep font-bold py-2 disabled:opacity-40">{regenerating === `block:${block.id}` ? "Regenerating…" : "Regenerate this block"}</button>}
         </div>;
       })}
-    </section>
-    {editable && <form onSubmit={addBlock} className="rounded-2xl bg-card border border-line p-4 space-y-3">
+    </section>}
+    {previewMode === "edit" && editable && <form onSubmit={addBlock} className="rounded-2xl bg-card border border-line p-4 space-y-3">
       <h2 className="font-bold">Add a block</h2>
       {lessons.length === 0 && <><input value={moduleTitle} onChange={(event) => setModuleTitle(event.target.value)} placeholder="Module title" className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2" /><input value={lessonTitle} onChange={(event) => setLessonTitle(event.target.value)} placeholder="Lesson title" className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2" /></>}
       <select value={blockType} onChange={(event) => setBlockType(event.target.value as BlockType)} className="w-full rounded-xl border-2 border-line bg-paper px-3 py-2.5">{Object.entries(LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>

@@ -107,6 +107,7 @@ export default function HomePage() {
   const [failed, setFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [generateWithAi, setGenerateWithAi] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -158,10 +159,12 @@ export default function HomePage() {
     setUploadError(null);
     const form = new FormData();
     form.append("file", file);
+    form.append("generate", String(generateWithAi));
     try {
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) setUploadError(data.error ?? "Upload failed");
+      else if (data.studioUrl) window.location.href = data.studioUrl;
       await load();
     } catch {
       setUploadError("Upload failed — are you online?");
@@ -257,7 +260,7 @@ export default function HomePage() {
         <input
           ref={fileRef}
           type="file"
-          accept=".pdf,.docx,.md,.txt,.markdown"
+          accept=".pdf,.docx,.pptx,.md,.txt,.markdown"
           className="hidden"
           onChange={onFile}
         />
@@ -266,8 +269,12 @@ export default function HomePage() {
           {uploading ? "Uploading…" : "Turn a document into a course"}
         </div>
         <div className="text-xs text-ink-soft mt-1">
-          PDF, DOCX, MD or TXT · costs 1 credit
+          PDF, DOCX, PPTX, MD or TXT · {generateWithAi ? "costs 1 credit" : "no AI, no credit"}
         </div>
+      </label>
+      <label className="mt-3 flex items-start gap-3 rounded-xl border border-line bg-card p-3 text-sm">
+        <input type="checkbox" checked={generateWithAi} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1" />
+        <span><span className="block font-bold">Generate lessons with AI</span><span className="block text-xs text-ink-soft">Turn this off to extract the document into an editable Studio draft without using a credit.</span></span>
       </label>
       {uploadError && (
         <p className="mt-2 text-sm text-no font-medium">
