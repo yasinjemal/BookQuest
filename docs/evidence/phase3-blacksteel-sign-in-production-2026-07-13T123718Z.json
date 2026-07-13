@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "measuredAt": "2026-07-13T12:37:18.419Z",
+  "scope": "Blacksteel pilot sign-in selection production release",
+  "release": {
+    "commit": "101888e7215765e4591a5bb0c1a076cd51452349",
+    "productionUrl": "https://book-quest-silk.vercel.app",
+    "ci": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29250291188"
+    },
+    "security": {
+      "conclusion": "success",
+      "url": "https://github.com/yasinjemal/BookQuest/actions/runs/29250291192"
+    },
+    "deployment": {
+      "state": "ready",
+      "url": "https://vercel.com/dynasty-built-academy/book-quest/AEkcTaLjC6gvSeoJWytUbDLqXFBf"
+    }
+  },
+  "migration": {
+    "id": 9,
+    "name": "pilot_password_sign_in",
+    "appliedAt": "2026-07-13T12:36:59.349Z"
+  },
+  "readiness": {
+    "requiredTables": 26,
+    "missingTables": [],
+    "requiredTriggers": 18,
+    "missingTriggers": [],
+    "metrics": {
+      "organizationSpaces": 0,
+      "policyVersions": 0,
+      "assignments": 6,
+      "assignmentVersions": 6,
+      "participations": 9,
+      "completionEvents": 0,
+      "credentials": 0,
+      "auditPacks": 0,
+      "activeMfaMethods": 0,
+      "activeIdentityProviders": 0,
+      "activePilots": 0,
+      "completedPilots": 0,
+      "pilotObservations": 0,
+      "pilotGateAttestations": 0
+    },
+    "failures": {
+      "organizationSpacesWithoutPolicy": 0,
+      "assignmentsWithoutCurrentVersion": 0,
+      "assignmentRuleOrCourseMismatch": 0,
+      "crossSpaceAssignmentTargets": 0,
+      "crossSpaceParticipations": 0,
+      "completionBindingMismatch": 0,
+      "credentialBindingMismatch": 0,
+      "activeExpiredCredentials": 0,
+      "pilotsWithoutCurrentPlan": 0,
+      "completedPilotsWithoutStatusEvent": 0
+    },
+    "healthy": true
+  },
+  "productionSmoke": {
+    "path": "/api/me",
+    "anonymousResponse": { "user": null }
+  },
+  "scopeLimit": "The password sign-in option is deployed and migration 9 is healthy. Blacksteel has been recruited, but no production organization Space, real pilot journey, stakeholder acceptance, independent penetration test or full accessibility audit has yet occurred."
+}

@@ -699,6 +699,15 @@ or independent-assessment items by itself.
   completion, credential or audit-pack rows. A real partner journey, stakeholder
   audit-pack acceptance, live revocation proof, pilot sign-in test,
   independent penetration test and assistive-technology audit remain required.
+- Blacksteel pilot-enablement release
+  `101888e7215765e4591a5bb0c1a076cd51452349` passed
+  [CI #29250291188](https://github.com/yasinjemal/BookQuest/actions/runs/29250291188),
+  [security checks #29250291192](https://github.com/yasinjemal/BookQuest/actions/runs/29250291192)
+  and a Ready Vercel production deployment. Migration 9
+  (`pilot_password_sign_in`) applied at `2026-07-13T12:36:59.349Z`; the read-only
+  production gate found all 26 required tables, all 18 integrity triggers and all
+  ten failure counters at zero. Exact evidence is in
+  `docs/evidence/phase3-blacksteel-sign-in-production-2026-07-13T123718Z.json`.
 
 ### Confirmed first pilot
 

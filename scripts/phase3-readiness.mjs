@@ -43,6 +43,12 @@ try {
   if (!pilotMigration || pilotMigration.name !== "institutional_pilot_evidence") {
     throw new Error("Migration 8 (institutional_pilot_evidence) is not applied");
   }
+  const signInMigration = (
+    await client.query("SELECT name, applied_at FROM schema_migrations WHERE id = 9")
+  ).rows[0];
+  if (!signInMigration || signInMigration.name !== "pilot_password_sign_in") {
+    throw new Error("Migration 9 (pilot_password_sign_in) is not applied");
+  }
 
   const requiredTables = [
     "completion_rule_versions",
@@ -213,6 +219,11 @@ try {
       id: 8,
       name: pilotMigration.name,
       appliedAt: pilotMigration.applied_at,
+    },
+    signInMigration: {
+      id: 9,
+      name: signInMigration.name,
+      appliedAt: signInMigration.applied_at,
     },
     requiredTables,
     missingTables,
