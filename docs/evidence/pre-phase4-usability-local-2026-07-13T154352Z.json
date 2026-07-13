@@ -39,5 +39,11 @@
     "horizontalOverflow": false,
     "consoleErrorsOrWarnings": 0
   },
+  "releaseCachePolicy": {
+    "cacheVersion": "bookquest-v9",
+    "pageNavigations": "network-first with cached offline fallback",
+    "staticAssets": "stale-while-revalidate",
+    "authenticatedApis": "network-only"
+  },
   "scopeLimit": "This local verification improves the Phase 0-3 experience. It does not start Phase 4, close the Blacksteel pilot, or replace the independent Phase 3 WCAG 2.2 AA assessment."
 }

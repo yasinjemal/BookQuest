@@ -766,6 +766,8 @@ architecture.
   136/136 tests pass, the production build completes, the production dependency
   audit reports zero vulnerabilities, and signed-in/signed-out browser checks at
   1440x900 and 390x844 show no horizontal overflow or console errors.
+- [x] Make page navigations network-first with a cached offline fallback so a
+  returning online user receives the current interface instead of one stale page.
 
 The design principles and information architecture are recorded in
 `docs/UX_FOUNDATION.md`. This work improves the existing Phase 0-3 experience and

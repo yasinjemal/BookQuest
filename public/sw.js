@@ -1,8 +1,9 @@
 /* BookQuest service worker.
    - Authenticated APIs: network-only so cached data never crosses accounts.
-   - Pages and static assets: stale-while-revalidate for low-bandwidth loads.
+   - Page navigations: network-first so online users receive the current release.
+   - Static assets: stale-while-revalidate for low-bandwidth loads.
    - Answer POSTs: the app's account-scoped outbox handles offline replay. */
-const CACHE = "bookquest-v8";
+const CACHE = "bookquest-v9";
 const PRECACHE = [
   "/",
   "/explore",
@@ -42,6 +43,21 @@ self.addEventListener("fetch", (event) => {
 
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(request));
+    return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => {
+        try {
+          const response = await fetch(request);
+          if (response.ok) await cache.put(request, response.clone());
+          return response;
+        } catch {
+          return (await cache.match(request)) || (await cache.match("/")) || Response.error();
+        }
+      })
+    );
     return;
   }
 
