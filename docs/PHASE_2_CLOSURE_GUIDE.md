@@ -24,8 +24,9 @@ git push origin main
 git rev-parse HEAD
 ```
 
-The pushed SHA must equal `PHASE_2_SHA`. Do not rewrite migration 4 after this
-point; any later schema change must be a new migration.
+The pushed SHA must equal `PHASE_2_SHA`. Migrations 4 and 5 have reached the
+release line and must never be rewritten; any later schema change must be a new
+migration.
 
 ## 2. Require green CI
 
@@ -45,7 +46,7 @@ for a different SHA is not evidence for this release.
 Verify the production deployment is built from `PHASE_2_SHA`. Record the Vercel
 deployment URL and successful status. Do not infer deployment from CI alone.
 
-## 4. Apply migration 4 safely
+## 4. Apply pending migrations safely
 
 After the deployment is ready, make one ordinary request that reaches the
 database, for example:
@@ -54,16 +55,20 @@ database, for example:
 Invoke-WebRequest https://book-quest-silk.vercel.app/api/spaces/discover -UseBasicParsing
 ```
 
-The application migration lock applies pending migration 4 exactly once. Then
-verify the production database read-only:
+The application migration lock applies pending migrations exactly once. Migration
+4 may already exist from an earlier foundation deployment; migration 5 is the
+required fix-forward for the published-to-superseded lifecycle guard. Verify both
+read-only:
 
 ```sql
 SELECT id, name, applied_at
 FROM schema_migrations
-WHERE id = 4;
+WHERE id IN (4, 5)
+ORDER BY id;
 ```
 
-Expected name: `course_studio_foundation`. Record `applied_at`.
+Expected names: `course_studio_foundation` and
+`phase2_lifecycle_hardening`. Record both `applied_at` values.
 
 ## 5. Run the production readiness gate
 
@@ -118,7 +123,7 @@ Update `docs/PLATFORM_PHASE_TRACKER.md` with:
 - exact implementation SHA;
 - GitHub Actions run URL and result;
 - Vercel deployment URL/result;
-- migration 4 `applied_at` timestamp;
+- migration 4 and migration 5 `applied_at` timestamps;
 - dated readiness evidence path;
 - smoke journey result and any explicitly accepted limitation.
 

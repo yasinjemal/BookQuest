@@ -24,6 +24,10 @@ try {
   if (!migration || migration.name !== "course_studio_foundation") {
     throw new Error("Migration 4 (course_studio_foundation) is not applied");
   }
+  const hardening = (await client.query("SELECT name, applied_at FROM schema_migrations WHERE id = 5")).rows[0];
+  if (!hardening || hardening.name !== "phase2_lifecycle_hardening") {
+    throw new Error("Migration 5 (phase2_lifecycle_hardening) is not applied");
+  }
   const requiredTables = [
     "recipes", "recipe_versions", "source_assets", "source_versions",
     "source_collections", "source_collection_versions", "course_versions",
@@ -62,6 +66,12 @@ try {
   const failures = {
     missingTables: missingTables.length,
     missingTriggers: missingTriggers.length,
+    lifecycleGuardNotHardened: await scalar(
+      `SELECT CASE WHEN
+         position('OLD.lifecycle_status = ''published''' in pg_get_functiondef('phase2_version_lifecycle_guard()'::regprocedure)) > 0
+         AND position('NEW.lifecycle_status = ''superseded''' in pg_get_functiondef('phase2_version_lifecycle_guard()'::regprocedure)) > 0
+       THEN 0 ELSE 1 END AS count`
+    ),
     sourcesWithoutSpace: await scalar(
       "SELECT COUNT(*) AS count FROM source_assets source LEFT JOIN spaces space ON space.id = source.owning_space_id WHERE space.id IS NULL"
     ),
@@ -130,6 +140,7 @@ try {
     schemaVersion: 1,
     measuredAt: new Date().toISOString(),
     migration: { id: 4, name: migration.name, appliedAt: migration.applied_at },
+    hardeningMigration: { id: 5, name: hardening.name, appliedAt: hardening.applied_at },
     requiredTables,
     missingTables,
     requiredTriggers,
