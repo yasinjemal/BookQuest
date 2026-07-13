@@ -80,7 +80,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     const client: PoolClient = await raw.connect();
     try {
       const applied = await applyPendingMigrations(client);
-      expect(applied).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     } finally {
       client.release();
     }
@@ -102,6 +102,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       { id: 5, name: "phase2_lifecycle_hardening" },
       { id: 6, name: "institutional_evidence_foundation" },
       { id: 7, name: "institutional_policy_and_mfa" },
+      { id: 8, name: "institutional_pilot_evidence" },
     ]);
   });
 
@@ -202,6 +203,11 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "course_version_reviews",
       "course_version_comments",
       "course_generation_jobs",
+      "institutional_pilots",
+      "institutional_pilot_plan_versions",
+      "institutional_pilot_observations",
+      "institutional_pilot_gate_attestations",
+      "institutional_pilot_status_events",
     ];
     for (const table of expected) expect(present).toContain(table);
   });

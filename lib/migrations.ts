@@ -1968,6 +1968,140 @@ CREATE TRIGGER space_policy_versions_locked
   FOR EACH ROW EXECUTE FUNCTION phase3_policy_version_guard();
 `;
 
+const INSTITUTIONAL_PILOT_EVIDENCE_SQL = `
+CREATE TABLE institutional_pilots (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL UNIQUE REFERENCES spaces(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','withdrawn')),
+  current_plan_version_id TEXT,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  started_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  completed_at TEXT,
+  withdrawn_at TEXT
+);
+
+CREATE TABLE institutional_pilot_plan_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  pilot_id TEXT NOT NULL REFERENCES institutional_pilots(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  partner_display_name TEXT NOT NULL,
+  sector TEXT NOT NULL,
+  identity_provider_requirement TEXT NOT NULL CHECK (
+    identity_provider_requirement IN ('undecided','oidc','saml')
+  ),
+  scim_required SMALLINT NOT NULL DEFAULT 0 CHECK (scim_required IN (0,1)),
+  baseline_json TEXT NOT NULL,
+  success_criteria_json TEXT NOT NULL,
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (pilot_id,version),
+  UNIQUE (pilot_id,id)
+);
+
+ALTER TABLE institutional_pilots
+  ADD CONSTRAINT institutional_pilots_current_plan_fk
+  FOREIGN KEY (id,current_plan_version_id)
+  REFERENCES institutional_pilot_plan_versions(pilot_id,id) ON DELETE RESTRICT;
+
+CREATE TABLE institutional_pilot_observations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  pilot_id TEXT NOT NULL REFERENCES institutional_pilots(id) ON DELETE RESTRICT,
+  observation_type TEXT NOT NULL CHECK (
+    observation_type IN ('admin_journey','learner_journey','support','commercial','incident')
+  ),
+  participant_key_hash TEXT NOT NULL,
+  observation_json TEXT NOT NULL,
+  observed_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_pilot_observations_type
+  ON institutional_pilot_observations(pilot_id,observation_type,occurred_at);
+
+CREATE TABLE institutional_pilot_gate_attestations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  pilot_id TEXT NOT NULL REFERENCES institutional_pilots(id) ON DELETE RESTRICT,
+  gate_type TEXT NOT NULL CHECK (gate_type IN (
+    'manual_process_baseline','success_criteria','journey_acceptance',
+    'audit_pack_acceptance','live_credential_revocation','identity_provider_test',
+    'penetration_test','accessibility_audit','incident_restore_exercise',
+    'marketing_claim_review','willingness_to_pay'
+  )),
+  outcome TEXT NOT NULL CHECK (outcome IN ('accepted','accepted_with_actions','rejected')),
+  summary TEXT NOT NULL,
+  evidence_uri TEXT,
+  artifact_hash TEXT,
+  open_actions_json TEXT NOT NULL DEFAULT '[]',
+  audit_pack_id TEXT REFERENCES audit_packs(id) ON DELETE RESTRICT,
+  credential_id TEXT REFERENCES credential_records(id) ON DELETE RESTRICT,
+  attested_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  role_snapshot TEXT NOT NULL,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_pilot_gate_attestations_type
+  ON institutional_pilot_gate_attestations(pilot_id,gate_type,occurred_at);
+
+CREATE TABLE institutional_pilot_status_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  pilot_id TEXT NOT NULL REFERENCES institutional_pilots(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('active','completed','withdrawn')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  reason TEXT NOT NULL DEFAULT '',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE OR REPLACE FUNCTION institutional_pilot_lifecycle_guard() RETURNS trigger AS $$
+BEGIN
+  IF OLD.status <> 'active' THEN
+    RAISE EXCEPTION 'Completed or withdrawn pilots are immutable';
+  END IF;
+  IF NEW.status = 'active'
+     AND NEW.current_plan_version_id IS DISTINCT FROM OLD.current_plan_version_id
+     AND ROW(NEW.id,NEW.space_id,NEW.created_by_user_id,NEW.created_at,NEW.started_at,
+             NEW.completed_at,NEW.withdrawn_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.created_by_user_id,OLD.created_at,OLD.started_at,
+             OLD.completed_at,OLD.withdrawn_at)
+  THEN RETURN NEW;
+  END IF;
+  IF NEW.status = 'completed' AND NEW.completed_at IS NOT NULL AND NEW.withdrawn_at IS NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.current_plan_version_id,NEW.created_by_user_id,
+             NEW.created_at,NEW.started_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.current_plan_version_id,OLD.created_by_user_id,
+             OLD.created_at,OLD.started_at)
+  THEN RETURN NEW;
+  END IF;
+  IF NEW.status = 'withdrawn' AND NEW.withdrawn_at IS NOT NULL AND NEW.completed_at IS NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.current_plan_version_id,NEW.created_by_user_id,
+             NEW.created_at,NEW.started_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.current_plan_version_id,OLD.created_by_user_id,
+             OLD.created_at,OLD.started_at)
+  THEN RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Invalid institutional pilot lifecycle transition';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER institutional_pilots_lifecycle_guard
+  BEFORE UPDATE OR DELETE ON institutional_pilots
+  FOR EACH ROW EXECUTE FUNCTION institutional_pilot_lifecycle_guard();
+
+CREATE TRIGGER institutional_pilot_plan_versions_no_write
+  BEFORE UPDATE OR DELETE ON institutional_pilot_plan_versions
+  FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER institutional_pilot_observations_no_write
+  BEFORE UPDATE OR DELETE ON institutional_pilot_observations
+  FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER institutional_pilot_gate_attestations_no_write
+  BEFORE UPDATE OR DELETE ON institutional_pilot_gate_attestations
+  FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+CREATE TRIGGER institutional_pilot_status_events_no_write
+  BEFORE UPDATE OR DELETE ON institutional_pilot_status_events
+  FOR EACH ROW EXECUTE FUNCTION phase3_append_only_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -1980,6 +2114,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 5, name: "phase2_lifecycle_hardening", sql: PHASE2_LIFECYCLE_HARDENING_SQL },
   { id: 6, name: "institutional_evidence_foundation", sql: INSTITUTIONAL_EVIDENCE_FOUNDATION_SQL },
   { id: 7, name: "institutional_policy_and_mfa", sql: INSTITUTIONAL_POLICY_AND_MFA_SQL },
+  { id: 8, name: "institutional_pilot_evidence", sql: INSTITUTIONAL_PILOT_EVIDENCE_SQL },
 ];
 
 /**

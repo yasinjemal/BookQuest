@@ -59,23 +59,52 @@ The visually inspected local sample is:
 - `output/pdf/phase3-audit-pack-sample.pdf`
 - `output/pdf/phase3-audit-pack-sample.csv`
 
+## Governed pilot closure
+
+Migration 8 adds a tenant-scoped pilot control record rather than treating a
+spreadsheet or launch decision as evidence. The pilot plan versions the partner's
+manual-process baseline, agreed success criteria, identity-provider requirement and
+SCIM decision. Observations store only a pilot-scoped hash of an opaque participant
+code and append the observed admin/learner journey, time, support needs and whether
+manual database work was required.
+
+Gate decisions append the signed-in account, current Space role, outcome, summary,
+evidence link or SHA-256 artifact hash, transparent remediation actions and optional
+audit-pack/credential references. References are constrained to the same Space.
+Plans, observations, decisions and status events reject update or deletion.
+
+The product will not mark a pilot complete unless it finds:
+
+- admin and learner observations completed without manual database work;
+- a real completed assignment participation with zero version-binding failures;
+- the exact accepted generated audit pack;
+- the exact live-revoked credential and its revocation event;
+- a selected active OIDC/SAML connection and its accepted test decision;
+- accepted baseline, criteria, journey, penetration, incident/restore, marketing
+  and willingness-to-pay decisions;
+- an accepted accessibility audit or an accepted-with-actions decision that names
+  its transparent remediation work.
+
+This makes the remaining external gates executable and auditable; it does not turn
+self-entered test data into partner or independent-assessor proof.
+
 ## Verification
 
 - TypeScript: pass
-- PostgreSQL integration: 134 tests in 27 files pass sequentially, including the
-  institutional assignment, security-policy, MFA and migration-upgrade checks
+- PostgreSQL integration: 136 tests in 27 files pass sequentially, including the
+  institutional assignment, governed pilot refusal/completion, security-policy,
+  MFA and migration-upgrade checks
 - Production build: pass
 - PDF visual QA: four rendered pages inspected; clipping and page-label alignment
   corrected
 
 ## Still required before Phase 3 can close
 
-- pilot-selected OIDC or SAML after discovery; SCIM only if pilot volume justifies it;
-- bulk invitations, role dashboards and remaining branding controls;
-- security/dependency evidence, external penetration test and updated institutional
-  review;
-- full-journey WCAG 2.2 AA test and published remediation process;
-- production migration, CI and deployment evidence;
+- a pilot-selected identity-provider implementation and tested connection; SCIM
+  only if pilot volume justifies it;
+- external penetration test and updated institutional review;
+- independent full-journey WCAG 2.2 AA assistive-technology audit;
+- production migration 8, CI and deployment evidence for the governed pilot flow;
 - one to three real design partners, an observed no-database journey and named
   stakeholder acceptance of the pack.
 

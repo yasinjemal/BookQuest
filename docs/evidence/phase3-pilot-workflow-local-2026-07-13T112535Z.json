@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "phase": 3,
+  "measuredAt": "2026-07-13T11:25:35.714Z",
+  "scope": "Governed institutional pilot evidence and closure workflow",
+  "verification": {
+    "typecheck": "passed",
+    "build": "passed",
+    "dependencyAudit": {
+      "result": "passed",
+      "vulnerabilities": 0
+    },
+    "tests": {
+      "files": 27,
+      "passed": 136,
+      "failed": 0,
+      "database": "Disposable PostgreSQL 16"
+    },
+    "browser": {
+      "database": "Disposable PostgreSQL 16",
+      "organizationLinkRendered": true,
+      "pilotPlanCreated": true,
+      "missingGatesRendered": true,
+      "completionDisabledWhileIncomplete": true,
+      "horizontalOverflow": false,
+      "warningOrErrorCount": 0
+    }
+  },
+  "controls": [
+    "Immutable versioned manual-process baseline and success criteria",
+    "Pseudonymous append-only admin and learner observations",
+    "Role-snapshotted append-only stakeholder and assessor attestations",
+    "Audit-pack and revoked-credential references constrained to the pilot Space",
+    "Closure requires completed participation, version reconciliation and real evidence rows",
+    "Closure requires a selected active identity-provider connection and test attestation",
+    "Accessibility accepts transparent remediation actions; other release gates require acceptance"
+  ],
+  "scopeLimit": "This proves the workflow and refusal behavior with simulated test actors. It does not prove a real design partner, independent assessment, active production identity provider or stakeholder acceptance. Those tracker gates remain open."
+}

@@ -646,6 +646,16 @@ while the independent penetration test remains open. The accessibility statement
 and remediation process are published; independent full-journey assistive-technology
 testing remains open.
 
+The governed pilot workflow is now implemented locally. Organization owners can
+version the partner baseline and success criteria, managers can append pseudonymous
+admin/learner observations, and owners can append role-snapshotted stakeholder or
+assessor decisions linked to exact audit-pack and credential records. The closure
+service refuses completion without no-database admin/learner observations, a real
+completed participation, reconciled versions, an accepted audit pack, a live-revoked
+credential, a selected active identity-provider connection and every external gate.
+This makes the remaining work executable but does not satisfy the unchecked partner
+or independent-assessment items by itself.
+
 ### Production evidence to date
 
 - Release commit `74c5abb0cb73aeeb5d368c197a4964ba8b0a61f8` passed

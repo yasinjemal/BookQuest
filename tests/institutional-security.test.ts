@@ -8,6 +8,7 @@ let mfa: typeof import("../lib/mfa");
 let policies: typeof import("../lib/organization-policies");
 let accountSecurity: typeof import("../lib/account-security");
 let accountSecurityCore: typeof import("../lib/account-security-core");
+let pilot: typeof import("../lib/institutional-pilot");
 let ownerId: number;
 let managerId: number;
 let outsiderId: number;
@@ -30,6 +31,7 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional security controls", () => {
     policies = await import("../lib/organization-policies");
     accountSecurity = await import("../lib/account-security");
     accountSecurityCore = await import("../lib/account-security-core");
+    pilot = await import("../lib/institutional-pilot");
     await pg.ready();
     await pg.q("TRUNCATE users RESTART IDENTITY CASCADE");
     ownerId = (await db.createUser("security-owner@example.test", "Security Owner", "hash")).id;
@@ -154,6 +156,68 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional security controls", () => {
       .rejects.toMatchObject({ reason: "membership_required" });
     expect(await policies.releaseLegalHold(ownerId, spaceId, hold.id, "Request closed"))
       .toMatchObject({ status: "released", release_reason: "Request closed" });
+  });
+
+  it("versions the governed pilot plan and refuses unsupported closure", async () => {
+    const plan = {
+      partnerDisplayName: "Security Design Partner",
+      sector: "Public services",
+      identityProviderRequirement: "oidc" as const,
+      scimRequired: false,
+      baseline: {
+        description: "Administrators manually assemble training records in spreadsheets and email completion evidence.",
+        uploadToAssignmentMinutes: 95,
+        adminHoursPerCohort: 8,
+      },
+      successCriteria: [
+        { metric: "Upload to assignment", target: "Under 30 minutes" },
+        { metric: "Audit corrections", target: "No material corrections" },
+      ],
+    };
+    expect(await pilot.createInstitutionalPilot(ownerId, spaceId, plan)).toMatchObject({
+      status: "active",
+      planVersion: 1,
+    });
+    expect(await pilot.reviseInstitutionalPilotPlan(ownerId, spaceId, {
+      ...plan,
+      successCriteria: [...plan.successCriteria, { metric: "Support", target: "At most one request" }],
+    })).toMatchObject({ planVersion: 2 });
+    await expect(pilot.reviseInstitutionalPilotPlan(outsiderId, spaceId, plan))
+      .rejects.toMatchObject({ reason: "membership_required" });
+    expect(await pilot.recordInstitutionalPilotObservation(managerId, spaceId, {
+      observationType: "admin_journey",
+      participantKey: "admin-001",
+      summary: "The administrator completed setup but still needed a documented source-review explanation.",
+      supportNeeds: ["Explain source-coverage warnings"],
+      minutesSpent: 42,
+      manualDatabaseWork: false,
+    })).toMatchObject({ observation_type: "admin_journey" });
+    const auditorView = await pilot.getInstitutionalPilotDashboard(bulkAuditorId, spaceId);
+    expect(auditorView).toMatchObject({
+      access: { role: "auditor", canManagePilot: false },
+      pilot: { status: "active" },
+      plan: { version: 2 },
+      readiness: { ready: false },
+    });
+    await expect(pilot.completeInstitutionalPilot(ownerId, spaceId)).rejects.toMatchObject({
+      missing: expect.arrayContaining([
+        "observation:learner_journey_without_database_work",
+        "evidence:completed_participation",
+        "identity_provider:active_tested_connection",
+      ]),
+    });
+    const storedPlan = await pg.one<{ id: string }>(
+      "SELECT current_plan_version_id AS id FROM institutional_pilots WHERE space_id=$1",
+      [spaceId],
+    );
+    await expect(pg.q(
+      "UPDATE institutional_pilot_plan_versions SET sector='tampered' WHERE id=$1",
+      [storedPlan!.id],
+    )).rejects.toThrow(/append-only/i);
+    await expect(pg.q(
+      "UPDATE institutional_pilots SET status='completed' WHERE space_id=$1",
+      [spaceId],
+    )).rejects.toThrow(/lifecycle/i);
   });
 
   it("disables TOTP only with a current authenticator code", async () => {

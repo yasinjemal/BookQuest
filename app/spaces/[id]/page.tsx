@@ -671,6 +671,13 @@ export default function SpacePage() {
         </form>
       )}
       {administers && data.space.type === "organization" && (
+        <Link href={`/spaces/${id}/pilot`} className="block rounded-2xl bg-card border border-line p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-primary">Phase 3 pilot</p>
+          <h2 className="mt-1 font-bold">Governed pilot evidence</h2>
+          <p className="mt-1 text-xs leading-5 text-ink-soft">Measure the current process, observe real journeys and bind stakeholder or assessor decisions to actual assignment, credential and audit evidence.</p>
+        </Link>
+      )}
+      {administers && data.space.type === "organization" && (
         <form
           onSubmit={publishPolicy}
           className="rounded-2xl bg-card border border-line p-4 space-y-3"

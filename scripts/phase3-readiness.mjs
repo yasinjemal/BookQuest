@@ -37,6 +37,12 @@ try {
   if (!securityMigration || securityMigration.name !== "institutional_policy_and_mfa") {
     throw new Error("Migration 7 (institutional_policy_and_mfa) is not applied");
   }
+  const pilotMigration = (
+    await client.query("SELECT name, applied_at FROM schema_migrations WHERE id = 8")
+  ).rows[0];
+  if (!pilotMigration || pilotMigration.name !== "institutional_pilot_evidence") {
+    throw new Error("Migration 8 (institutional_pilot_evidence) is not applied");
+  }
 
   const requiredTables = [
     "completion_rule_versions",
@@ -60,6 +66,11 @@ try {
     "user_mfa_recovery_codes",
     "user_mfa_challenges",
     "space_identity_providers",
+    "institutional_pilots",
+    "institutional_pilot_plan_versions",
+    "institutional_pilot_observations",
+    "institutional_pilot_gate_attestations",
+    "institutional_pilot_status_events",
   ];
   const tableRows = (
     await client.query(
@@ -84,6 +95,11 @@ try {
     "credential_status_events_no_write",
     "audit_packs_no_write",
     "space_policy_versions_locked",
+    "institutional_pilot_plan_versions_no_write",
+    "institutional_pilot_observations_no_write",
+    "institutional_pilot_gate_attestations_no_write",
+    "institutional_pilot_status_events_no_write",
+    "institutional_pilots_lifecycle_guard",
   ];
   const presentTriggers = (
     await client.query(
@@ -104,6 +120,10 @@ try {
     auditPacks: await scalar("SELECT COUNT(*) AS count FROM audit_packs"),
     activeMfaMethods: await scalar("SELECT COUNT(*) AS count FROM user_mfa_methods WHERE status = 'active'"),
     activeIdentityProviders: await scalar("SELECT COUNT(*) AS count FROM space_identity_providers WHERE status = 'active'"),
+    activePilots: await scalar("SELECT COUNT(*) AS count FROM institutional_pilots WHERE status = 'active'"),
+    completedPilots: await scalar("SELECT COUNT(*) AS count FROM institutional_pilots WHERE status = 'completed'"),
+    pilotObservations: await scalar("SELECT COUNT(*) AS count FROM institutional_pilot_observations"),
+    pilotGateAttestations: await scalar("SELECT COUNT(*) AS count FROM institutional_pilot_gate_attestations"),
   };
 
   const failures = {
@@ -166,6 +186,18 @@ try {
        WHERE status = 'active' AND expires_at IS NOT NULL
          AND expires_at::timestamptz <= CURRENT_TIMESTAMP`,
     ),
+    pilotsWithoutCurrentPlan: await scalar(
+      `SELECT COUNT(*) AS count FROM institutional_pilots pilot
+       LEFT JOIN institutional_pilot_plan_versions plan ON plan.id=pilot.current_plan_version_id
+       WHERE plan.id IS NULL OR plan.pilot_id<>pilot.id`,
+    ),
+    completedPilotsWithoutStatusEvent: await scalar(
+      `SELECT COUNT(*) AS count FROM institutional_pilots pilot
+       WHERE pilot.status='completed' AND NOT EXISTS (
+         SELECT 1 FROM institutional_pilot_status_events event
+         WHERE event.pilot_id=pilot.id AND event.status='completed'
+       )`,
+    ),
   };
 
   const report = {
@@ -176,6 +208,11 @@ try {
       id: 7,
       name: securityMigration.name,
       appliedAt: securityMigration.applied_at,
+    },
+    pilotMigration: {
+      id: 8,
+      name: pilotMigration.name,
+      appliedAt: pilotMigration.applied_at,
     },
     requiredTables,
     missingTables,

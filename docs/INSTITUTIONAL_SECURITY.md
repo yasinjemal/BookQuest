@@ -89,10 +89,17 @@ privacy and procurement review is complete.
 | Vulnerability management | Weekly Dependabot plus CI production-dependency audit. External penetration test remains a release gate. |
 | Backups | Logical restore and PITR exercises with reconciliation evidence. |
 | Data deletion | Account lifecycle and pseudonymization documented; legal holds override Space deletion scheduling. |
-| Accessibility | Product targets WCAG 2.2 AA; full-journey audit and public remediation statement remain open. |
+| Accessibility | Product targets WCAG 2.2 AA and publishes a remediation statement; the independent full-journey audit remains open. |
 | Certifications | None claimed. |
 
 ## Pilot acceptance checklist
+
+Organization owners use `/spaces/{space-id}/pilot` to version the baseline and
+success criteria, append pseudonymous observations, bind stakeholder/assessor
+decisions to exact evidence and view the remaining governed gates. The application
+refuses closure while the required database evidence or accepted decisions are
+missing. This control is an evidence register, not a substitute for real partner or
+independent-assessor work.
 
 - Confirm contracted runtime and database regions.
 - Approve the final subprocessor list and data classes sent to optional providers.
@@ -101,4 +108,3 @@ privacy and procurement review is complete.
 - Complete the full WCAG 2.2 AA journey audit.
 - Run backup/restore and incident tabletop exercises with named owners.
 - Have the responsible stakeholder accept one scoped audit pack for its stated use.
-

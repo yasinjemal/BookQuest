@@ -7,6 +7,7 @@ let spaces: typeof import("../lib/spaces");
 let studio: typeof import("../lib/studio");
 let institutional: typeof import("../lib/institutional");
 let auditPack: typeof import("../lib/audit-pack");
+let pilot: typeof import("../lib/institutional-pilot");
 let ownerId: number;
 let learnerId: number;
 let managerId: number;
@@ -24,6 +25,8 @@ let assignmentId: string;
 let assignmentVersionId: string;
 let participationId: string;
 let submissionId: string;
+let credentialId: string;
+let acceptedAuditPackId: string;
 
 describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
   beforeAll(async () => {
@@ -34,6 +37,7 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
     studio = await import("../lib/studio");
     institutional = await import("../lib/institutional");
     auditPack = await import("../lib/audit-pack");
+    pilot = await import("../lib/institutional-pilot");
     await pg.ready();
     await pg.q("TRUNCATE users RESTART IDENTITY CASCADE");
     ownerId = (await db.createUser("institution-owner@example.test", "Institution Owner", "hash")).id;
@@ -224,6 +228,7 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
     const completed = await institutional.evaluateAssignmentCompletion(learnerId, assignmentId);
     expect(completed).toMatchObject({ completed: true });
     expect(completed.credentialId).toEqual(expect.any(String));
+    credentialId = completed.credentialId!;
     expect(completed.credentialVerificationToken).toEqual(expect.any(String));
     expect(await institutional.verifyCredential(completed.credentialVerificationToken!)).toMatchObject({
       status: "active",
@@ -311,6 +316,7 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
 
   it("exports a scoped CSV and readable PDF audit pack for read-only auditors", async () => {
     const pack = await auditPack.generateAssignmentAuditPack(auditorId, assignmentId);
+    acceptedAuditPackId = pack.id;
     expect(pack.reportFormatVersion).toBe("bookquest-audit-pack/1.0");
     expect(pack.manifest).toMatchObject({
       scope: {
@@ -391,5 +397,95 @@ describe.skipIf(!TEST_DB)("Phase 3 institutional assignment evidence", () => {
       participationCount: 3,
       scope: { assignmentVersionId },
     });
+  });
+
+  it("completes a pilot only after human gates bind to the real evidence chain", async () => {
+    const created = await pilot.createInstitutionalPilot(ownerId, spaceId, {
+      partnerDisplayName: "Evidence Design Partner",
+      sector: "Workplace safety",
+      identityProviderRequirement: "oidc",
+      scimRequired: false,
+      baseline: {
+        description: "The partner previously coordinated source approval, assignments and completion evidence by email and spreadsheet.",
+        uploadToAssignmentMinutes: 120,
+        adminHoursPerCohort: 12,
+      },
+      successCriteria: [
+        { metric: "Upload to assignment", target: "Under 30 minutes" },
+        { metric: "Audit pack", target: "Accepted without material correction" },
+      ],
+    });
+    await pilot.recordInstitutionalPilotObservation(managerId, spaceId, {
+      observationType: "admin_journey",
+      participantKey: "admin-001",
+      summary: "The administrator completed the controlled journey without direct database access.",
+      supportNeeds: [],
+      minutesSpent: 26,
+      manualDatabaseWork: false,
+    });
+    await pilot.recordInstitutionalPilotObservation(managerId, spaceId, {
+      observationType: "learner_journey",
+      participantKey: "learner-001",
+      summary: "The learner completed assigned evidence and credential verification without direct support.",
+      supportNeeds: [],
+      minutesSpent: 18,
+      manualDatabaseWork: false,
+    });
+    await pg.q(
+      `INSERT INTO space_identity_providers
+        (space_id,protocol,status,issuer,configuration_json,created_by_user_id,activated_at)
+       VALUES ($1,'oidc','active','https://identity.example.test','{}',$2,$3)`,
+      [spaceId, ownerId, new Date().toISOString()],
+    );
+    const hash = "a".repeat(64);
+    const common = { outcome: "accepted" as const, summary: "Accepted by the responsible pilot stakeholder for the stated release purpose." };
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, { ...common, gateType: "manual_process_baseline" });
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, { ...common, gateType: "success_criteria" });
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, { ...common, gateType: "journey_acceptance" });
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, {
+      ...common,
+      gateType: "audit_pack_acceptance",
+      auditPackId: acceptedAuditPackId,
+    });
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, {
+      ...common,
+      gateType: "live_credential_revocation",
+      credentialId,
+    });
+    for (const gateType of [
+      "identity_provider_test",
+      "penetration_test",
+      "accessibility_audit",
+      "incident_restore_exercise",
+      "marketing_claim_review",
+    ] as const) {
+      await pilot.attestInstitutionalPilotGate(ownerId, spaceId, {
+        ...common,
+        gateType,
+        artifactHash: hash,
+      });
+    }
+    await pilot.attestInstitutionalPilotGate(ownerId, spaceId, { ...common, gateType: "willingness_to_pay" });
+    const dashboard = await pilot.getInstitutionalPilotDashboard(auditorId, spaceId);
+    expect(dashboard).toMatchObject({
+      pilot: { id: created.pilotId, status: "active" },
+      readiness: {
+        ready: true,
+        missing: [],
+        technical: { completedParticipations: 1, reconciliationFailures: 0 },
+      },
+    });
+    expect(await pilot.completeInstitutionalPilot(ownerId, spaceId)).toMatchObject({
+      pilotId: created.pilotId,
+      status: "completed",
+    });
+    expect(await pilot.completeInstitutionalPilot(ownerId, spaceId)).toEqual({
+      pilotId: created.pilotId,
+      status: "completed",
+    });
+    await expect(pg.q(
+      "UPDATE institutional_pilot_gate_attestations SET outcome='rejected' WHERE pilot_id=$1",
+      [created.pilotId],
+    )).rejects.toThrow(/append-only/i);
   });
 });
