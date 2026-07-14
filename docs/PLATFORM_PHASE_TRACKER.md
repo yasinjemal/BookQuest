@@ -1310,12 +1310,14 @@ What should not be built yet:
    (`docs/PUBLIC_LAUNCH_PRODUCTIZATION.md`).
 2. [x] Ship the guided first-course slice: public positioning → registration →
    verification → document upload → editable Studio. Engineering status:
-   **Tested**. `tests/productization.test.ts` passes 3/3; the isolated PostgreSQL
+   **Deployed**. `tests/productization.test.ts` passes 3/3; the isolated PostgreSQL
    16 regression passes 33/33 files and 183/183 tests; typecheck, production build
    (49 static pages), dependency audit (zero vulnerabilities) and diff check pass.
    Local browser QA completed the synthetic registration/verification journey at
    390×844 with no horizontal overflow or console errors. Exact evidence:
    `docs/evidence/public-launch-first-course-local-2026-07-14T183333Z.json`.
+   Commit `f88f016` passed GitHub PostgreSQL CI and the dependency audit, and its
+   Vercel production deployment is Ready.
 3. [x] Move QTI and platform integrations behind advanced/developer disclosure.
 4. [ ] Add clear public pricing and subscription UX.
 5. [ ] Add a strong anonymous public course page and one-tap sharing.

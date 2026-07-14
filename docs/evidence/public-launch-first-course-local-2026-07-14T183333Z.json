@@ -2,7 +2,7 @@
   "schema": "bookquest-public-launch-evidence-v1",
   "recordedAt": "2026-07-14T18:33:33Z",
   "slice": "registration-verification-guided-first-course",
-  "engineeringStatus": "Tested",
+  "engineeringStatus": "Deployed",
   "externalValidationStatus": "Pending user acquisition",
   "externalValidationReason": "Pending user acquisition and partner access",
   "changes": [
@@ -20,6 +20,13 @@
     "productionBuild": "npm run build passed; 49 static pages generated",
     "dependencyAudit": "npm run security:dependencies passed; 0 vulnerabilities",
     "diffCheck": "git diff --check passed"
+  },
+  "deploymentVerification": {
+    "commit": "f88f016",
+    "githubActions": "https://github.com/yasinjemal/BookQuest/actions/runs/29358603293",
+    "dependencyAudit": "https://github.com/yasinjemal/BookQuest/actions/runs/29358603217",
+    "vercel": "https://vercel.com/dynasty-built-academy/book-quest/H4J5oVueAWYGPord6vMmw998hivc",
+    "result": "GitHub PostgreSQL CI, production dependency audit, and Vercel deployment passed"
   },
   "browserVerification": {
     "journey": "Created a synthetic local QA account, verified it through the development-only link, and confirmed the Create my first course action opened the guided creation page",
