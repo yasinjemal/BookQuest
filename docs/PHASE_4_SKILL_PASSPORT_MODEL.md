@@ -26,6 +26,14 @@
   selective link was opened. It stores only the share ID, disclosed claim count,
   learner-controlled name-disclosure flag, verification time and 90-day
   retention deadline. It never identifies or fingerprints the recipient.
+- `competency_claim_disputes` — a structured learner-owned correction request
+  bound to one exact claim version and its issuing Space. Its guarded lifecycle
+  is open, withdrawn, rejected or accepted.
+- `competency_claim_dispute_details` — the learner's private explanation,
+  separated so effective account erasure can delete free text without rewriting
+  the structured audit record.
+- `competency_claim_dispute_events` — append-only submission and resolution
+  history with the authorized actor and any resulting claim-version ID.
 
 ## Eligibility invariant
 
@@ -44,6 +52,13 @@ The claim pins `course_id`, `course_version`, `assignment_version_id`,
 `completion_rule_version_id`, `completion_event_id`, `participation_id`,
 `credential_id` and `evidence_hash` directly.
 
+An accepted correction never updates that row. It requires a different eligible
+credential owned by the same learner for the same course and issuing Space. The
+server derives the next statement, pins the replacement evidence chain and links
+the new immutable row to its predecessor with `supersedes_claim_version_id`.
+Only the latest version is shareable; links frozen to an older version stop
+verifying without being silently redirected.
+
 ## Disclosure contract
 
 Passports and claims are private by default. Creating a claim does not create a
@@ -60,8 +75,9 @@ external effect: future verification is blocked. Shares cannot be renewed or
 reactivated; a learner creates a new grant and makes a new consent decision.
 
 Successful verification and event insertion run in one transaction under shared
-share and credential locks. Revocation and consent withdrawal take an exclusive
-share lock, so future access is blocked once the lifecycle change commits.
+share, claim and credential locks. Revocation, consent withdrawal and accepted
+claim correction use the corresponding exclusive lifecycle lock, so future
+access is blocked once the lifecycle change commits.
 Unknown or unavailable tokens never create an event. Retained events are visible
 only to their learner, included in that learner's private account export, purged
 after 90 days and deleted early by effective account erasure.
@@ -70,5 +86,5 @@ after 90 days and deleted early by effective account erasure.
 
 This slice does not implement ranking, mastery/confidence scores, employability
 scores, hiring recommendations, public learner profiles, searchable handles,
-unsupported competency inference, corrections/disputes, QTI, Open Badges, LTI,
-OAuth, webhooks or portable export.
+unsupported competency inference, QTI, Open Badges, LTI,
+OAuth, webhooks or portable standards export.

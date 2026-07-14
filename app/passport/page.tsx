@@ -7,11 +7,14 @@ import Loading from "@/components/Loading";
 
 type Claim = {
   claimVersionId: string;
+  version: number;
   title: string;
   statement: string;
   issuedAt: string;
   shareable: boolean;
-  availability: "active" | "revoked" | "expired";
+  availability: "active" | "revoked" | "expired" | "superseded";
+  isCurrent: boolean;
+  supersedesClaimVersionId: string | null;
   evidence: {
     courseVersion: number;
     assignmentVersionId: string;
@@ -35,6 +38,13 @@ type PassportData = {
     id: string; shareId: string; claimCount: number; learnerNameDisclosed: boolean;
     occurredAt: string; retainUntil: string;
   }>;
+  disputes: Array<{
+    id: string; claimId: string; disputedClaimVersionId: string;
+    category: string; statement: string | null;
+    status: "open" | "withdrawn" | "rejected" | "accepted";
+    createdAt: string; resolvedAt: string | null; resolutionCode: string | null;
+    resultingClaimVersionId: string | null;
+  }>;
 };
 
 export default function PassportPage() {
@@ -46,6 +56,9 @@ export default function PassportPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [disputeClaimVersionId, setDisputeClaimVersionId] = useState("");
+  const [disputeCategory, setDisputeCategory] = useState("evidence_or_credential");
+  const [disputeStatement, setDisputeStatement] = useState("");
 
   const load = useCallback(async () => {
     const response = await fetch("/api/passport", { cache: "no-store" });
@@ -59,6 +72,7 @@ export default function PassportPage() {
   useEffect(() => { void load(); }, [load]);
   const activeShares = useMemo(() => data?.shares.filter((share) =>
     share.status === "active" && Date.parse(share.expiresAt) > Date.now()) ?? [], [data]);
+  const currentClaims = useMemo(() => data?.claims.filter((claim) => claim.isCurrent) ?? [], [data]);
 
   async function addClaim(credentialId: string) {
     setBusy(credentialId); setNotice(null); setShareUrl(null);
@@ -109,6 +123,42 @@ export default function PassportPage() {
     setNotice("Private link copied.");
   }
 
+  async function submitDispute() {
+    setBusy("dispute"); setNotice(null); setShareUrl(null);
+    const response = await fetch("/api/passport/disputes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        claimVersionId: disputeClaimVersionId,
+        category: disputeCategory,
+        statement: disputeStatement,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) setNotice(result.error ?? "The correction request could not be submitted.");
+    else {
+      setDisputeClaimVersionId("");
+      setDisputeStatement("");
+      setNotice("Your private correction request was sent to the issuing Space.");
+      await load();
+    }
+    setBusy(null);
+  }
+
+  async function withdrawDispute(id: string) {
+    if (!window.confirm("Withdraw this correction request? Its history stays in your private record.")) return;
+    setBusy(id); setNotice(null);
+    const response = await fetch(`/api/passport/disputes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "withdraw" }),
+    });
+    const result = await response.json();
+    setNotice(response.ok ? "The correction request was withdrawn." : result.error ?? "The request could not be withdrawn.");
+    if (response.ok) await load();
+    setBusy(null);
+  }
+
   if (!data) return <Loading />;
   return <div className="page-wrap"><div className="content-measure max-w-6xl">
     <header className="relative overflow-hidden rounded-[1.8rem] bg-pine px-7 py-10 text-white shadow-pop sm:px-10 sm:py-14 lg:px-14">
@@ -117,7 +167,7 @@ export default function PassportPage() {
       <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Private Skill Passport · early implementation</p>
       <h1 className="display mt-3 max-w-3xl text-[clamp(3.4rem,10vw,6.6rem)] leading-[.86]">Proof you choose to carry.</h1>
       <p className="mt-6 max-w-xl text-sm leading-6 text-white/70">Your Passport is invisible until you choose an exact claim, an expiry, and what identity to disclose. It is never a public profile.</p>
-      <div className="mt-7 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full bg-signal px-3 py-1.5 text-ink">Private by default</span><span className="rounded-full border border-white/15 px-3 py-1.5">{data.claims.length} verified claim{data.claims.length === 1 ? "" : "s"}</span><span className="rounded-full border border-white/15 px-3 py-1.5">{activeShares.length} active link{activeShares.length === 1 ? "" : "s"}</span></div>
+      <div className="mt-7 flex flex-wrap gap-2 text-xs font-semibold"><span className="rounded-full bg-signal px-3 py-1.5 text-ink">Private by default</span><span className="rounded-full border border-white/15 px-3 py-1.5">{currentClaims.length} current claim{currentClaims.length === 1 ? "" : "s"}</span><span className="rounded-full border border-white/15 px-3 py-1.5">{activeShares.length} active link{activeShares.length === 1 ? "" : "s"}</span></div>
     </header>
 
     {notice && <div role="status" className="mt-5 rounded-xl border border-teal/25 bg-teal/8 px-4 py-3 text-sm font-semibold text-teal-deep">{notice}</div>}
@@ -126,6 +176,34 @@ export default function PassportPage() {
     <section className="mt-12" aria-labelledby="claims-heading"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="section-label">Your evidence-backed claims</p><h2 id="claims-heading" className="display mt-2 text-4xl">Only verified completions belong here.</h2></div><span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft"><AppIcon name="lock" className="h-4 w-4" />Visible only to you</span></div>
       {data.claims.length === 0 ? <div className="mt-5 rounded-[1.5rem] border border-dashed border-line-deep bg-card px-6 py-12 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-sky text-dusk"><AppIcon name="shield" className="h-5 w-5" /></span><h3 className="display mt-4 text-3xl">Your Passport is quietly empty.</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-soft">Complete an eligible controlled assignment, then add its credential below. No claim is inferred from activity or scores.</p></div> : <div className="mt-5 grid gap-3">{data.claims.map((claim) => <label key={claim.claimVersionId} className={`grid gap-4 rounded-[1.35rem] border p-5 shadow-card sm:grid-cols-[auto_1fr_auto] sm:items-center ${!claim.shareable ? "cursor-not-allowed border-line bg-paper opacity-75" : selected.includes(claim.claimVersionId) ? "cursor-pointer border-teal bg-teal/[.04]" : "cursor-pointer border-line bg-card"}`}><input type="checkbox" disabled={!claim.shareable} checked={selected.includes(claim.claimVersionId)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, claim.claimVersionId] : current.filter((id) => id !== claim.claimVersionId))} className="h-5 w-5 accent-teal" /><span><strong className="block text-base">{claim.title}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{claim.statement} · issued {new Date(claim.issuedAt).toLocaleDateString()}</span>{!claim.shareable && <span className="mt-2 block text-xs font-semibold text-no">This historical claim is {claim.availability}. It stays in your private record but cannot be shared or verified.</span>}</span><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] ${claim.shareable ? "bg-go-soft text-forest" : "bg-line text-ink-soft"}`}>{claim.shareable ? "Evidence linked" : claim.availability}</span><details className="sm:col-start-2 sm:col-span-2"><summary className="text-xs font-semibold text-teal-deep">View exact evidence links</summary><dl className="mt-3 grid gap-2 break-all rounded-xl bg-paper p-4 font-mono text-[10px] text-ink-soft sm:grid-cols-2"><div><dt className="font-bold text-ink">Course version</dt><dd>{claim.evidence.courseVersion}</dd></div><div><dt className="font-bold text-ink">Credential</dt><dd>{claim.evidence.credentialId}</dd></div><div><dt className="font-bold text-ink">Assignment version</dt><dd>{claim.evidence.assignmentVersionId}</dd></div><div><dt className="font-bold text-ink">Rule version</dt><dd>{claim.evidence.completionRuleVersionId}</dd></div><div><dt className="font-bold text-ink">Completion decision</dt><dd>{claim.evidence.completionEventId}</dd></div><div><dt className="font-bold text-ink">Evidence hash</dt><dd>{claim.evidence.evidenceHash}</dd></div></dl></details></label>)}</div>}
     </section>
+
+    {currentClaims.length > 0 && <section className="mt-10 grid gap-5 lg:grid-cols-[.9fr_1.1fr]" aria-labelledby="corrections-heading">
+      <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8">
+        <p className="section-label">Private corrections</p>
+        <h2 id="corrections-heading" className="display mt-2 text-4xl">Something looks wrong?</h2>
+        <p className="mt-3 text-sm leading-6 text-ink-soft">Send a private request to the issuing Space. Claims are never edited in place; an accepted correction needs replacement evidence and creates a new version.</p>
+        <label className="mt-5 block text-xs font-bold uppercase tracking-[.1em] text-ink-soft">Claim
+          <select value={disputeClaimVersionId} onChange={(event) => setDisputeClaimVersionId(event.target.value)} className="field mt-2 w-full text-sm font-normal normal-case tracking-normal">
+            <option value="">Choose a current claim</option>
+            {currentClaims.map((claim) => <option key={claim.claimVersionId} value={claim.claimVersionId}>{claim.title} · version {claim.version}</option>)}
+          </select>
+        </label>
+        <label className="mt-4 block text-xs font-bold uppercase tracking-[.1em] text-ink-soft">What needs checking?
+          <select value={disputeCategory} onChange={(event) => setDisputeCategory(event.target.value)} className="field mt-2 w-full text-sm font-normal normal-case tracking-normal">
+            <option value="identity_or_name">Identity or name</option><option value="course_or_version">Course or version</option><option value="completion_or_score">Completion or score</option><option value="evidence_or_credential">Evidence or credential</option><option value="other">Something else</option>
+          </select>
+        </label>
+        <label className="mt-4 block text-xs font-bold uppercase tracking-[.1em] text-ink-soft">Private explanation
+          <textarea value={disputeStatement} onChange={(event) => setDisputeStatement(event.target.value)} maxLength={2000} rows={4} placeholder="Explain what should be checked and why." className="field mt-2 w-full resize-y text-sm font-normal normal-case tracking-normal" />
+        </label>
+        <div className="mt-2 flex justify-between gap-3 text-[10px] text-ink-soft"><span>Visible only to you and authorized assignment managers.</span><span>{disputeStatement.length}/2000</span></div>
+        <button type="button" disabled={!disputeClaimVersionId || disputeStatement.trim().length < 20 || busy === "dispute"} onClick={() => void submitDispute()} className="btn-primary mt-5 w-full">{busy === "dispute" ? "Sending request…" : "Request a correction"}</button>
+      </div>
+      <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8">
+        <p className="section-label">Request history</p><h2 className="display mt-2 text-4xl">Every decision stays traceable.</h2>
+        {data.disputes.length === 0 ? <p className="mt-5 text-sm leading-6 text-ink-soft">No correction requests yet.</p> : <div className="mt-5 space-y-3">{data.disputes.map((dispute) => <article key={dispute.id} className="rounded-xl border border-line bg-paper p-4"><div className="flex flex-wrap items-start justify-between gap-2"><strong className="text-sm capitalize">{dispute.category.split("_").join(" ")}</strong><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${dispute.status === "open" ? "bg-signal text-ink" : dispute.status === "accepted" ? "bg-go-soft text-forest" : "bg-line text-ink-soft"}`}>{dispute.status}</span></div>{dispute.statement && <p className="mt-3 text-xs leading-5 text-ink-soft">{dispute.statement}</p>}<p className="mt-3 text-[10px] text-ink-soft">Submitted {new Date(dispute.createdAt).toLocaleString()}{dispute.resolutionCode ? ` · ${dispute.resolutionCode.split("_").join(" ")}` : ""}</p>{dispute.status === "open" && <button type="button" disabled={busy === dispute.id} onClick={() => void withdrawDispute(dispute.id)} className="quiet-button mt-3 w-full text-xs">Withdraw request</button>}</article>)}</div>}
+      </div>
+    </section>}
 
     {data.eligibleCredentials.length > 0 && <section className="mt-10 rounded-[1.5rem] bg-sky/45 p-6 sm:p-8" aria-labelledby="eligible-heading"><p className="section-label">Ready to add</p><h2 id="eligible-heading" className="display mt-2 text-3xl">Eligible verified completions</h2><div className="mt-5 space-y-3">{data.eligibleCredentials.map((credential) => <div key={credential.credentialId} className="flex flex-col gap-4 rounded-xl border border-line bg-card p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong className="block">{credential.courseTitle}</strong><span className="mt-1 block text-xs text-ink-soft">Course version {credential.courseVersion} · issued {new Date(credential.issuedAt).toLocaleDateString()}</span></div><button type="button" disabled={busy === credential.credentialId} onClick={() => void addClaim(credential.credentialId)} className="btn-primary shrink-0">{busy === credential.credentialId ? "Adding…" : "Add verified claim"}</button></div>)}</div></section>}
 

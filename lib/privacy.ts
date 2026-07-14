@@ -6,7 +6,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 3;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 4;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -190,6 +190,19 @@ export async function createAccountExport(userId: number) {
           JOIN passport_share_grants share ON share.id=event.share_id
           WHERE share.user_id=$1 AND event.retain_until::timestamptz > now()
           ORDER BY event.occurred_at,event.id`, [userId]),
+        disputes: await rows(client, `SELECT dispute.id,dispute.claim_id,
+          dispute.disputed_claim_version_id,dispute.category,dispute.status,
+          dispute.created_at,dispute.resolved_at,dispute.resolution_code,
+          dispute.replacement_credential_id,dispute.resulting_claim_version_id,
+          details.statement
+          FROM competency_claim_disputes dispute
+          LEFT JOIN competency_claim_dispute_details details ON details.dispute_id=dispute.id
+          WHERE dispute.learner_user_id=$1 ORDER BY dispute.created_at,dispute.id`, [userId]),
+        disputeHistory: await rows(client, `SELECT event.dispute_id,event.event_type,
+          event.resolution_code,event.resulting_claim_version_id,event.occurred_at
+          FROM competency_claim_dispute_events event
+          JOIN competency_claim_disputes dispute ON dispute.id=event.dispute_id
+          WHERE dispute.learner_user_id=$1 ORDER BY event.occurred_at,event.id`, [userId]),
       } : null,
       billing: await rows(client, "SELECT tx_ref, product, amount_cents, currency, provider, provider_ref, status, created_at FROM transactions WHERE user_id = $1 ORDER BY created_at", [userId]),
     };
@@ -297,6 +310,10 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
      WHERE event.share_id=share.id AND share.user_id=$1`,
     [userId]
   );
+  await client.query(
+    "DELETE FROM competency_claim_dispute_details WHERE learner_user_id=$1",
+    [userId]
+  );
   // Published content is withdrawn and retained only as an archived evidentiary
   // version. Private content is destroyed. Original source text is always erased.
   await client.query(
@@ -335,7 +352,7 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
     `INSERT INTO privacy_actions (user_id, action, effective_at, metadata_json)
      VALUES ($1, 'erasure_completed', $2, $3)`,
     [userId, erasedAt, JSON.stringify({
-      retained: ["pseudonymous_learning_evidence", "credential_history", "passport_claim_history", "consent_history", "financial_records"],
+      retained: ["pseudonymous_learning_evidence", "credential_history", "passport_claim_history", "structured_dispute_history", "consent_history", "financial_records"],
       withdrawnPassportShares: activePassportShares.length,
     })]
   );

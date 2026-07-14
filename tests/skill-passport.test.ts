@@ -13,6 +13,10 @@ let ownerId: number;
 let learnerId: number;
 let otherLearnerId: number;
 let outsiderId: number;
+let spaceId: string;
+let courseId: number;
+let completionRuleVersionId: string;
+let otherLearnerMembershipId: string;
 let learnerCredentialId: string;
 let otherCredentialId: string;
 let learnerClaimVersionId: string;
@@ -44,14 +48,16 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     otherLearnerId = (await db.createUser("passport-other@example.test", "Other Learner", "hash")).id;
     outsiderId = (await db.createUser("passport-outsider@example.test", "Outsider", "hash")).id;
 
-    const spaceId = (await spaces.createSpace(ownerId, {
+    spaceId = (await spaces.createSpace(ownerId, {
       name: "Passport Evidence Organization",
       type: "organization",
     })).space.id;
     const learnerInvite = await spaces.inviteSpaceMember(ownerId, spaceId, learnerId, "learner");
     const learnerMembershipId = (await spaces.acceptSpaceInvitation(learnerId, learnerInvite.token)).membership.id;
     const otherInvite = await spaces.inviteSpaceMember(ownerId, spaceId, otherLearnerId, "learner");
-    const otherMembershipId = (await spaces.acceptSpaceInvitation(otherLearnerId, otherInvite.token)).membership.id;
+    otherLearnerMembershipId = (await spaces.acceptSpaceInvitation(otherLearnerId, otherInvite.token)).membership.id;
+    const auditorInvite = await spaces.inviteSpaceMember(ownerId, spaceId, outsiderId, "auditor");
+    await spaces.acceptSpaceInvitation(outsiderId, auditorInvite.token);
 
     const source = await studio.createTextSource(ownerId, spaceId, {
       title: "Approved shop procedure",
@@ -81,6 +87,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     await studio.reviewCourseVersion(ownerId, course.courseId, { decision: "approved" });
     await studio.publishApprovedCourseVersion(ownerId, course.courseId, "Workplace onboarding");
     await spaces.attachCourseToSpace(ownerId, spaceId, course.courseId);
+    courseId = course.courseId;
 
     const rule = await institutional.createCompletionRuleVersion(ownerId, spaceId, course.courseId, {
       requiredLessons: "all",
@@ -89,9 +96,10 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       requiredPracticalReviewLineageIds: [],
       credential: { enabled: true, expiresAfterDays: 365 },
     });
+    completionRuleVersionId = String(rule.id);
     const assignment = await institutional.createInstitutionalAssignment(ownerId, spaceId, course.courseId, {
       completionRuleVersionId: String(rule.id),
-      audience: { membershipIds: [learnerMembershipId, otherMembershipId] },
+      audience: { membershipIds: [learnerMembershipId, otherLearnerMembershipId] },
       expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
     });
 
@@ -214,7 +222,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(await unknownResponse.json()).toEqual({ error: "Shared passport not found" });
     const exported = await privacy.createAccountExport(learnerId);
     expect(exported).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       skillPassport: { claims: [{ claim_version_id: learnerClaimVersionId }] },
     });
     expect(JSON.stringify(exported)).not.toContain("token_hash");
@@ -256,7 +264,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       learnerNameDisclosed: false,
     });
     const exportAfterAccess = await privacy.createAccountExport(learnerId);
-    expect(exportAfterAccess.schemaVersion).toBe(3);
+    expect(exportAfterAccess.schemaVersion).toBe(4);
     expect(exportAfterAccess.skillPassport?.verificationHistory).toEqual(expect.arrayContaining([
       expect.objectContaining({ share_id: share.id, claim_count: 1, learner_name_disclosed: 0 }),
     ]));
@@ -384,6 +392,157 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     ))!.count).toBe(loggedBeforeRevocation);
   });
 
+  it("keeps learner disputes private, structured and withdrawable only by their owner", async () => {
+    await expect(passport.createCompetencyClaimDispute(learnerId, {
+      claimVersionId: otherClaimVersionId,
+      category: "evidence_or_credential",
+      statement: "This is not my claim.",
+    })).rejects.toThrow(/claim not found/i);
+    const dispute = await passport.createCompetencyClaimDispute(learnerId, {
+      claimVersionId: learnerClaimVersionId,
+      category: "evidence_or_credential",
+      statement: "The completion evidence needs to be checked against the assignment record.",
+    });
+    expect(dispute).toMatchObject({
+      status: "open",
+      category: "evidence_or_credential",
+      disputedClaimVersionId: learnerClaimVersionId,
+    });
+    const privateView = await passport.getSkillPassport(learnerId);
+    expect(privateView.disputes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: dispute.id, statement: expect.stringContaining("assignment record") }),
+    ]));
+    const privateExport = await privacy.createAccountExport(learnerId);
+    expect(privateExport).toMatchObject({
+      schemaVersion: 4,
+      skillPassport: {
+        disputes: expect.arrayContaining([
+          expect.objectContaining({ id: dispute.id, statement: expect.stringContaining("assignment record") }),
+        ]),
+      },
+    });
+    expect(JSON.stringify(await passport.getSkillPassport(otherLearnerId)))
+      .not.toContain(dispute.id);
+    await expect(passport.withdrawCompetencyClaimDispute(otherLearnerId, dispute.id))
+      .rejects.toThrow(/dispute not found/i);
+    expect(await passport.withdrawCompetencyClaimDispute(learnerId, dispute.id))
+      .toMatchObject({ id: dispute.id, status: "withdrawn" });
+    await expect(passport.withdrawCompetencyClaimDispute(learnerId, dispute.id))
+      .rejects.toThrow(/terminal/i);
+    await expect(pg.q(
+      "UPDATE competency_claim_dispute_details SET statement='rewritten' WHERE dispute_id=$1",
+      [dispute.id],
+    )).rejects.toThrow(/append-only/i);
+  });
+
+  it("allows only assignment managers in the exact issuing Space to reject disputes", async () => {
+    const dispute = await passport.createCompetencyClaimDispute(learnerId, {
+      claimVersionId: learnerClaimVersionId,
+      category: "completion_or_score",
+      statement: "Please confirm the completion decision.",
+    });
+    await expect(passport.listSpaceCompetencyClaimDisputes(outsiderId, spaceId))
+      .rejects.toThrow(/space access denied/i);
+    await expect(passport.resolveCompetencyClaimDispute(outsiderId, spaceId, dispute.id, {
+      decision: "rejected",
+      resolutionCode: "evidence_confirmed",
+    })).rejects.toThrow(/space access denied/i);
+    expect(await passport.resolveCompetencyClaimDispute(ownerId, spaceId, dispute.id, {
+      decision: "rejected",
+      resolutionCode: "evidence_confirmed",
+    })).toMatchObject({ id: dispute.id, status: "rejected", resolutionCode: "evidence_confirmed" });
+    await expect(passport.resolveCompetencyClaimDispute(ownerId, spaceId, dispute.id, {
+      decision: "rejected",
+      resolutionCode: "evidence_confirmed",
+    })).rejects.toThrow(/terminal/i);
+  });
+
+  it("accepts only same-learner, same-course, same-Space replacement evidence and supersedes immutably", async () => {
+    const replacementAssignment = await institutional.createInstitutionalAssignment(
+      ownerId,
+      spaceId,
+      courseId,
+      {
+        completionRuleVersionId,
+        audience: { membershipIds: [otherLearnerMembershipId] },
+        expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      },
+    );
+    await institutional.startAssignmentParticipation(otherLearnerId, replacementAssignment.assignmentId);
+    await institutional.recordAssignmentLessonCompletion(otherLearnerId, replacementAssignment.assignmentId, {
+      lessonKey: "lesson:opening-check",
+      score: 1,
+      total: 1,
+    });
+    const replacementCompletion = await institutional.evaluateAssignmentCompletion(
+      otherLearnerId,
+      replacementAssignment.assignmentId,
+    );
+    const replacementCredentialId = replacementCompletion.credentialId!;
+    const oldShare = await passport.createPassportShare(otherLearnerId, {
+      claimVersionIds: [otherClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(await passport.verifyPassportShare(oldShare.token)).not.toBeNull();
+    const dispute = await passport.createCompetencyClaimDispute(otherLearnerId, {
+      claimVersionId: otherClaimVersionId,
+      category: "evidence_or_credential",
+      statement: "A corrected completion credential is now available.",
+    });
+    const queue = await passport.listSpaceCompetencyClaimDisputes(ownerId, spaceId);
+    expect(queue).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: dispute.id,
+        replacementCredentials: expect.arrayContaining([
+          expect.objectContaining({ credentialId: replacementCredentialId }),
+        ]),
+      }),
+    ]));
+    await expect(passport.resolveCompetencyClaimDispute(ownerId, spaceId, dispute.id, {
+      decision: "accepted",
+      resolutionCode: "corrected_with_replacement",
+      replacementCredentialId: learnerCredentialId,
+    })).rejects.toThrow(/replacement credential unavailable/i);
+    const accepted = await passport.resolveCompetencyClaimDispute(ownerId, spaceId, dispute.id, {
+      decision: "accepted",
+      resolutionCode: "corrected_with_replacement",
+      replacementCredentialId,
+    });
+    expect(accepted).toMatchObject({
+      id: dispute.id,
+      status: "accepted",
+      resultingClaim: {
+        claimId: expect.any(String),
+        claimVersionId: expect.any(String),
+        version: 2,
+        supersedesClaimVersionId: otherClaimVersionId,
+        evidence: { credentialId: replacementCredentialId, courseId },
+      },
+    });
+    expect(await passport.verifyPassportShare(oldShare.token)).toBeNull();
+    const oldVersionId = otherClaimVersionId;
+    otherClaimVersionId = accepted.resultingClaim!.claimVersionId;
+    const correctedShare = await passport.createPassportShare(otherLearnerId, {
+      claimVersionIds: [otherClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(await passport.verifyPassportShare(correctedShare.token)).toMatchObject({
+      claims: [{ claimVersionId: otherClaimVersionId, version: 2 }],
+    });
+    await expect(passport.createPassportShare(otherLearnerId, {
+      claimVersionIds: [oldVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    })).rejects.toThrow(/claims are unavailable/i);
+    expect(await passport.createCompetencyClaim(otherLearnerId, replacementCredentialId))
+      .toMatchObject({ claimVersionId: otherClaimVersionId, version: 2 });
+    expect(await passport.createCompetencyClaim(otherLearnerId, otherCredentialId))
+      .toMatchObject({ claimVersionId: otherClaimVersionId, version: 2 });
+    await expect(pg.q(
+      "UPDATE competency_claim_versions SET supersedes_claim_version_id=NULL WHERE id=$1",
+      [otherClaimVersionId],
+    )).rejects.toThrow(/append-only/i);
+  });
+
   it("withdraws every active share when account erasure becomes effective", async () => {
     const share = await passport.createPassportShare(otherLearnerId, {
       claimVersionIds: [otherClaimVersionId],
@@ -402,5 +561,13 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
       [share.id],
     )).toEqual({ count: 0 });
+    expect(await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM competency_claim_dispute_details WHERE learner_user_id=$1",
+      [otherLearnerId],
+    )).toEqual({ count: 0 });
+    expect((await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM competency_claim_disputes WHERE learner_user_id=$1",
+      [otherLearnerId],
+    ))!.count).toBeGreaterThan(0);
   });
 });

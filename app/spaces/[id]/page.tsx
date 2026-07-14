@@ -54,6 +54,22 @@ interface InstitutionalDashboard {
   };
   assignments: Array<{ id: string; course_title: string; assignment_version_id: string; version: number; due_at: string | null; attempts: number; completed: number; open: number }>;
 }
+interface PassportDispute {
+  id: string;
+  learnerName: string;
+  title: string;
+  category: string;
+  statement: string | null;
+  status: "open" | "withdrawn" | "rejected" | "accepted";
+  createdAt: string;
+  resolutionCode: string | null;
+  replacementCredentials: Array<{
+    credentialId: string;
+    courseVersion: number;
+    issuedAt: string;
+    expiresAt: string | null;
+  }>;
+}
 
 export default function SpacePage() {
   const { id } = useParams<{ id: string }>();
@@ -70,6 +86,8 @@ export default function SpacePage() {
   const [notice, setNotice] = useState("");
   const [institutional, setInstitutional] =
     useState<InstitutionalDashboard | null>(null);
+  const [passportDisputes, setPassportDisputes] = useState<PassportDispute[]>([]);
+  const [replacementChoices, setReplacementChoices] = useState<Record<string, string>>({});
   const [minimumScore, setMinimumScore] = useState("80");
   const [startAt, setStartAt] = useState("");
   const [dueAt, setDueAt] = useState("");
@@ -102,6 +120,10 @@ export default function SpacePage() {
     if (!spaceResponse.ok)
       return setError(spaceData.error ?? "Could not open Space");
     setData(spaceData);
+    if (["owner", "administrator", "manager"].includes(spaceData.membership.role)) {
+      const disputeResponse = await fetch(`/api/spaces/${id}/passport-disputes`, { cache: "no-store" });
+      if (disputeResponse.ok) setPassportDisputes((await disputeResponse.json()).disputes);
+    }
     const dashboardResponse = await fetch(
       `/api/spaces/${id}/institutional-dashboard`,
     );
@@ -354,6 +376,26 @@ export default function SpacePage() {
     }
   }
 
+  async function resolvePassportDispute(
+    dispute: PassportDispute,
+    decision: "accepted" | "rejected",
+  ) {
+    const action = decision === "accepted" ? "issue a corrected immutable claim version" : "reject this correction request";
+    if (!window.confirm(`Confirm that you want to ${action}?`)) return;
+    try {
+      const replacementCredentialId = replacementChoices[dispute.id];
+      await mutate(`/api/spaces/${id}/passport-disputes/${dispute.id}`, {
+        decision,
+        resolutionCode: decision === "accepted" ? "corrected_with_replacement" : "evidence_confirmed",
+        replacementCredentialId: decision === "accepted" ? replacementCredentialId : undefined,
+      }, "PATCH");
+      setNotice(decision === "accepted" ? "A corrected claim version was issued. Old share links no longer verify." : "The correction request was rejected with the evidence confirmed.");
+      await load();
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+
   if (!data)
     return <div className="p-6 text-ink-soft">{error || "Loading…"}</div>;
   const manages = ["owner", "administrator", "manager"].includes(
@@ -397,6 +439,14 @@ export default function SpacePage() {
             ))}
           </div>
           {institutional.assignments.length > 0 && <div className="mt-4 space-y-2">{institutional.assignments.map((assignment) => <div key={assignment.id} className="rounded-xl border border-line bg-paper p-3"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{assignment.course_title}</p><p className="text-xs text-ink-soft">Version {assignment.version} · {assignment.completed}/{assignment.attempts} completed · {assignment.open} open</p></div><div className="flex gap-1"><button onClick={() => void downloadAudit(assignment.id, "pdf")} className="rounded-lg border border-line px-2 py-1 text-xs font-semibold">PDF</button><button onClick={() => void downloadAudit(assignment.id, "csv")} className="rounded-lg border border-line px-2 py-1 text-xs font-semibold">CSV</button></div></div></div>)}</div>}
+        </section>
+      )}
+      {view === "overview" && manages && passportDisputes.length > 0 && (
+        <section className="paper-card p-5 sm:p-7" aria-labelledby="passport-disputes-heading">
+          <p className="section-label">Skill Passport corrections</p>
+          <h2 id="passport-disputes-heading" className="display mt-2 text-3xl">Review evidence, never rewrite it.</h2>
+          <p className="mt-3 max-w-3xl text-xs leading-5 text-ink-soft">Accept only when a replacement credential appears below. BookQuest revalidates the learner, course, Space, completion decision and evidence hash before creating an immutable successor.</p>
+          <div className="mt-5 space-y-3">{passportDisputes.map((dispute) => <article key={dispute.id} className="rounded-2xl border border-line bg-paper p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><strong className="block">{dispute.title}</strong><span className="mt-1 block text-xs text-ink-soft">{dispute.learnerName} · {dispute.category.split("_").join(" ")} · {new Date(dispute.createdAt).toLocaleString()}</span></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${dispute.status === "open" ? "bg-signal text-ink" : dispute.status === "accepted" ? "bg-go-soft text-forest" : "bg-line text-ink-soft"}`}>{dispute.status}</span></div>{dispute.statement && <p className="mt-4 rounded-xl border border-line bg-card p-3 text-xs leading-5 text-ink-soft">{dispute.statement}</p>}{dispute.status === "open" && <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><select aria-label={`Replacement credential for ${dispute.learnerName}`} value={replacementChoices[dispute.id] ?? ""} onChange={(event) => setReplacementChoices((current) => ({ ...current, [dispute.id]: event.target.value }))} className="field text-sm"><option value="">{dispute.replacementCredentials.length ? "Choose replacement evidence" : "No eligible replacement credential yet"}</option>{dispute.replacementCredentials.map((credential) => <option key={credential.credentialId} value={credential.credentialId}>Course v{credential.courseVersion} · issued {new Date(credential.issuedAt).toLocaleDateString()}</option>)}</select><button type="button" disabled={!replacementChoices[dispute.id]} onClick={() => void resolvePassportDispute(dispute, "accepted")} className="btn-primary disabled:opacity-40">Accept correction</button><button type="button" onClick={() => void resolvePassportDispute(dispute, "rejected")} className="quiet-button">Evidence is correct</button></div>}{dispute.status !== "open" && dispute.resolutionCode && <p className="mt-3 text-xs font-semibold text-ink-soft">Resolution: {dispute.resolutionCode.split("_").join(" ")}</p>}</article>)}</div>
         </section>
       )}
       {view === "people" && manages && data.space.type !== "personal" && (

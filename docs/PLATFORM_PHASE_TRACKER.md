@@ -830,7 +830,12 @@ the language “implementation evidence,” not “production-ready.”
   name-disclosure flag. It stores no recipient identity or fingerprint, is
   private to the learner, append-only until its 90-day purge deadline, removed
   by effective account erasure and never written for unavailable tokens.
-- [ ] Add correction, dispute and portable export workflows.
+- [x] Add private correction and dispute workflows. Migration 14 binds a
+  learner's structured request to one exact claim version and issuing Space;
+  only `assignments.manage` members can resolve it. Accepted correction requires
+  a reconciled replacement credential for the same learner/course/Space and
+  creates an immutable successor while old links stop verifying.
+- [ ] Add portable standards export workflows.
 - [ ] Import/export compatible assessments using QTI 3.
 - [ ] Issue verifiable achievements using Open Badges 3.0.
 - [ ] Add pilot-driven LTI 1.3/LTI Advantage integration.
@@ -882,6 +887,22 @@ the language “implementation evidence,” not “production-ready.”
   browser checks at 390×844 and 1440×900 found no horizontal overflow or errors.
 - Exact dated evidence for this slice is stored in
   `docs/evidence/phase4-access-history-local-2026-07-14T082225Z.json`.
+- Forward-only migration 14, `docs/PHASE_4_CLAIM_CORRECTIONS.md` and the expanded
+  threat model define the private dispute and immutable supersession contract.
+  Learner free text is separately erasable; structured terminal history remains
+  append-only. Claim creation, sharing and verification now consistently select
+  only the latest version and serialize against accepted correction.
+- The local PostgreSQL 16 suite passes 29/29 files and 158/158 tests, including
+  learner ownership, auditor denial, terminal withdrawal/rejection, same-learner/
+  course/Space replacement validation, old-link failure, immutable version-2
+  evidence, private export and free-text erasure. TypeScript, production build
+  and dependency audit pass with zero vulnerabilities.
+- Browser QA submitted a private learner request, observed its open history and
+  verified the issuing-Space manager queue, structured resolution choices and
+  safely disabled acceptance when no replacement credential exists. Manager
+  checks at 390×844 and 1440×900 found no horizontal overflow or browser errors.
+- Exact dated evidence for this slice is stored in
+  `docs/evidence/phase4-claim-corrections-local-2026-07-14T121534Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 
@@ -898,7 +919,9 @@ the language “implementation evidence,” not “production-ready.”
 - [x] API clients cannot enumerate learners or unrelated credentials. Tokens are
   random and digest-only, all unavailable states use the same 404, and selective
   disclosure tests prove another learner's claim never appears.
-- [ ] Corrections preserve historical auditability.
+- [x] Corrections preserve historical auditability. The predecessor, successor,
+  exact evidence chains, dispute lifecycle and authorized resolver remain
+  linked; neither claim version can be edited or deleted.
 
 ### Measure
 

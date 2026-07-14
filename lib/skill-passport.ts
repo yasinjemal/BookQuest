@@ -1,10 +1,15 @@
 import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { tx } from "./pg";
+import { authorizeStoredMembership } from "./spaces";
 
 const MAX_SHARE_DAYS = 30;
 const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const secretDigest = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
+const DISPUTE_CATEGORIES = new Set([
+  "identity_or_name", "course_or_version", "completion_or_score",
+  "evidence_or_credential", "other",
+]);
 
 export class SkillPassportError extends Error {
   constructor(message: string) {
@@ -26,6 +31,7 @@ type EligibleCredential = {
   evidence_hash: string;
   issued_at: string;
   expires_at: string | null;
+  space_id: string;
 };
 
 type ClaimRow = {
@@ -45,6 +51,7 @@ type ClaimRow = {
   evidence_hash: string;
   issued_at: string;
   created_at: string;
+  supersedes_claim_version_id: string | null;
 };
 
 function mapClaim(row: ClaimRow) {
@@ -57,6 +64,7 @@ function mapClaim(row: ClaimRow) {
     statement: row.statement,
     issuedAt: row.issued_at,
     createdAt: row.created_at,
+    supersedesClaimVersionId: row.supersedes_claim_version_id,
     evidence: {
       courseId: Number(row.course_id),
       courseVersion: Number(row.course_version),
@@ -91,7 +99,8 @@ async function eligibleCredential(client: PoolClient, userId: number, credential
             credential.course_version,course_version.title AS course_title,
             credential.assignment_version_id,credential.completion_rule_version_id,
             credential.completion_event_id,credential.participation_id,
-            credential.evidence_hash,credential.issued_at,credential.expires_at
+            credential.evidence_hash,credential.issued_at,credential.expires_at,
+            assignment.space_id
      FROM credential_records credential
      JOIN assignment_completion_events completion
        ON completion.id=credential.completion_event_id
@@ -127,7 +136,7 @@ const CLAIM_SELECT = `
          version.course_version,version.assignment_version_id,
          version.completion_rule_version_id,version.completion_event_id,
          version.participation_id,version.credential_id,version.evidence_hash,
-         version.issued_at,version.created_at
+         version.issued_at,version.created_at,version.supersedes_claim_version_id
   FROM competency_claims claim
   JOIN competency_claim_versions version ON version.claim_id=claim.id`;
 
@@ -136,7 +145,11 @@ export async function createCompetencyClaim(userId: number, credentialId: string
     const eligible = await eligibleCredential(client, userId, credentialId);
     if (!eligible) throw new SkillPassportError("Eligible credential not found");
     const existing = (await client.query<ClaimRow>(
-      `${CLAIM_SELECT} WHERE claim.user_id=$1 AND claim.credential_id=$2`,
+      `${CLAIM_SELECT} WHERE claim.user_id=$1 AND EXISTS (
+         SELECT 1 FROM competency_claim_versions used
+         WHERE used.claim_id=claim.id AND used.credential_id=$2
+       )
+       ORDER BY version.version DESC LIMIT 1`,
       [userId, credentialId],
     )).rows[0];
     if (existing) return mapClaim(existing);
@@ -159,7 +172,8 @@ export async function createCompetencyClaim(userId: number, credentialId: string
        RETURNING $1::text AS claim_id,id AS claim_version_id,version,claim_type,
          title,statement,course_id,course_version,assignment_version_id,
          completion_rule_version_id,completion_event_id,participation_id,
-         credential_id,evidence_hash,issued_at,created_at`,
+         credential_id,evidence_hash,issued_at,created_at,
+         NULL::text AS supersedes_claim_version_id`,
       [claim.id, title, statement, eligible.course_id, eligible.course_version,
        eligible.assignment_version_id, eligible.completion_rule_version_id,
        eligible.completion_event_id, eligible.participation_id,
@@ -182,13 +196,18 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       credential_status: string;
       credential_expires_at: string | null;
       completion_decision: string;
+      is_current: boolean;
     })>(
       `SELECT claim.id AS claim_id,version.id AS claim_version_id,version.version,
          version.claim_type,version.title,version.statement,version.course_id,
          version.course_version,version.assignment_version_id,
          version.completion_rule_version_id,version.completion_event_id,
          version.participation_id,version.credential_id,version.evidence_hash,
-         version.issued_at,version.created_at,credential.status AS credential_status,
+         version.issued_at,version.created_at,version.supersedes_claim_version_id,
+         NOT EXISTS (
+           SELECT 1 FROM competency_claim_versions newer
+           WHERE newer.claim_id=claim.id AND newer.version>version.version
+         ) AS is_current,credential.status AS credential_status,
          credential.expires_at AS credential_expires_at,
          completion.decision AS completion_decision
        FROM competency_claims claim
@@ -202,11 +221,13 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
     )).rows;
     const claims = claimRows.map((row) => {
       const expired = Boolean(row.credential_expires_at && Date.parse(row.credential_expires_at) <= Date.now());
-      const shareable = row.credential_status === "active" && !expired && row.completion_decision === "completed";
+      const shareable = row.is_current && row.credential_status === "active"
+        && !expired && row.completion_decision === "completed";
       return {
         ...mapClaim(row),
+        isCurrent: row.is_current,
         shareable,
-        availability: shareable ? "active"
+        availability: !row.is_current ? "superseded" : shareable ? "active"
           : row.credential_status === "revoked" || row.completion_decision !== "completed" ? "revoked"
           : "expired",
       };
@@ -224,11 +245,11 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
        JOIN course_versions course_version
          ON course_version.course_id=credential.course_id
         AND course_version.version_number=credential.course_version
-       LEFT JOIN competency_claims claim
-         ON claim.credential_id=credential.id AND claim.user_id=credential.user_id
+       LEFT JOIN competency_claim_versions used_version
+         ON used_version.credential_id=credential.id
        WHERE credential.user_id=$1 AND credential.status='active'
          AND (credential.expires_at IS NULL OR credential.expires_at::timestamptz > now())
-         AND claim.id IS NULL
+         AND used_version.id IS NULL
        ORDER BY credential.issued_at DESC`,
       [actorUserId],
     )).rows.map((row) => ({
@@ -277,12 +298,39 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       occurredAt: row.occurred_at,
       retainUntil: row.retain_until,
     }));
+    const disputes = (await client.query<{
+      id: string; claim_id: string; disputed_claim_version_id: string; category: string;
+      status: string; created_at: string; resolved_at: string | null;
+      resolution_code: string | null; resulting_claim_version_id: string | null;
+      statement: string | null;
+    }>(
+      `SELECT dispute.id,dispute.claim_id,dispute.disputed_claim_version_id,
+              dispute.category,dispute.status,dispute.created_at,dispute.resolved_at,
+              dispute.resolution_code,dispute.resulting_claim_version_id,details.statement
+       FROM competency_claim_disputes dispute
+       LEFT JOIN competency_claim_dispute_details details ON details.dispute_id=dispute.id
+       WHERE dispute.learner_user_id=$1
+       ORDER BY dispute.created_at DESC,dispute.id DESC`,
+      [actorUserId],
+    )).rows.map((row) => ({
+      id: row.id,
+      claimId: row.claim_id,
+      disputedClaimVersionId: row.disputed_claim_version_id,
+      category: row.category,
+      statement: row.statement,
+      status: row.status,
+      createdAt: row.created_at,
+      resolvedAt: row.resolved_at,
+      resolutionCode: row.resolution_code,
+      resultingClaimVersionId: row.resulting_claim_version_id,
+    }));
     return {
       passport: { id: passport.id, visibility: passport.visibility, createdAt: passport.created_at },
       claims,
       eligibleCredentials,
       shares,
       accessHistory,
+      disputes,
     };
   });
 }
@@ -317,7 +365,11 @@ export async function createPassportShare(userId: number, input: {
        WHERE claim.user_id=$1 AND claim.passport_id=$2 AND entry.passport_id=$2
          AND version.id=ANY($3::text[]) AND credential.status='active'
          AND (credential.expires_at IS NULL OR credential.expires_at::timestamptz > now())
-       FOR SHARE OF version,credential`,
+         AND NOT EXISTS (
+           SELECT 1 FROM competency_claim_versions newer
+           WHERE newer.claim_id=claim.id AND newer.version>version.version
+         )
+       FOR SHARE OF claim,version,credential`,
       [userId, passport.id, claimVersionIds],
     )).rows;
     if (selected.length !== claimVersionIds.length) {
@@ -402,7 +454,8 @@ export async function verifyPassportShare(token: string, at = new Date()) {
               version.course_version,version.assignment_version_id,
               version.completion_rule_version_id,version.completion_event_id,
               version.participation_id,version.credential_id,version.evidence_hash,
-              version.issued_at,version.created_at,credential.status AS credential_status,
+              version.issued_at,version.created_at,version.supersedes_claim_version_id,
+              credential.status AS credential_status,
               credential.expires_at AS credential_expires_at,
               completion.decision AS completion_decision,
               completion.participation_id AS completion_participation_id,
@@ -416,8 +469,12 @@ export async function verifyPassportShare(token: string, at = new Date()) {
        JOIN credential_records credential ON credential.id=version.credential_id
        JOIN assignment_completion_events completion ON completion.id=version.completion_event_id
        WHERE selected.share_id=$1
+         AND NOT EXISTS (
+           SELECT 1 FROM competency_claim_versions newer
+           WHERE newer.claim_id=claim.id AND newer.version>version.version
+         )
        ORDER BY selected.position
-       FOR SHARE OF credential`,
+       FOR SHARE OF claim,credential`,
       [share.id, share.passport_id, share.user_id],
     )).rows;
     const expected = (await client.query<{ count: number }>(
@@ -446,6 +503,317 @@ export async function verifyPassportShare(token: string, at = new Date()) {
       expiresAt: share.expires_at,
       verifiedAt: at.toISOString(),
       claims: rows.map(mapClaim),
+    };
+  });
+}
+
+export async function createCompetencyClaimDispute(userId: number, input: {
+  claimVersionId: string;
+  category: string;
+  statement: string;
+}) {
+  const statement = input.statement.trim();
+  if (!DISPUTE_CATEGORIES.has(input.category)) {
+    throw new SkillPassportError("Choose a valid dispute category");
+  }
+  if (statement.length < 20 || statement.length > 2000) {
+    throw new SkillPassportError("Dispute explanation must be between 20 and 2000 characters");
+  }
+  return tx(async (client) => {
+    const claim = (await client.query<{
+      claim_id: string; claim_version_id: string; space_id: string;
+    }>(
+      `SELECT claim.id AS claim_id,version.id AS claim_version_id,assignment.space_id
+       FROM competency_claim_versions version
+       JOIN competency_claims claim ON claim.id=version.claim_id
+       JOIN assignment_versions assignment_version ON assignment_version.id=version.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=assignment_version.assignment_id
+       WHERE version.id=$1 AND claim.user_id=$2
+         AND NOT EXISTS (
+           SELECT 1 FROM competency_claim_versions newer
+           WHERE newer.claim_id=claim.id AND newer.version>version.version
+         )
+       FOR SHARE OF claim,version`,
+      [input.claimVersionId, userId],
+    )).rows[0];
+    if (!claim) throw new SkillPassportError("Claim not found");
+    const open = (await client.query<{ id: string }>(
+      `SELECT id FROM competency_claim_disputes
+       WHERE disputed_claim_version_id=$1 AND status='open'`,
+      [input.claimVersionId],
+    )).rows[0];
+    if (open) throw new SkillPassportError("An open dispute already exists for this claim version");
+    let dispute: {
+      id: string; claim_id: string; disputed_claim_version_id: string;
+      category: string; status: string; created_at: string;
+    };
+    try {
+      dispute = (await client.query<typeof dispute>(
+        `INSERT INTO competency_claim_disputes
+          (claim_id,disputed_claim_version_id,learner_user_id,space_id,category)
+         VALUES ($1,$2,$3,$4,$5)
+         RETURNING id,claim_id,disputed_claim_version_id,category,status,created_at`,
+        [claim.claim_id, claim.claim_version_id, userId, claim.space_id, input.category],
+      )).rows[0];
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        throw new SkillPassportError("An open dispute already exists for this claim version");
+      }
+      throw error;
+    }
+    await client.query(
+      `INSERT INTO competency_claim_dispute_details (dispute_id,learner_user_id,statement)
+       VALUES ($1,$2,$3)`,
+      [dispute.id, userId, statement],
+    );
+    await client.query(
+      `INSERT INTO competency_claim_dispute_events (dispute_id,event_type,actor_user_id)
+       VALUES ($1,'submitted',$2)`,
+      [dispute.id, userId],
+    );
+    return {
+      id: dispute.id,
+      claimId: dispute.claim_id,
+      disputedClaimVersionId: dispute.disputed_claim_version_id,
+      category: dispute.category,
+      status: dispute.status,
+      statement,
+      createdAt: dispute.created_at,
+    };
+  });
+}
+
+export async function withdrawCompetencyClaimDispute(userId: number, disputeId: string) {
+  return tx(async (client) => {
+    const dispute = (await client.query<{ id: string; status: string }>(
+      `SELECT id,status FROM competency_claim_disputes
+       WHERE id=$1 AND learner_user_id=$2 FOR UPDATE`,
+      [disputeId, userId],
+    )).rows[0];
+    if (!dispute) throw new SkillPassportError("Dispute not found");
+    if (dispute.status !== "open") throw new SkillPassportError("Dispute state is terminal");
+    const at = new Date().toISOString();
+    const updated = (await client.query<{ id: string; status: string }>(
+      `UPDATE competency_claim_disputes
+       SET status='withdrawn',resolved_at=$2,resolved_by_user_id=$3,
+           resolution_code='learner_withdrew'
+       WHERE id=$1 RETURNING id,status`,
+      [disputeId, at, userId],
+    )).rows[0];
+    await client.query(
+      `INSERT INTO competency_claim_dispute_events
+        (dispute_id,event_type,actor_user_id,resolution_code,occurred_at)
+       VALUES ($1,'withdrawn',$2,'learner_withdrew',$3)`,
+      [disputeId, userId, at],
+    );
+    return updated;
+  });
+}
+
+type SpaceDisputeRow = {
+  id: string; claim_id: string; disputed_claim_version_id: string;
+  learner_user_id: number; learner_name: string; space_id: string; category: string;
+  status: string; created_at: string; resolved_at: string | null;
+  resolution_code: string | null; resulting_claim_version_id: string | null;
+  statement: string | null; title: string; course_id: number; course_version: number;
+  disputed_credential_id: string;
+};
+
+export async function listSpaceCompetencyClaimDisputes(actorUserId: number, spaceId: string) {
+  return tx(async (client) => {
+    await authorizeStoredMembership(actorUserId, spaceId, "assignments.manage", client);
+    const disputes = (await client.query<SpaceDisputeRow>(
+      `SELECT dispute.id,dispute.claim_id,dispute.disputed_claim_version_id,
+              dispute.learner_user_id,learner.name AS learner_name,dispute.space_id,
+              dispute.category,dispute.status,dispute.created_at,dispute.resolved_at,
+              dispute.resolution_code,dispute.resulting_claim_version_id,details.statement,
+              version.title,version.course_id,version.course_version,
+              version.credential_id AS disputed_credential_id
+       FROM competency_claim_disputes dispute
+       JOIN users learner ON learner.id=dispute.learner_user_id
+       JOIN competency_claim_versions version ON version.id=dispute.disputed_claim_version_id
+       LEFT JOIN competency_claim_dispute_details details ON details.dispute_id=dispute.id
+       WHERE dispute.space_id=$1
+       ORDER BY (dispute.status='open') DESC,dispute.created_at DESC,dispute.id DESC
+       LIMIT 50`,
+      [spaceId],
+    )).rows;
+    const result = [];
+    for (const dispute of disputes) {
+      const replacements = (await client.query<{
+        id: string; course_version: number; issued_at: string; expires_at: string | null;
+      }>(
+        `SELECT credential.id,credential.course_version,credential.issued_at,credential.expires_at
+         FROM credential_records credential
+         JOIN assignment_completion_events completion
+           ON completion.id=credential.completion_event_id
+          AND completion.participation_id=credential.participation_id
+          AND completion.assignment_version_id=credential.assignment_version_id
+          AND completion.completion_rule_version_id=credential.completion_rule_version_id
+          AND completion.evidence_hash=credential.evidence_hash
+          AND completion.decision='completed'
+         JOIN assignment_versions assignment_version
+           ON assignment_version.id=credential.assignment_version_id
+         JOIN space_assignments assignment
+           ON assignment.id=assignment_version.assignment_id
+          AND assignment.course_id=credential.course_id
+         LEFT JOIN competency_claim_versions used ON used.credential_id=credential.id
+         WHERE credential.user_id=$1 AND credential.course_id=$2
+           AND assignment.space_id=$3 AND credential.id<>$4
+           AND credential.status='active'
+           AND (credential.expires_at IS NULL OR credential.expires_at::timestamptz>now())
+           AND used.id IS NULL
+         ORDER BY credential.issued_at DESC`,
+        [dispute.learner_user_id, dispute.course_id, spaceId, dispute.disputed_credential_id],
+      )).rows.map((row) => ({
+        credentialId: row.id,
+        courseVersion: Number(row.course_version),
+        issuedAt: row.issued_at,
+        expiresAt: row.expires_at,
+      }));
+      result.push({
+        id: dispute.id,
+        claimId: dispute.claim_id,
+        disputedClaimVersionId: dispute.disputed_claim_version_id,
+        learnerUserId: dispute.learner_user_id,
+        learnerName: dispute.learner_name,
+        category: dispute.category,
+        statement: dispute.statement,
+        status: dispute.status,
+        title: dispute.title,
+        courseId: Number(dispute.course_id),
+        courseVersion: Number(dispute.course_version),
+        createdAt: dispute.created_at,
+        resolvedAt: dispute.resolved_at,
+        resolutionCode: dispute.resolution_code,
+        resultingClaimVersionId: dispute.resulting_claim_version_id,
+        replacementCredentials: replacements,
+      });
+    }
+    return result;
+  });
+}
+
+export async function resolveCompetencyClaimDispute(
+  actorUserId: number,
+  spaceId: string,
+  disputeId: string,
+  input: {
+    decision: "accepted" | "rejected";
+    resolutionCode: "corrected_with_replacement" | "evidence_confirmed" | "insufficient_information";
+    replacementCredentialId?: string;
+  },
+) {
+  return tx(async (client) => {
+    await authorizeStoredMembership(actorUserId, spaceId, "assignments.manage", client);
+    const dispute = (await client.query<SpaceDisputeRow>(
+      `SELECT dispute.id,dispute.claim_id,dispute.disputed_claim_version_id,
+              dispute.learner_user_id,learner.name AS learner_name,dispute.space_id,
+              dispute.category,dispute.status,dispute.created_at,dispute.resolved_at,
+              dispute.resolution_code,dispute.resulting_claim_version_id,details.statement,
+              version.title,version.course_id,version.course_version,
+              version.credential_id AS disputed_credential_id
+       FROM competency_claim_disputes dispute
+       JOIN users learner ON learner.id=dispute.learner_user_id
+       JOIN competency_claim_versions version ON version.id=dispute.disputed_claim_version_id
+       LEFT JOIN competency_claim_dispute_details details ON details.dispute_id=dispute.id
+       WHERE dispute.id=$1 AND dispute.space_id=$2
+       FOR UPDATE OF dispute`,
+      [disputeId, spaceId],
+    )).rows[0];
+    if (!dispute) throw new SkillPassportError("Dispute not found");
+    if (dispute.status !== "open") throw new SkillPassportError("Dispute state is terminal");
+    const at = new Date().toISOString();
+    if (input.decision === "rejected") {
+      if (!new Set(["evidence_confirmed", "insufficient_information"]).has(input.resolutionCode)) {
+        throw new SkillPassportError("Choose a valid rejection result");
+      }
+      const updated = (await client.query<{
+        id: string; status: string; resolution_code: string;
+      }>(
+        `UPDATE competency_claim_disputes
+         SET status='rejected',resolved_at=$2,resolved_by_user_id=$3,resolution_code=$4
+         WHERE id=$1 RETURNING id,status,resolution_code`,
+        [disputeId, at, actorUserId, input.resolutionCode],
+      )).rows[0];
+      await client.query(
+        `INSERT INTO competency_claim_dispute_events
+          (dispute_id,event_type,actor_user_id,resolution_code,occurred_at)
+         VALUES ($1,'rejected',$2,$3,$4)`,
+        [disputeId, actorUserId, input.resolutionCode, at],
+      );
+      return { id: updated.id, status: updated.status, resolutionCode: updated.resolution_code };
+    }
+    if (input.resolutionCode !== "corrected_with_replacement" || !input.replacementCredentialId) {
+      throw new SkillPassportError("Accepted corrections require replacement credential evidence");
+    }
+    await client.query("SELECT id FROM competency_claims WHERE id=$1 FOR UPDATE", [dispute.claim_id]);
+    const latest = (await client.query<{ id: string; version: number }>(
+      `SELECT id,version FROM competency_claim_versions
+       WHERE claim_id=$1 ORDER BY version DESC LIMIT 1`,
+      [dispute.claim_id],
+    )).rows[0];
+    if (!latest || latest.id !== dispute.disputed_claim_version_id) {
+      throw new SkillPassportError("Dispute state is terminal");
+    }
+    const replacement = await eligibleCredential(
+      client,
+      dispute.learner_user_id,
+      input.replacementCredentialId,
+    );
+    const alreadyUsed = replacement ? (await client.query<{ id: string }>(
+      "SELECT id FROM competency_claim_versions WHERE credential_id=$1",
+      [replacement.credential_id],
+    )).rows[0] : null;
+    if (!replacement || alreadyUsed || replacement.credential_id === dispute.disputed_credential_id
+        || replacement.course_id !== Number(dispute.course_id) || replacement.space_id !== spaceId) {
+      throw new SkillPassportError("Replacement credential unavailable");
+    }
+    const title = `Completed: ${replacement.course_title}`;
+    const statement = `Verified completion of ${replacement.course_title}, version ${replacement.course_version}.`;
+    const version = (await client.query<ClaimRow>(
+      `INSERT INTO competency_claim_versions
+        (claim_id,version,claim_type,title,statement,course_id,course_version,
+         assignment_version_id,completion_rule_version_id,completion_event_id,
+         participation_id,credential_id,evidence_hash,issued_at,supersedes_claim_version_id)
+       VALUES ($1,$2,'verified_course_completion',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING $1::text AS claim_id,id AS claim_version_id,version,claim_type,
+         title,statement,course_id,course_version,assignment_version_id,
+         completion_rule_version_id,completion_event_id,participation_id,
+         credential_id,evidence_hash,issued_at,created_at,supersedes_claim_version_id`,
+      [dispute.claim_id, Number(latest.version) + 1, title, statement,
+       replacement.course_id, replacement.course_version,replacement.assignment_version_id,
+       replacement.completion_rule_version_id,replacement.completion_event_id,
+       replacement.participation_id,replacement.credential_id,replacement.evidence_hash,
+       replacement.issued_at,dispute.disputed_claim_version_id],
+    )).rows[0];
+    const passportId = (await client.query<{ passport_id: string }>(
+      "SELECT passport_id FROM competency_claims WHERE id=$1",
+      [dispute.claim_id],
+    )).rows[0].passport_id;
+    await client.query(
+      `INSERT INTO skill_passport_entries (passport_id,claim_version_id) VALUES ($1,$2)`,
+      [passportId, version.claim_version_id],
+    );
+    await client.query(
+      `UPDATE competency_claim_disputes
+       SET status='accepted',resolved_at=$2,resolved_by_user_id=$3,
+           resolution_code='corrected_with_replacement',replacement_credential_id=$4,
+           resulting_claim_version_id=$5
+       WHERE id=$1`,
+      [disputeId, at, actorUserId, replacement.credential_id, version.claim_version_id],
+    );
+    await client.query(
+      `INSERT INTO competency_claim_dispute_events
+        (dispute_id,event_type,actor_user_id,resolution_code,resulting_claim_version_id,occurred_at)
+       VALUES ($1,'accepted',$2,'corrected_with_replacement',$3,$4)`,
+      [disputeId, actorUserId, version.claim_version_id, at],
+    );
+    return {
+      id: disputeId,
+      status: "accepted" as const,
+      resolutionCode: "corrected_with_replacement" as const,
+      resultingClaim: mapClaim(version),
     };
   });
 }

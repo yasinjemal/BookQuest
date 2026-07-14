@@ -21,6 +21,11 @@
 | Spam a learner's history through a closed or guessed link | Record only after full live verification; unknown, expired, revoked, withdrawn and evidence-invalid tokens append nothing; apply per-IP and per-share limits | Negative logging tests |
 | Race verification against revocation | Verify and append under a shared row lock while lifecycle transitions take an exclusive lock | Transactional concurrency contract and revocation tests |
 | Retain operational access records indefinitely | Set a 90-day deadline at write time and purge only expired rows through privacy maintenance | Retention test |
+| Rewrite a disputed claim or infer a replacement | Never update a claim version; accept only a reconciled replacement credential for the same learner, course and issuing Space; derive the next statement server-side | Supersession and replacement-evidence tests |
+| Resolve another tenant's dispute | Require `assignments.manage` in the dispute's exact issuing Space; platform role grants no tenant access | Wrong-role and wrong-evidence tests |
+| Expose a learner's dispute publicly | Return disputes only in the learner's private Passport and authorized Space queue; public verification contains no dispute data | Private-read and response-shape tests |
+| Keep sensitive learner dispute text after erasure | Store free text separately, reject updates and delete it on effective account erasure while retaining structured pseudonymous lifecycle evidence | Export, append-only and erasure tests |
+| Keep sharing a corrected-but-wrong version | Verify and create shares only for the latest immutable claim version; never silently substitute a successor | Old-link and old-version denial tests |
 
 ## Residual risks and production boundary
 

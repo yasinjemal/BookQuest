@@ -1,0 +1,65 @@
+{
+  "recordedAt": "2026-07-14T12:15:34.065Z",
+  "phase": 4,
+  "slice": "private claim disputes and immutable evidence-backed correction",
+  "status": "early implementation evidence",
+  "productionReady": false,
+  "migration": {
+    "id": 14,
+    "name": "passport_claim_corrections",
+    "direction": "forward-only"
+  },
+  "contract": {
+    "learnerOwnsSubmission": true,
+    "resolverCapability": "assignments.manage",
+    "resolverSpaceMustMatchIssuingSpace": true,
+    "freeFormReplacementClaimsAllowed": false,
+    "acceptedCorrectionRequiresReplacementCredential": true,
+    "replacementMustMatch": ["learner", "course", "issuing Space"],
+    "predecessorRetained": true,
+    "oldShareLinksStopVerifying": true,
+    "silentVersionSubstitution": false,
+    "privateExplanationDeletedAtEffectiveErasure": true
+  },
+  "verification": {
+    "postgresVersion": 16,
+    "testFiles": { "passed": 29, "total": 29 },
+    "tests": { "passed": 158, "total": 158 },
+    "focusedMigrationAndPassportTests": { "passed": 27, "total": 27 },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "productionDependencyAudit": {
+      "passed": true,
+      "vulnerabilities": 0
+    },
+    "browser": {
+      "learnerSubmissionSucceeded": true,
+      "learnerOpenHistoryVisible": true,
+      "managerQueueVisible": true,
+      "acceptDisabledWithoutReplacement": true,
+      "mobileViewport": "390x844",
+      "desktopViewport": "1440x900",
+      "horizontalOverflow": false,
+      "consoleErrors": 0
+    }
+  },
+  "negativeCoverage": [
+    "another learner cannot dispute the claim",
+    "another learner cannot withdraw the dispute",
+    "auditor cannot list or resolve Space disputes",
+    "terminal disputes cannot be reopened or resolved twice",
+    "another learner's credential cannot become replacement evidence",
+    "superseded version cannot be newly shared",
+    "old share link stops verifying after supersession",
+    "claim and dispute history reject direct rewrites",
+    "effective erasure deletes learner dispute free text"
+  ],
+  "phase3ClosureGatesStillOpen": [
+    "Blacksteel pilot",
+    "independent penetration test",
+    "full-journey WCAG 2.2 AA assessment",
+    "production evidence",
+    "restore exercise",
+    "stakeholder acceptance"
+  ]
+}

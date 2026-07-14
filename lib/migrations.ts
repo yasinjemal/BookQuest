@@ -2305,6 +2305,112 @@ CREATE TRIGGER passport_verification_events_no_update
   FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
 `;
 
+const PASSPORT_CLAIM_CORRECTIONS_SQL = `
+ALTER TABLE competency_claim_versions
+  ADD COLUMN supersedes_claim_version_id TEXT
+    REFERENCES competency_claim_versions(id) ON DELETE RESTRICT;
+CREATE UNIQUE INDEX idx_competency_claim_single_successor
+  ON competency_claim_versions(supersedes_claim_version_id)
+  WHERE supersedes_claim_version_id IS NOT NULL;
+
+CREATE TABLE competency_claim_disputes (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  claim_id TEXT NOT NULL REFERENCES competency_claims(id) ON DELETE RESTRICT,
+  disputed_claim_version_id TEXT NOT NULL REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  learner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  category TEXT NOT NULL CHECK (category IN
+    ('identity_or_name','course_or_version','completion_or_score','evidence_or_credential','other')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','withdrawn','rejected','accepted')),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  resolved_at TEXT,
+  resolved_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  resolution_code TEXT CHECK (resolution_code IN
+    ('learner_withdrew','corrected_with_replacement','evidence_confirmed','insufficient_information')),
+  replacement_credential_id TEXT REFERENCES credential_records(id) ON DELETE RESTRICT,
+  resulting_claim_version_id TEXT REFERENCES competency_claim_versions(id) ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX idx_competency_claim_one_open_dispute
+  ON competency_claim_disputes(disputed_claim_version_id) WHERE status='open';
+CREATE INDEX idx_competency_claim_disputes_learner
+  ON competency_claim_disputes(learner_user_id, created_at DESC);
+CREATE INDEX idx_competency_claim_disputes_space
+  ON competency_claim_disputes(space_id, status, created_at DESC);
+
+CREATE TABLE competency_claim_dispute_details (
+  dispute_id TEXT PRIMARY KEY REFERENCES competency_claim_disputes(id) ON DELETE CASCADE,
+  learner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  statement TEXT NOT NULL CHECK (char_length(statement) BETWEEN 20 AND 2000),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE TABLE competency_claim_dispute_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  dispute_id TEXT NOT NULL REFERENCES competency_claim_disputes(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('submitted','withdrawn','rejected','accepted')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  resolution_code TEXT CHECK (resolution_code IN
+    ('learner_withdrew','corrected_with_replacement','evidence_confirmed','insufficient_information')),
+  resulting_claim_version_id TEXT REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_competency_claim_dispute_events
+  ON competency_claim_dispute_events(dispute_id, occurred_at, id);
+
+CREATE OR REPLACE FUNCTION phase4_claim_dispute_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Phase 4 claim disputes are retained';
+  END IF;
+  IF ROW(NEW.id,NEW.claim_id,NEW.disputed_claim_version_id,NEW.learner_user_id,
+         NEW.space_id,NEW.category,NEW.created_at)
+     IS DISTINCT FROM
+     ROW(OLD.id,OLD.claim_id,OLD.disputed_claim_version_id,OLD.learner_user_id,
+         OLD.space_id,OLD.category,OLD.created_at)
+  THEN RAISE EXCEPTION 'Phase 4 claim dispute identity is immutable';
+  END IF;
+  IF OLD.status <> 'open' THEN
+    RAISE EXCEPTION 'Phase 4 claim dispute state is terminal';
+  END IF;
+  IF NEW.status = 'withdrawn'
+     AND NEW.resolved_at IS NOT NULL
+     AND NEW.resolved_by_user_id = OLD.learner_user_id
+     AND NEW.resolution_code = 'learner_withdrew'
+     AND NEW.replacement_credential_id IS NULL
+     AND NEW.resulting_claim_version_id IS NULL
+  THEN RETURN NEW;
+  END IF;
+  IF NEW.status = 'rejected'
+     AND NEW.resolved_at IS NOT NULL
+     AND NEW.resolved_by_user_id IS NOT NULL
+     AND NEW.resolution_code IN ('evidence_confirmed','insufficient_information')
+     AND NEW.replacement_credential_id IS NULL
+     AND NEW.resulting_claim_version_id IS NULL
+  THEN RETURN NEW;
+  END IF;
+  IF NEW.status = 'accepted'
+     AND NEW.resolved_at IS NOT NULL
+     AND NEW.resolved_by_user_id IS NOT NULL
+     AND NEW.resolution_code = 'corrected_with_replacement'
+     AND NEW.replacement_credential_id IS NOT NULL
+     AND NEW.resulting_claim_version_id IS NOT NULL
+  THEN RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Phase 4 claim dispute transition is invalid';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER competency_claim_disputes_lifecycle
+  BEFORE UPDATE OR DELETE ON competency_claim_disputes
+  FOR EACH ROW EXECUTE FUNCTION phase4_claim_dispute_guard();
+CREATE TRIGGER competency_claim_dispute_details_no_update
+  BEFORE UPDATE ON competency_claim_dispute_details
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_claim_dispute_events_no_write
+  BEFORE UPDATE OR DELETE ON competency_claim_dispute_events
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2323,6 +2429,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 11, name: "studio_reversible_authoring", sql: STUDIO_REVERSIBLE_AUTHORING_SQL },
   { id: 12, name: "skill_passport_foundation", sql: SKILL_PASSPORT_FOUNDATION_SQL },
   { id: 13, name: "passport_access_history", sql: PASSPORT_ACCESS_HISTORY_SQL },
+  { id: 14, name: "passport_claim_corrections", sql: PASSPORT_CLAIM_CORRECTIONS_SQL },
 ];
 
 /**
