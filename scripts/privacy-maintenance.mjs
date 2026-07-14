@@ -32,7 +32,8 @@ try {
   console.log(
     `Purged ${purged.sessions} sessions, ${purged.tokens} tokens, ` +
       `${purged.rate_limits} rate-limit buckets and ` +
-      `${purged.passport_access} expired Passport access events.`
+      `${purged.passport_access} expired Passport access events, ` +
+      `${purged.lti_states} LTI login states and ${purged.lti_tickets} LTI launch tickets.`
   );
 } finally {
   await pool.end();

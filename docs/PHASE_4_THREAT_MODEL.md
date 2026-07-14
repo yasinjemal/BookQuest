@@ -44,6 +44,18 @@
 | Partially import a malformed bank | Parse every declared item before one tenant-authorized transaction writes; reject unsupported interactions rather than approximating them | Mixed-package atomicity test |
 | Duplicate an item bank on client retry | Freeze the package SHA-256 in provenance and reject the same digest inside the draft transaction | Duplicate-import test |
 | Import into or export from another tenant | Reuse exact-course Studio authorization and require `content.update` inside the import transaction | Cross-tenant import/export tests |
+| Reuse a machine token across tenants or scopes | Bind every opaque token to one Space client and frozen scope subset; check live client, token and Space state on every request | Wrong-Space, missing-scope, expiry and revocation tests |
+| Recover integration secrets from storage or export | Retain only client/token digests; encrypt webhook secrets with AES-256-GCM and endpoint-bound AAD; omit every secret field from list and Space export | Database and response-shape tests |
+| Duplicate a downstream side effect | One event UUID and unique event/endpoint delivery; stable `Idempotency-Key` across retries; immutable source event | Duplicate-enqueue and retry tests |
+| Forge or replay a webhook | Timestamped HMAC-SHA256 over event ID and exact body; consumer contract requires freshness, constant-time comparison and event-ID persistence | Independent signature test |
+| Turn a webhook into SSRF or response-data collection | Public HTTPS hostname validation, no credentials/IP/local suffix/fragment, no redirects, ten-second timeout and no response-body storage | URL negative tests and delivery contract |
+| Race or strand webhook workers | Claim with `FOR UPDATE SKIP LOCKED`, mark delivery in progress, reclaim after five minutes, use bounded exponential backoff and eight-attempt cap | Delivery state tests |
+| Forge or replay an LMS launch | 256-bit state and nonce, digest-only storage, single-use atomic consumption, strict RS256/JWKS verification and bounded `iat`/`exp` | Forgery, substitution and replay tests |
+| Substitute an LTI tenant, deployment or course | Exact registered issuer/client/deployment, same-origin target, Space-bound attached course and Resource Link validation | Wrong-deployment, target and tenant tests |
+| Let an LMS role grant BookQuest access | Ignore LTI roles for authorization; require an existing active account and live `learning.participate` membership in the configured Space | Non-member launch denial test |
+| Link one LMS subject to another learner | Store a registration-keyed subject digest; enforce one-to-one subject/account constraints and consume a ticket once | Second-account takeover test |
+| Use JWKS retrieval for SSRF or resource exhaustion | Admin-only public-HTTPS registration, no IP/local host, no redirect, five-second timeout, 256 KB cap and one exact RSA signing key | URL and key-set negative tests |
+| Retain LMS identifiers after erasure | Never store raw subject; include the keyed link in account export, delete links/tickets on effective erasure and purge expired artifacts after one day | Export and erasure tests |
 
 ## Residual risks and production boundary
 

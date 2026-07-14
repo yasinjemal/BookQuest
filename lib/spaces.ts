@@ -700,14 +700,32 @@ export async function exportSpaceBundle(actorUserId: number, spaceId: string) {
        FROM space_audit_events WHERE space_id = $1 ORDER BY occurred_at`,
       [spaceId]
     )).rows;
+    const apiClients = (await client.query(
+      `SELECT id,client_id,name,scopes_json,status,created_by_user_id,created_at,revoked_at
+       FROM api_clients WHERE space_id=$1 ORDER BY created_at`, [spaceId]
+    )).rows;
+    const webhookEndpoints = (await client.query(
+      `SELECT id,url,event_types_json,status,created_by_user_id,created_at,revoked_at
+       FROM webhook_endpoints WHERE space_id=$1 ORDER BY created_at`, [spaceId]
+    )).rows;
+    const webhookEvents = (await client.query(
+      `SELECT id,event_type,resource_id,dedupe_key,payload_json,occurred_at
+       FROM webhook_events WHERE space_id=$1 ORDER BY occurred_at`, [spaceId]
+    )).rows;
+    const ltiRegistrations = (await client.query(
+      `SELECT id,course_id,issuer,client_id,deployment_id,authorization_endpoint,
+              token_endpoint,jwks_url,status,created_by_user_id,created_at,revoked_at
+       FROM lti_registrations WHERE space_id=$1 ORDER BY created_at`, [spaceId]
+    )).rows;
     await recordSpaceAudit(client, { eventType: "space.exported", space, actorUserId });
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: nowIso(),
       space,
       memberships,
       courses,
       assignments,
+      integrations: { apiClients, webhookEndpoints, webhookEvents, ltiRegistrations },
       audit,
     };
   });

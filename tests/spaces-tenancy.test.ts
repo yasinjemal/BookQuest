@@ -456,7 +456,7 @@ describe.skipIf(!TEST_DB)("Phase 1 Space tenancy vertical slice", () => {
 
   it("exports for the owner and enforces archived/deletion-scheduled read-only state", async () => {
     const bundle = await spaces.exportSpaceBundle(ownerId, privateSpaceId);
-    expect(bundle).toMatchObject({ schemaVersion: 1, space: { id: privateSpaceId } });
+    expect(bundle).toMatchObject({ schemaVersion: 2, space: { id: privateSpaceId } });
     expect(bundle.memberships.length).toBeGreaterThan(0);
     await expect(
       spaces.exportSpaceBundle(lateLearnerId, privateSpaceId)

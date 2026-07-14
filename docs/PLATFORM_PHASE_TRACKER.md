@@ -5,8 +5,9 @@ document-to-course app into an open, trusted and configurable learning platform.
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
 **Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
-**Next product slice:** pilot-configured LTI 1.3 launch and Advantage boundary
-while the mandatory Blacksteel and independent-assessment gates remain open
+**Next product slice:** configure a named pilot LMS and validate AGS score
+passback acceptance while the mandatory Blacksteel and independent-assessment
+gates remain open
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -861,8 +862,22 @@ the language “implementation evidence,” not “production-ready.”
   evidence status; learner revocation, source credential revocation, supersession
   or erasure blocks future valid status. This is implementation evidence, not a
   claim of 1EdTech product certification.
-- [ ] Add pilot-driven LTI 1.3/LTI Advantage integration.
-- [ ] Publish versioned APIs, scoped OAuth and signed idempotent webhooks.
+- [ ] Add pilot-driven LTI 1.3/LTI Advantage integration. The secure Resource
+  Link launch foundation is implemented in forward-only migration 18: exact
+  Space/course deployment registration, OIDC state/nonce, strict RS256/JWKS
+  validation, one-time account-link tickets, pseudonymous one-to-one subject
+  binding, live Space authorization, erasure and retention controls. AGS score
+  scope/line-item offers are validated but grade passback remains deliberately
+  disabled until a named LMS pilot supplies real endpoints and acceptance
+  evidence. Deep Linking and NRPS also remain out of scope; no LTI Advantage or
+  certification claim is made.
+- [x] Publish versioned APIs, scoped OAuth and signed idempotent webhooks.
+  Migration 17 adds terminal Space-scoped API clients, digest-only one-hour
+  opaque access tokens, encrypted webhook endpoints, immutable event IDs and a
+  retry-safe delivery outbox. The `2026-07-14` API exposes only bounded course
+  and assignment metadata under exact scopes. Webhook retries preserve the same
+  event/idempotency identity and use a timestamped HMAC-SHA256 signature. Secrets
+  are shown once and excluded from list/export responses.
 - [x] Add a verification API for opaque IDs, expiry, revocation and only
   learner-granted claims. `/api/passport/verify` is rate-limited, no-store,
   no-index and returns the same 404 for unknown, expired, revoked,
@@ -973,6 +988,21 @@ the language “implementation evidence,” not “production-ready.”
   707x945 and 1440x900 with no page overflow or console errors. Exact dated
   evidence is stored in
   `docs/evidence/phase4-qti-local-2026-07-14T153631Z.json`.
+- Forward-only migration 17 and `docs/PHASE_4_PLATFORM_INTEGRATIONS.md` add the
+  `2026-07-14` read API, exact Space/scoped OAuth client credentials, encrypted
+  webhook signing secrets and a retry-safe event outbox. The five focused tests
+  prove secret non-disclosure, scope/tenant/expiry/revocation denial, independent
+  HMAC verification and stable idempotency identity. Exact dated evidence is in
+  `docs/evidence/phase4-platform-integrations-local-2026-07-14T163317Z.json`.
+- Forward-only migration 18 and `docs/PHASE_4_LTI_FOUNDATION.md` implement the
+  secure LTI 1.3 Resource Link launch boundary without claiming LTI Advantage
+  completion. Six focused tests cover OIDC state/nonce, canonical RS256 JWT/JWKS
+  validation, substitution/replay, live Space membership, one-to-one subject
+  linking, export, erasure and revocation. The final PostgreSQL 16 regression is
+  32/32 files and 180/180 tests; production build, generated-route typecheck and
+  dependency audit pass with zero vulnerabilities. Browser QA at 707x945 and
+  1440x900 found no horizontal overflow or console errors. Exact evidence is in
+  `docs/evidence/phase4-lti-foundation-local-2026-07-14T163317Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 

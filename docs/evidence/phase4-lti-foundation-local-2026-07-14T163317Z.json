@@ -1,0 +1,38 @@
+{
+  "slice": "Phase 4 LTI 1.3 Resource Link launch foundation",
+  "capturedAt": "2026-07-14T16:33:17Z",
+  "environment": {
+    "database": "isolated local PostgreSQL 16 scratch database",
+    "lms": "deterministic RS256/JWKS test platform",
+    "productionDataUsed": false
+  },
+  "verification": {
+    "focusedLtiTests": { "files": 1, "tests": 6, "status": "passed" },
+    "repeatRandomizedSignatureRuns": { "runs": 3, "testsPerRun": 6, "status": "passed" },
+    "migrationIntegrationFocus": { "files": 3, "tests": 22, "status": "passed" },
+    "fullRegression": { "files": 32, "tests": 180, "status": "passed" },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "dependencyAudit": { "status": "passed", "reportedVulnerabilities": 0 },
+    "browser": {
+      "workflow": "Space developer settings > LTI 1.3 deployments",
+      "responsive": { "viewport": "707x945", "horizontalOverflow": false },
+      "desktop": { "viewport": "1440x900", "horizontalOverflow": false },
+      "consoleErrors": 0,
+      "loginNextPath": "validated and observed returning to the requested integration workspace"
+    }
+  },
+  "negativeCoverage": [
+    "cross-tenant and duplicate deployment registration denied",
+    "IP literal and internal platform URL rejected",
+    "forged and non-canonical JWT encodings rejected",
+    "issuer, audience, deployment, target, nonce, time and signature substitutions fail closed",
+    "state and launch ticket replay denied",
+    "LMS role never bypasses Space membership",
+    "second BookQuest account cannot claim a linked LMS subject",
+    "raw LMS subject absent from storage",
+    "account export and effective-erasure lifecycle verified",
+    "registration revocation is terminal"
+  ],
+  "openPilotGate": "No named LMS endpoint or stakeholder acceptance exists. AGS score passback, Deep Linking and NRPS remain disabled; the tracker item stays open."
+}

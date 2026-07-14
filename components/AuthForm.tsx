@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { setAnswerOutboxAccount } from "@/lib/answer-outbox";
 
-export default function AuthForm({ mode }: { mode: "login" | "register" }) {
+export default function AuthForm({ mode, nextPath }: { mode: "login" | "register"; nextPath?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -30,7 +30,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       const data = await res.json();
       if (!res.ok) return setError(data.error ?? "Code could not be verified");
       if (data.user?.id) setAnswerOutboxAccount(data.user.id);
-      router.push("/");
+      router.push(nextPath || "/");
       router.refresh();
     } catch {
       setError("Network error - are you online?");
@@ -66,9 +66,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       if (data.previewUrl && typeof window !== "undefined") {
         sessionStorage.setItem("bookquest.verification-preview", data.previewUrl);
       }
-      router.push(
-        data.user && !data.user.email_verified_at ? "/verify-email" : "/"
-      );
+      router.push(data.user && !data.user.email_verified_at ? "/verify-email" : (nextPath || "/"));
       router.refresh();
     } catch {
       setError("Network error — are you online?");

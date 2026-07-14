@@ -146,6 +146,31 @@ export const RATE_LIMITS = {
     limit: 60,
     windowSeconds: 60 * 60,
   },
+  oauthTokenIp: {
+    scope: "oauth.token.ip",
+    limit: 120,
+    windowSeconds: 15 * 60,
+  },
+  oauthTokenClient: {
+    scope: "oauth.token.client",
+    limit: 60,
+    windowSeconds: 15 * 60,
+  },
+  versionedApiClient: {
+    scope: "api.v1.client",
+    limit: 1200,
+    windowSeconds: 60 * 60,
+  },
+  ltiLoginIp: {
+    scope: "lti.oidc.login.ip",
+    limit: 120,
+    windowSeconds: 15 * 60,
+  },
+  ltiLaunchIp: {
+    scope: "lti.launch.ip",
+    limit: 120,
+    windowSeconds: 15 * 60,
+  },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;

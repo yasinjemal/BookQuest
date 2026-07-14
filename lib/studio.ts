@@ -12,6 +12,7 @@ import {
   serializeCourseAppearance,
   type CourseAppearance,
 } from "./course-appearance";
+import { enqueueWebhookEvent } from "./integrations";
 
 export type SourceKind =
   | "pdf"
@@ -2358,6 +2359,20 @@ export async function publishApprovedCourseVersion(
        WHERE id = $1`,
       [courseId, version.title, version.description, category, version.version_number, version.id, version.appearance_json]
     );
+    await enqueueWebhookEvent(client, {
+      spaceId: course.owning_space_id,
+      eventType: "course.published",
+      resourceId: String(courseId),
+      dedupeKey: `course.published:${courseId}:${version.id}`,
+      occurredAt: at,
+      data: {
+        spaceId: course.owning_space_id,
+        courseId: String(courseId),
+        courseVersion: version.version_number,
+        courseVersionId: version.id,
+        publishedAt: at,
+      },
+    });
     return { versionId: version.id, versionNumber: version.version_number, publishedAt: at };
   });
 }

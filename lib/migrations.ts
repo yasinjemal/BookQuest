@@ -2583,6 +2583,206 @@ CREATE TRIGGER competency_claim_alignments_no_write
   FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
 `;
 
+const PLATFORM_INTEGRATIONS_SQL = `
+CREATE TABLE api_clients (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  client_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL CHECK (char_length(name) BETWEEN 2 AND 120),
+  secret_hash TEXT NOT NULL CHECK (char_length(secret_hash)=64),
+  scopes_json TEXT NOT NULL CHECK (jsonb_typeof(scopes_json::jsonb)='array'),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  revoked_at TEXT
+);
+CREATE INDEX idx_api_clients_space ON api_clients(space_id, created_at DESC);
+
+CREATE TABLE oauth_access_tokens (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  api_client_id TEXT NOT NULL REFERENCES api_clients(id) ON DELETE RESTRICT,
+  token_hash TEXT NOT NULL UNIQUE CHECK (char_length(token_hash)=64),
+  scopes_json TEXT NOT NULL CHECK (jsonb_typeof(scopes_json::jsonb)='array'),
+  issued_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE INDEX idx_oauth_access_tokens_client ON oauth_access_tokens(api_client_id, expires_at DESC);
+
+CREATE TABLE webhook_endpoints (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  url TEXT NOT NULL CHECK (char_length(url) BETWEEN 12 AND 2048),
+  event_types_json TEXT NOT NULL CHECK (jsonb_typeof(event_types_json::jsonb)='array'),
+  secret_ciphertext TEXT NOT NULL,
+  secret_iv TEXT NOT NULL,
+  secret_auth_tag TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  revoked_at TEXT
+);
+CREATE INDEX idx_webhook_endpoints_space ON webhook_endpoints(space_id, created_at DESC);
+
+CREATE TABLE webhook_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN
+    ('course.published','credential.issued','credential.revoked')),
+  resource_id TEXT NOT NULL CHECK (char_length(resource_id) BETWEEN 1 AND 200),
+  dedupe_key TEXT NOT NULL,
+  payload_json TEXT NOT NULL CHECK (jsonb_typeof(payload_json::jsonb)='object'),
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (space_id, dedupe_key)
+);
+CREATE INDEX idx_webhook_events_space ON webhook_events(space_id, occurred_at DESC);
+
+CREATE TABLE webhook_deliveries (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  webhook_event_id TEXT NOT NULL REFERENCES webhook_events(id) ON DELETE RESTRICT,
+  webhook_endpoint_id TEXT NOT NULL REFERENCES webhook_endpoints(id) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivering','succeeded','failed')),
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  next_attempt_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  last_http_status INTEGER,
+  last_error TEXT,
+  delivered_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (webhook_event_id, webhook_endpoint_id)
+);
+CREATE INDEX idx_webhook_deliveries_due
+  ON webhook_deliveries(status, next_attempt_at) WHERE status IN ('pending','failed');
+
+CREATE OR REPLACE FUNCTION phase4_api_client_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'API clients are retained'; END IF;
+  IF OLD.status='active' AND NEW.status='revoked' AND NEW.revoked_at IS NOT NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.client_id,NEW.name,NEW.secret_hash,
+             NEW.scopes_json,NEW.created_by_user_id,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.client_id,OLD.name,OLD.secret_hash,
+             OLD.scopes_json,OLD.created_by_user_id,OLD.created_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'API client state is terminal';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER api_clients_lifecycle BEFORE UPDATE OR DELETE ON api_clients
+  FOR EACH ROW EXECUTE FUNCTION phase4_api_client_guard();
+
+CREATE OR REPLACE FUNCTION phase4_access_token_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'OAuth access tokens are retained'; END IF;
+  IF OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL
+     AND ROW(NEW.id,NEW.api_client_id,NEW.token_hash,NEW.scopes_json,
+             NEW.issued_at,NEW.expires_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.api_client_id,OLD.token_hash,OLD.scopes_json,
+             OLD.issued_at,OLD.expires_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'OAuth token is immutable';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER oauth_access_tokens_lifecycle BEFORE UPDATE OR DELETE ON oauth_access_tokens
+  FOR EACH ROW EXECUTE FUNCTION phase4_access_token_guard();
+
+CREATE OR REPLACE FUNCTION phase4_webhook_endpoint_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Webhook endpoints are retained'; END IF;
+  IF OLD.status='active' AND NEW.status='revoked' AND NEW.revoked_at IS NOT NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.url,NEW.event_types_json,
+             NEW.secret_ciphertext,NEW.secret_iv,NEW.secret_auth_tag,
+             NEW.created_by_user_id,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.url,OLD.event_types_json,
+             OLD.secret_ciphertext,OLD.secret_iv,OLD.secret_auth_tag,
+             OLD.created_by_user_id,OLD.created_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'Webhook endpoint state is terminal';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER webhook_endpoints_lifecycle BEFORE UPDATE OR DELETE ON webhook_endpoints
+  FOR EACH ROW EXECUTE FUNCTION phase4_webhook_endpoint_guard();
+CREATE TRIGGER webhook_events_no_write BEFORE UPDATE OR DELETE ON webhook_events
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+`;
+
+const LTI_TOOL_FOUNDATION_SQL = `
+CREATE TABLE lti_registrations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  issuer TEXT NOT NULL CHECK (char_length(issuer) BETWEEN 12 AND 1000),
+  client_id TEXT NOT NULL CHECK (char_length(client_id) BETWEEN 1 AND 255),
+  deployment_id TEXT NOT NULL CHECK (char_length(deployment_id) BETWEEN 1 AND 255),
+  authorization_endpoint TEXT NOT NULL,
+  token_endpoint TEXT NOT NULL,
+  jwks_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  revoked_at TEXT,
+  UNIQUE (issuer, client_id, deployment_id)
+);
+CREATE INDEX idx_lti_registrations_space ON lti_registrations(space_id, created_at DESC);
+
+CREATE TABLE lti_login_states (
+  state_hash TEXT PRIMARY KEY CHECK (char_length(state_hash)=64),
+  registration_id TEXT NOT NULL REFERENCES lti_registrations(id) ON DELETE RESTRICT,
+  nonce_hash TEXT NOT NULL UNIQUE CHECK (char_length(nonce_hash)=64),
+  target_link_uri TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_lti_login_states_expiry ON lti_login_states(expires_at);
+
+CREATE TABLE lti_launch_tickets (
+  ticket_hash TEXT PRIMARY KEY CHECK (char_length(ticket_hash)=64),
+  registration_id TEXT NOT NULL REFERENCES lti_registrations(id) ON DELETE RESTRICT,
+  subject_hash TEXT NOT NULL CHECK (char_length(subject_hash)=64),
+  resource_link_id TEXT NOT NULL,
+  context_id TEXT,
+  roles_json TEXT NOT NULL CHECK (jsonb_typeof(roles_json::jsonb)='array'),
+  ags_lineitem_url TEXT,
+  ags_scopes_json TEXT NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(ags_scopes_json::jsonb)='array'),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','consumed')),
+  expires_at TEXT NOT NULL,
+  consumed_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  consumed_at TEXT
+);
+CREATE INDEX idx_lti_launch_tickets_expiry ON lti_launch_tickets(expires_at);
+
+CREATE TABLE lti_user_links (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  registration_id TEXT NOT NULL REFERENCES lti_registrations(id) ON DELETE RESTRICT,
+  subject_hash TEXT NOT NULL CHECK (char_length(subject_hash)=64),
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (registration_id, subject_hash),
+  UNIQUE (registration_id, user_id)
+);
+
+CREATE OR REPLACE FUNCTION phase4_lti_registration_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'LTI registrations are retained'; END IF;
+  IF OLD.status='active' AND NEW.status='revoked' AND NEW.revoked_at IS NOT NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.course_id,NEW.issuer,NEW.client_id,
+             NEW.deployment_id,NEW.authorization_endpoint,NEW.token_endpoint,
+             NEW.jwks_url,NEW.created_by_user_id,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.course_id,OLD.issuer,OLD.client_id,
+             OLD.deployment_id,OLD.authorization_endpoint,OLD.token_endpoint,
+             OLD.jwks_url,OLD.created_by_user_id,OLD.created_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'LTI registration state is terminal';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER lti_registrations_lifecycle BEFORE UPDATE OR DELETE ON lti_registrations
+  FOR EACH ROW EXECUTE FUNCTION phase4_lti_registration_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2604,6 +2804,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 14, name: "passport_claim_corrections", sql: PASSPORT_CLAIM_CORRECTIONS_SQL },
   { id: 15, name: "open_badge_issuance", sql: OPEN_BADGE_ISSUANCE_SQL },
   { id: 16, name: "competency_frameworks", sql: COMPETENCY_FRAMEWORKS_SQL },
+  { id: 17, name: "platform_integrations", sql: PLATFORM_INTEGRATIONS_SQL },
+  { id: 18, name: "lti_tool_foundation", sql: LTI_TOOL_FOUNDATION_SQL },
 ];
 
 /**

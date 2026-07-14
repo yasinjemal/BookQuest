@@ -835,6 +835,13 @@ export default function SpacePage() {
         </details>
       )}
       {view === "settings" && administers && data.space.type !== "personal" && (
+        <Link href={`/spaces/${id}/integrations`} className="block rounded-2xl bg-card border border-line p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-primary">Developer settings</p>
+          <h2 className="mt-1 font-bold">OAuth clients &amp; signed webhooks</h2>
+          <p className="mt-1 text-xs leading-5 text-ink-soft">Create scoped machine access, receive versioned events and revoke credentials without exposing learner accounts.</p>
+        </Link>
+      )}
+      {view === "settings" && administers && data.space.type !== "personal" && (
         <form
           onSubmit={saveBranding}
           className="rounded-2xl bg-card border border-line p-4 space-y-3"

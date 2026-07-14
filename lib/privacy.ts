@@ -1,12 +1,13 @@
 import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { many, one, pool, q, ready, tx } from "./pg";
+import { enqueueWebhookEvent } from "./integrations";
 
 export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 6;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 7;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -152,6 +153,12 @@ export async function createAccountExport(userId: number) {
         practiceSessions: await rows(client, "SELECT * FROM practice_sessions WHERE user_id = $1 ORDER BY created_at", [userId]),
         events: learnerKey ? await rows(client, "SELECT * FROM learning_events WHERE learner_key = $1 ORDER BY recorded_at, id", [learnerKey]) : [],
         lessonCompletions: learnerKey ? await rows(client, "SELECT * FROM lesson_completion_events WHERE learner_key = $1 ORDER BY completed_at", [learnerKey]) : [],
+        ltiLinks: await rows(client, `SELECT link.id,link.registration_id,link.subject_hash,
+          registration.space_id,registration.course_id,registration.issuer,
+          registration.client_id,registration.deployment_id,link.created_at
+          FROM lti_user_links link
+          JOIN lti_registrations registration ON registration.id=link.registration_id
+          WHERE link.user_id=$1 ORDER BY link.created_at,link.id`, [userId]),
       },
       collaboration: {
         ownedClassrooms: await rows(client, "SELECT id, name, code, lifecycle_status, archived_at, created_at FROM classrooms WHERE owner_id = $1 ORDER BY id", [userId]),
@@ -322,8 +329,8 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
       [share.id, userId, erasedAt]
     );
   }
-  const activeSignedCredentials = (await client.query<{ id: string }>(
-    `SELECT id FROM open_badge_credentials
+  const activeSignedCredentials = (await client.query<{ id: string; space_id: string }>(
+    `SELECT id,space_id FROM open_badge_credentials
      WHERE learner_user_id=$1 AND status='active' FOR UPDATE`,
     [userId]
   )).rows;
@@ -338,6 +345,14 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
        VALUES ($1,'revoked',$2,$3)`,
       [badge.id, userId, erasedAt]
     );
+    await enqueueWebhookEvent(client, {
+      spaceId: badge.space_id,
+      eventType: "credential.revoked",
+      resourceId: badge.id,
+      dedupeKey: `credential.revoked:${badge.id}`,
+      occurredAt: erasedAt,
+      data: { spaceId: badge.space_id, credentialId: badge.id, revokedAt: erasedAt },
+    });
   }
   await client.query(
     `DELETE FROM passport_verification_events event
@@ -349,6 +364,8 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
     "DELETE FROM competency_claim_dispute_details WHERE learner_user_id=$1",
     [userId]
   );
+  await client.query("DELETE FROM lti_launch_tickets WHERE consumed_by_user_id=$1", [userId]);
+  await client.query("DELETE FROM lti_user_links WHERE user_id=$1", [userId]);
   // Published content is withdrawn and retained only as an archived evidentiary
   // version. Private content is destroyed. Original source text is always erased.
   await client.query(
@@ -426,13 +443,21 @@ export async function purgeExpiredOperationalData(now = new Date()) {
      ), deleted_passport_access AS (
        DELETE FROM passport_verification_events
         WHERE retain_until::timestamptz <= $1::timestamptz RETURNING 1
+     ), deleted_lti_states AS (
+       DELETE FROM lti_login_states
+        WHERE expires_at::timestamptz < $1::timestamptz - interval '1 day' RETURNING 1
+     ), deleted_lti_tickets AS (
+       DELETE FROM lti_launch_tickets
+        WHERE expires_at::timestamptz < $1::timestamptz - interval '1 day' RETURNING 1
      )
      SELECT
        (SELECT count(*)::int FROM deleted_sessions) AS sessions,
        (SELECT count(*)::int FROM deleted_tokens) AS tokens,
        (SELECT count(*)::int FROM deleted_limits) AS rate_limits,
-       (SELECT count(*)::int FROM deleted_passport_access) AS passport_access`,
+       (SELECT count(*)::int FROM deleted_passport_access) AS passport_access,
+       (SELECT count(*)::int FROM deleted_lti_states) AS lti_states,
+       (SELECT count(*)::int FROM deleted_lti_tickets) AS lti_tickets`,
     [now.toISOString()]
   );
-  return rows[0] as { sessions: number; tokens: number; rate_limits: number; passport_access: number };
+  return rows[0] as { sessions: number; tokens: number; rate_limits: number; passport_access: number; lti_states: number; lti_tickets: number };
 }

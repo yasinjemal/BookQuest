@@ -1,0 +1,40 @@
+{
+  "slice": "Phase 4 versioned API, scoped OAuth and signed idempotent webhooks",
+  "capturedAt": "2026-07-14T16:33:17Z",
+  "apiVersion": "2026-07-14",
+  "environment": {
+    "database": "isolated local PostgreSQL 16 scratch database",
+    "productionDataUsed": false
+  },
+  "verification": {
+    "focusedDatabaseAndRouteTests": { "files": 1, "tests": 5, "status": "passed" },
+    "fullRegression": { "files": 32, "tests": 180, "status": "passed" },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "dependencyAudit": { "status": "passed", "reportedVulnerabilities": 0 },
+    "browser": {
+      "workflow": "Space settings > Developer settings > Integrations",
+      "responsive": { "viewport": "707x945", "horizontalOverflow": false },
+      "desktop": { "viewport": "1440x900", "horizontalOverflow": false },
+      "consoleErrors": 0,
+      "verifiedControls": [
+        "OAuth client name and exact scope selection",
+        "active and revoked client state",
+        "webhook URL and event selection",
+        "one-time-secret contract copy",
+        "versioned quick-start endpoints"
+      ]
+    }
+  },
+  "negativeCoverage": [
+    "cross-tenant client and endpoint management denied",
+    "wrong-Space, missing-scope, expired and revoked access denied",
+    "plaintext client, token and webhook secrets absent from list, database export and Space export",
+    "private or unsafe webhook destinations rejected",
+    "duplicate event enqueue creates one delivery",
+    "independent timestamped HMAC-SHA256 verification",
+    "retry preserves event ID and Idempotency-Key",
+    "terminal client and endpoint lifecycle enforced in PostgreSQL"
+  ],
+  "statusBoundary": "The local platform-integration slice is implemented. Phase 4 production readiness remains gated by Phase 3 closure and the named LTI pilot."
+}

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { one, tx } from "./pg";
 import { SkillPassportError } from "./skill-passport";
 import { authorizeStoredMembership } from "./spaces";
+import { enqueueWebhookEvent } from "./integrations";
 
 export const OPEN_BADGES_CONTEXT = "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json";
 export const VC_CONTEXT = "https://www.w3.org/ns/credentials/v2";
@@ -303,6 +304,14 @@ export async function issueSignedOpenBadge(userId: number, claimVersionId: strin
        VALUES ($1,'issued',$2,$3)`,
       [id, userId, issuedAt],
     );
+    await enqueueWebhookEvent(client, {
+      spaceId: eligible.space_id,
+      eventType: "credential.issued",
+      resourceId: id,
+      dedupeKey: `credential.issued:${id}`,
+      occurredAt: issuedAt,
+      data: { spaceId: eligible.space_id, credentialId: id, claimVersionId, issuedAt },
+    });
     return { id, compactJws, issuedAt, proof: "VC-JWT RS256" as const };
   });
 }
@@ -402,8 +411,8 @@ export async function openBadgeStatus(statusToken: string, at = new Date()) {
 
 export async function revokeSignedOpenBadge(userId: number, badgeId: string) {
   return tx(async (client) => {
-    const row = (await client.query<{ id: string }>(
-      `SELECT id FROM open_badge_credentials
+    const row = (await client.query<{ id: string; space_id: string }>(
+      `SELECT id,space_id FROM open_badge_credentials
        WHERE id=$1 AND learner_user_id=$2 AND status='active' FOR UPDATE`,
       [badgeId, userId],
     )).rows[0];
@@ -415,6 +424,14 @@ export async function revokeSignedOpenBadge(userId: number, badgeId: string) {
        VALUES ($1,'revoked',$2,$3)`,
       [badgeId, userId, at],
     );
+    await enqueueWebhookEvent(client, {
+      spaceId: row.space_id,
+      eventType: "credential.revoked",
+      resourceId: badgeId,
+      dedupeKey: `credential.revoked:${badgeId}`,
+      occurredAt: at,
+      data: { spaceId: row.space_id, credentialId: badgeId, revokedAt: at },
+    });
     return { id: badgeId, status: "revoked" as const, revokedAt: at };
   });
 }
