@@ -5,13 +5,32 @@ import {
   parseCourseAppearance,
   serializeCourseAppearance,
 } from "../lib/course-appearance";
+import { COURSE_THEME_PRESETS, courseThemeVariables, resolveCourseThemeDefinition } from "../lib/course-themes";
 
 describe("course appearance", () => {
   it("keeps every shipped template valid and explicit", () => {
-    expect(COURSE_APPEARANCE_TEMPLATES).toHaveLength(7);
+    expect(COURSE_APPEARANCE_TEMPLATES).toHaveLength(12);
     for (const template of COURSE_APPEARANCE_TEMPLATES) {
       expect(parseCourseAppearance(template.appearance)).toEqual(template.appearance);
       expect(template.appearance.template).toBe(template.id);
+    }
+  });
+
+  it("ships six distinct premium subject presets with semantic treatments", () => {
+    expect(COURSE_THEME_PRESETS.map((theme) => theme.name)).toEqual([
+      "Dark Psychology",
+      "Wealth / Money",
+      "Growth / Strategy",
+      "Islamic Studies",
+      "Science / Tech",
+      "Classic Neutral",
+    ]);
+    for (const theme of COURSE_THEME_PRESETS) {
+      expect(resolveCourseThemeDefinition(theme.appearance).lockStyle).toBe(theme.lockStyle);
+      expect(courseThemeVariables(theme.appearance)).toMatchObject({
+        "--course-primary": theme.colors.primary,
+        "--course-ambient": theme.colors.ambient,
+      });
     }
   });
 

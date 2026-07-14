@@ -33,6 +33,11 @@ const palettes: Record<WorldTheme, WorldPalette> = {
   manuscript: { top: "#a27d52", bottom: "#4e3828", far: "#c6a776", mid: "#826343", near: "#38281e", accent: "#f0b35a", light: "#f8e3b5" },
   "knowledge-city": { top: "#286b70", bottom: "#142a38", far: "#65959a", mid: "#285867", near: "#10232d", accent: "#d8ff63", light: "#d9faf0" },
   shadow: { top: "#24141a", bottom: "#07070a", far: "#3b222b", mid: "#21151a", near: "#08080b", accent: "#e0526f", light: "#ff8ca2" },
+  wealth: { top: "#315943", bottom: "#061812", far: "#8c7740", mid: "#244633", near: "#061611", accent: "#d9b85b", light: "#f3d98b" },
+  strategy: { top: "#648d7c", bottom: "#183b33", far: "#b0a27d", mid: "#527565", near: "#17362f", accent: "#7fd1a9", light: "#f3dfaf" },
+  sanctuary: { top: "#4d8074", bottom: "#153b34", far: "#b9a56f", mid: "#47736a", near: "#12332d", accent: "#68c1b0", light: "#f5e8b9" },
+  science: { top: "#397991", bottom: "#0d2b38", far: "#76afbd", mid: "#25596c", near: "#092631", accent: "#37b6d4", light: "#b9f2ff" },
+  neutral: { top: "#75857d", bottom: "#293a33", far: "#aeb7ae", mid: "#61736a", near: "#26362f", accent: "#9eb3ca", light: "#f1eadb" },
 };
 
 function hashSeed(value: string) {
@@ -58,6 +63,20 @@ function landscape(theme: WorldTheme, variant: number): ReactNode {
     <path className={styles.seal} d="M47 63h6v8h-6zM48.5 63v-2.2a1.5 1.5 0 0 1 3 0V63" />
   </>;
 
+  if (theme === "wealth") return <>
+    <path className={styles.far} d="M0 69h100v31H0zM9 69V55h14v14m8 0V43h17v26m8 0V50h13v19m8 0V38h15v31" />
+    <circle className={styles.middle} cx="50" cy="54" r="23" />
+    <circle className={styles.near} cx="50" cy="54" r="16" />
+    <path className={styles.detail} d="M50 36v36M32 54h36M38 42l24 24m0-24L38 66M47 51h6v8h-6z" />
+  </>;
+
+  if (theme === "sanctuary") return <>
+    <path className={styles.far} d="M0 74h100v26H0zM14 74V52c0-10 7-18 16-18s16 8 16 18v22m8 0V47c0-12 7-22 16-22s16 10 16 22v27" />
+    <path className={styles.middle} d="M21 74V54c0-6 4-11 9-11s9 5 9 11v20m22 0V49c0-7 4-13 9-13s9 6 9 13v25" />
+    <path className={styles.near} d="M0 87c20-8 35-3 50-1 17 2 31-6 50-1v15H0Z" />
+    <path className={styles.detail} d="M8 28h18m48 0h18M50 18v54M45 23l5-5 5 5" />
+  </>;
+
   if (theme === "ocean") return <>
     <path className={styles.far} d="M0 58 C18 50 31 66 50 57 C68 48 84 61 100 54 V100 H0Z" />
     <path className={styles.middle} d="M0 69 C17 62 31 78 49 68 C68 58 81 75 100 65 V100 H0Z" />
@@ -72,7 +91,7 @@ function landscape(theme: WorldTheme, variant: number): ReactNode {
     <circle className={styles.light} cx={72 - variant % 18} cy="29" r="6" />
   </>;
 
-  if (["city-night", "archive", "workshop", "laboratory", "knowledge-city"].includes(theme)) {
+  if (["city-night", "archive", "workshop", "laboratory", "knowledge-city", "science"].includes(theme)) {
     return <>
       <path className={styles.far} d="M0 64h9V49h9v10h8V38h11v20h7V45h13v15h8V33h12v27h8V44h16v56H0Z" />
       <path className={styles.middle} d="M0 74h14V58h10v10h13V53h15v18h13V48h11v22h12V57h12v43H0Z" />
@@ -81,7 +100,7 @@ function landscape(theme: WorldTheme, variant: number): ReactNode {
     </>;
   }
 
-  if (theme === "forest" || theme === "garden") return <>
+  if (theme === "forest" || theme === "garden" || theme === "strategy") return <>
     <path className={styles.far} d="M0 67 12 44l7 14 10-27 11 27 8-20 12 25 9-32 13 29 8-18 10 25v33H0Z" />
     <path className={styles.middle} d="M0 78 10 55l8 13 9-25 12 31 8-21 11 23 8-28 12 27 8-18 14 23v20H0Z" />
     <path className={styles.near} d="M0 88c18-8 31-1 45-5 17-5 31-12 55-2v19H0Z" />

@@ -301,6 +301,13 @@ h3 {
   --course-line-deep: #c8bead;
   --course-ink: #183029;
   --course-ink-soft: #6e776f;
+  --course-raised: #fffdf8;
+  --course-primary: #183029;
+  --course-secondary: #526a8c;
+  --course-ambient: #d8ff63;
+  --course-on-primary: #ffffff;
+  --course-card-radius: 1rem;
+  --course-card-shadow: var(--shadow-card);
   --color-paper: var(--course-page);
   --color-card: var(--course-canvas);
   --color-ivory: var(--course-canvas);
@@ -308,6 +315,14 @@ h3 {
   --color-line-deep: var(--course-line-deep);
   --color-ink: var(--course-ink);
   --color-ink-soft: var(--course-ink-soft);
+  --color-sidebar: var(--course-primary);
+  --color-pine: var(--course-primary);
+  --color-forest: var(--course-primary);
+  --color-dusk: var(--course-secondary);
+  --color-teal: var(--course-accent);
+  --color-teal-deep: color-mix(in srgb, var(--course-accent) 76%, black);
+  --color-signal: var(--course-ambient);
+  --color-sky: color-mix(in srgb, var(--course-accent) 12%, var(--course-canvas));
   color: var(--course-ink);
   background-color: var(--course-page);
 }
@@ -318,6 +333,42 @@ h3 {
   background-image:
     radial-gradient(circle at 8% 8%, color-mix(in srgb, var(--course-accent) 9%, transparent), transparent 24rem),
     linear-gradient(115deg, transparent 0 72%, color-mix(in srgb, var(--course-line) 30%, transparent));
+}
+
+.course-appearance[data-course-pattern="grid"] {
+  background-image:
+    radial-gradient(circle at 86% 2%, color-mix(in srgb, var(--course-ambient) 11%, transparent), transparent 25rem),
+    linear-gradient(color-mix(in srgb, var(--course-line) 30%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--course-line) 22%, transparent) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
+}
+
+.course-appearance[data-course-pattern="ledger"] {
+  background-image:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--course-ambient) 13%, transparent), transparent 27rem),
+    repeating-linear-gradient(0deg, transparent 0 39px, color-mix(in srgb, var(--course-line) 28%, transparent) 40px);
+}
+
+.course-appearance[data-course-pattern="contour"] {
+  background-image:
+    radial-gradient(ellipse at 12% 14%, transparent 0 8rem, color-mix(in srgb, var(--course-accent) 7%, transparent) 8.1rem 8.2rem, transparent 8.3rem 12rem, color-mix(in srgb, var(--course-accent) 5%, transparent) 12.1rem 12.2rem, transparent 12.3rem),
+    linear-gradient(125deg, transparent, color-mix(in srgb, var(--course-secondary) 8%, transparent));
+}
+
+.course-appearance[data-course-pattern="geometry"] {
+  background-image:
+    radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--course-ambient) 11%, transparent), transparent 24rem),
+    linear-gradient(30deg, transparent 48%, color-mix(in srgb, var(--course-line) 20%, transparent) 49% 51%, transparent 52%),
+    linear-gradient(-30deg, transparent 48%, color-mix(in srgb, var(--course-line) 16%, transparent) 49% 51%, transparent 52%);
+  background-size: auto, 72px 42px, 72px 42px;
+}
+
+.course-appearance[data-course-pattern="circuit"] {
+  background-image:
+    radial-gradient(circle at 88% 4%, color-mix(in srgb, var(--course-ambient) 14%, transparent), transparent 25rem),
+    linear-gradient(90deg, color-mix(in srgb, var(--course-line) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--course-line) 17%, transparent) 1px, transparent 1px);
+  background-size: auto, 64px 64px, 64px 64px;
 }
 
 .course-appearance[data-course-surface="parchment"] {
@@ -368,6 +419,34 @@ h3 {
 .course-reading-surface {
   background-color: var(--course-canvas);
   border-color: var(--course-line);
+  border-radius: var(--course-card-radius);
+  box-shadow: var(--course-card-shadow);
+}
+
+.course-appearance[data-course-card="glass"] .course-reading-surface {
+  background-color: color-mix(in srgb, var(--course-canvas) 92%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.course-appearance[data-course-card="vault"] .course-reading-surface {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--course-accent) 52%, transparent), var(--course-card-shadow);
+}
+
+.course-appearance[data-course-border="cut"] .course-reading-surface {
+  border-radius: 0.35rem var(--course-card-radius) var(--course-card-radius) var(--course-card-radius);
+}
+
+.course-appearance[data-course-border="metallic"] .course-reading-surface {
+  border-color: color-mix(in srgb, var(--course-accent) 34%, var(--course-line));
+}
+
+.course-appearance[data-course-border="ornament"] .course-reading-surface {
+  border-color: color-mix(in srgb, var(--course-secondary) 38%, var(--course-line));
+}
+
+.course-appearance[data-course-border="luminous"] .course-reading-surface {
+  border-color: color-mix(in srgb, var(--course-accent) 38%, var(--course-line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--course-accent) 7%, transparent), var(--course-card-shadow);
 }
 
 .course-appearance[data-course-world="shadow"] .course-reading-surface {
@@ -412,6 +491,67 @@ h3 {
 .course-appearance .course-accent-button {
   background-color: var(--course-accent);
   color: var(--course-accent-contrast);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--course-accent) 24%, transparent);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.course-appearance .course-accent-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.course-appearance[data-course-button="glow"] .course-accent-button {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--course-accent) 35%, transparent), 0 12px 34px color-mix(in srgb, var(--course-accent) 32%, transparent);
+}
+
+.course-appearance[data-course-button="quiet"] .course-accent-button {
+  border: 1px solid color-mix(in srgb, var(--course-accent) 45%, var(--course-line));
+  background: color-mix(in srgb, var(--course-accent) 11%, var(--course-canvas));
+  color: var(--course-ink);
+  box-shadow: none;
+}
+
+.course-theme-editor {
+  border-radius: var(--course-card-radius);
+}
+
+.theme-preset-card {
+  border-color: var(--course-line);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--course-page) 55%, var(--course-canvas));
+}
+
+.theme-preset-strip {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.theme-preset-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.theme-preset-card:hover {
+  border-color: var(--course-line-deep);
+  transform: translateY(-1px);
+}
+
+.theme-preset-card[data-selected="true"] {
+  border-color: var(--course-accent);
+  background: color-mix(in srgb, var(--course-accent) 8%, var(--course-canvas));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--course-accent) 22%, transparent);
+}
+
+.theme-preset-card > span:first-child > span {
+  width: 1.3rem;
+  height: 0.32rem;
+  border: 1px solid rgb(0 0 0 / 0.08);
+  border-radius: 999px;
+}
+
+.theme-preset-card > span:last-child > span {
+  border: 1px solid var(--course-line);
+  border-radius: 999px;
+  padding: 0.18rem 0.38rem;
 }
 
 .course-appearance[data-course-typography="editorial"] .display {
@@ -457,6 +597,160 @@ h3 {
 
 .course-appearance[data-course-atmosphere="quiet"] [data-atmospheric-detail="optional"] {
   display: none;
+}
+
+/* Editorial lesson composition: related cards form a compact learning moment
+   and each semantic block controls its own density without changing navigation. */
+.lesson-moment-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.lesson-block {
+  min-width: 0;
+}
+
+.lesson-block[data-block-size="wide"] { grid-column: 1 / -1; }
+.lesson-block[data-block-size="medium"] { grid-column: span 7; }
+.lesson-block[data-block-size="compact"] { grid-column: span 5; }
+
+.lesson-block > *,
+.lesson-block > * > .course-reading-surface,
+.lesson-block > * > .rich-block {
+  height: 100%;
+}
+
+.lesson-reading-card,
+.lesson-quiz,
+.rich-block {
+  border-radius: var(--course-card-radius);
+  box-shadow: var(--course-card-shadow);
+}
+
+.lesson-reading-card .reading,
+.rich-block .reading {
+  font-size: clamp(0.98rem, 0.94rem + 0.12vw, 1.06rem);
+  line-height: 1.7;
+}
+
+.lesson-reading-card[data-reading-variant="insight"] {
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--course-accent) 12%, transparent), transparent 12rem),
+    var(--course-canvas);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--course-accent) 62%, transparent), var(--course-card-shadow);
+}
+
+.lesson-reading-card[data-reading-variant="notebook"] {
+  border-style: dashed;
+  background-color: color-mix(in srgb, var(--course-secondary) 5%, var(--course-canvas));
+}
+
+.lesson-reading-card[data-reading-variant="journal"] {
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--course-accent) 8%, transparent), transparent 45%),
+    var(--course-canvas);
+}
+
+.lesson-summary-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lesson-summary-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.7rem;
+  border-top: 1px solid var(--course-line);
+  padding-top: 0.8rem;
+}
+
+.lesson-summary-list li > span {
+  color: var(--course-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.lesson-summary-list p {
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.lesson-quiz {
+  box-shadow: var(--course-card-shadow);
+}
+
+.lesson-quiz-header {
+  background:
+    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--course-ambient) 18%, transparent), transparent 14rem),
+    var(--course-primary);
+  color: var(--course-on-primary);
+}
+
+.rich-block-label {
+  color: var(--course-accent);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+}
+
+.rich-block-label[data-tone="light"] { color: color-mix(in srgb, var(--course-ambient) 82%, white); }
+.rich-block-label[data-tone="muted"] { color: var(--course-ink-soft); }
+
+.rich-block {
+  box-shadow: var(--course-card-shadow);
+}
+
+.rich-block-quote {
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--course-accent) 8%, transparent), transparent 48%),
+    var(--course-canvas);
+}
+
+.rich-quote-mark {
+  position: absolute;
+  top: -0.85rem;
+  right: 1rem;
+  color: color-mix(in srgb, var(--course-accent) 16%, transparent);
+  font-family: Georgia, serif;
+  font-size: 8rem;
+  line-height: 1;
+}
+
+.rich-block-glossary,
+.rich-block-case,
+.rich-block-survey,
+.rich-block-note,
+.rich-block-media {
+  border-radius: var(--course-card-radius);
+}
+
+.course-appearance[data-course-card="vault"] .rich-block,
+.course-appearance[data-course-card="vault"] .lesson-quiz {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--course-accent) 48%, transparent), var(--course-card-shadow);
+}
+
+.course-appearance[data-course-border="cut"] .rich-block,
+.course-appearance[data-course-border="cut"] .lesson-quiz {
+  border-radius: 0.35rem var(--course-card-radius) var(--course-card-radius) var(--course-card-radius);
+}
+
+@media (max-width: 46rem) {
+  .lesson-block[data-block-size="medium"],
+  .lesson-block[data-block-size="compact"] {
+    grid-column: 1 / -1;
+  }
+
+  .lesson-summary-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .screen-reader-text {

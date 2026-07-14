@@ -17,11 +17,16 @@ export const COURSE_WORLD_THEMES = [
   "manuscript",
   "knowledge-city",
   "shadow",
+  "wealth",
+  "strategy",
+  "sanctuary",
+  "science",
+  "neutral",
 ] as const;
 
 export const COURSE_TYPOGRAPHIES = ["editorial", "literary", "modern", "clear"] as const;
-export const COURSE_SURFACES = ["parchment", "ivory", "mist", "herbarium", "rose", "noir"] as const;
-export const COURSE_ACCENTS = ["lime", "amber", "teal", "rose", "dusk", "moss", "crimson"] as const;
+export const COURSE_SURFACES = ["parchment", "ivory", "mist", "herbarium", "rose", "noir", "evergreen", "sand", "pearl", "frost"] as const;
+export const COURSE_ACCENTS = ["lime", "amber", "teal", "rose", "dusk", "moss", "crimson", "gold", "emerald", "jade", "cyan"] as const;
 export const COURSE_ATMOSPHERES = ["full", "quiet"] as const;
 export const COURSE_READING_WIDTHS = ["focused", "balanced", "wide"] as const;
 export const COURSE_TEMPLATE_IDS = [
@@ -32,6 +37,11 @@ export const COURSE_TEMPLATE_IDS = [
   "quiet-library",
   "clear-focus",
   "shadow-files",
+  "wealth-vault",
+  "growth-strategy",
+  "islamic-studies",
+  "science-tech",
+  "classic-neutral",
   "custom",
 ] as const;
 
@@ -109,9 +119,39 @@ export const COURSE_APPEARANCE_TEMPLATES: ReadonlyArray<{
   },
   {
     id: "shadow-files",
-    name: "Shadow Files",
+    name: "Dark Psychology",
     description: "A cinematic charcoal case room with oxblood detail, sealed lessons, and a focused reading rhythm.",
     appearance: { template: "shadow-files", worldTheme: "shadow", typography: "modern", surface: "noir", accent: "crimson", atmosphere: "full", readingWidth: "focused" },
+  },
+  {
+    id: "wealth-vault",
+    name: "Wealth / Money",
+    description: "Deep evergreen, brushed gold, ledger lines, and vault-like milestones.",
+    appearance: { template: "wealth-vault", worldTheme: "wealth", typography: "editorial", surface: "evergreen", accent: "gold", atmosphere: "full", readingWidth: "focused" },
+  },
+  {
+    id: "growth-strategy",
+    name: "Growth / Strategy",
+    description: "Emerald direction, warm sand, contour paths, and ambitious clarity.",
+    appearance: { template: "growth-strategy", worldTheme: "strategy", typography: "modern", surface: "sand", accent: "emerald", atmosphere: "full", readingWidth: "balanced" },
+  },
+  {
+    id: "islamic-studies",
+    name: "Islamic Studies",
+    description: "A calm pearl reading room with jade detail and restrained geometric ornament.",
+    appearance: { template: "islamic-studies", worldTheme: "sanctuary", typography: "literary", surface: "pearl", accent: "jade", atmosphere: "quiet", readingWidth: "focused" },
+  },
+  {
+    id: "science-tech",
+    name: "Science / Tech",
+    description: "Cool luminous surfaces, cyan signals, precise grids, and encrypted discoveries.",
+    appearance: { template: "science-tech", worldTheme: "science", typography: "modern", surface: "frost", accent: "cyan", atmosphere: "full", readingWidth: "balanced" },
+  },
+  {
+    id: "classic-neutral",
+    name: "Classic Neutral",
+    description: "A timeless ivory workspace with quiet structure and maximum readability.",
+    appearance: { template: "classic-neutral", worldTheme: "neutral", typography: "editorial", surface: "ivory", accent: "dusk", atmosphere: "quiet", readingWidth: "balanced" },
   },
 ];
 
@@ -123,9 +163,13 @@ export const COURSE_ACCENT_HEX: Record<CourseAccent, string> = {
   dusk: "#526A8C",
   moss: "#6E8B72",
   crimson: "#E0526F",
+  gold: "#D9B85B",
+  emerald: "#2E8B68",
+  jade: "#2B8C7F",
+  cyan: "#37B6D4",
 };
 
-export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, "#183029" | "#FFFFFF" | "#160B0F"> = {
+export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, string> = {
   lime: "#183029",
   amber: "#183029",
   teal: "#FFFFFF",
@@ -133,6 +177,10 @@ export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, "#183029" | "#FFFFFF" 
   dusk: "#FFFFFF",
   moss: "#FFFFFF",
   crimson: "#160B0F",
+  gold: "#15271F",
+  emerald: "#FFFFFF",
+  jade: "#FFFFFF",
+  cyan: "#082631",
 };
 
 export type CourseWorldLockCopy = {
@@ -165,6 +213,26 @@ const WORLD_LOCK_COPY: Partial<Record<CourseWorldTheme, CourseWorldLockCopy>> = 
   workshop: {
     eyebrow: "Toolbox locked",
     hint: "Finish the current build to open this station.",
+  },
+  wealth: {
+    eyebrow: "Vault sealed",
+    hint: "Reach the next milestone to open this reserve.",
+  },
+  strategy: {
+    eyebrow: "Next horizon",
+    hint: "Complete this move to reveal the next advantage.",
+  },
+  sanctuary: {
+    eyebrow: "Study circle ahead",
+    hint: "Complete the present lesson to open the next reading.",
+  },
+  science: {
+    eyebrow: "Module encrypted",
+    hint: "Finish this experiment to decode the next signal.",
+  },
+  neutral: {
+    eyebrow: "Next chapter",
+    hint: "Complete the current lesson to continue.",
   },
 };
 

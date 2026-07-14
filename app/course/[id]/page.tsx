@@ -6,15 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import CourseAppearanceEditor from "@/components/CourseAppearanceEditor";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
-import CourseWorld from "@/components/CourseWorld";
+import CourseOverviewHero from "@/components/CourseOverviewHero";
 import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
 import ShareCourseButton from "@/components/ShareCourseButton";
-import {
-  COURSE_ACCENT_HEX,
-  DEFAULT_COURSE_APPEARANCE,
-  type CourseAppearance,
-} from "@/lib/course-appearance";
+import { DEFAULT_COURSE_APPEARANCE, type CourseAppearance } from "@/lib/course-appearance";
+import { CATEGORIES } from "@/lib/categories";
+import styles from "./CoursePage.module.css";
 
 interface LessonNode {
   id: number;
@@ -22,6 +20,7 @@ interface LessonNode {
   cardCount: number;
   completed: boolean;
 }
+
 interface ModuleData {
   id: number;
   title: string;
@@ -29,6 +28,7 @@ interface ModuleData {
   status: string;
   lessons: LessonNode[];
 }
+
 interface CourseData {
   course: {
     id: number;
@@ -44,8 +44,6 @@ interface CourseData {
   };
   modules: ModuleData[];
 }
-
-import { CATEGORIES } from "@/lib/categories";
 
 export default function CoursePathPage() {
   const { id } = useParams<{ id: string }>();
@@ -65,10 +63,10 @@ export default function CoursePathPage() {
       setNotFound(true);
       return null;
     }
-    const d = (await res.json()) as CourseData;
-    setData(d);
-    setCategory(d.course.category ?? "General");
-    return d;
+    const next = (await res.json()) as CourseData;
+    setData(next);
+    setCategory(next.course.category ?? "General");
+    return next;
   }, [id, router]);
 
   async function togglePublish(next: boolean) {
@@ -80,21 +78,17 @@ export default function CoursePathPage() {
       body: JSON.stringify({ published: next, category }),
     });
     setPublishing(false);
-    load();
+    void load();
   }
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     if (!data) return;
-    const busy = ["extracting", "outlining", "generating"].includes(
-      data.course.status
-    );
+    const busy = ["extracting", "outlining", "generating"].includes(data.course.status);
     if (!busy) return;
-    const t = setInterval(load, 4000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void load(), 4000);
+    return () => clearInterval(timer);
   }, [data, load]);
 
   async function remove() {
@@ -103,107 +97,73 @@ export default function CoursePathPage() {
     router.push("/");
   }
 
-  if (notFound)
-    return <p className="p-8 text-center text-ink-soft">Course not found.</p>;
+  if (notFound) return <p className="p-8 text-center text-ink-soft">Course not found.</p>;
   if (!data) return <Loading />;
 
   const allLessons = data.modules.flatMap((module) => module.lessons);
   const completedLessons = allLessons.filter((lesson) => lesson.completed).length;
-  const courseProgress = allLessons.length > 0
-    ? Math.round((completedLessons / allLessons.length) * 100)
-    : 0;
-
+  const courseProgress = allLessons.length > 0 ? Math.round((completedLessons / allLessons.length) * 100) : 0;
+  const firstIncomplete = allLessons.find((lesson) => !lesson.completed);
   const appearance = data.course.appearance ?? DEFAULT_COURSE_APPEARANCE;
+  const busy = ["extracting", "outlining", "generating"].includes(data.course.status);
 
   return (
     <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
-    <div className="page-wrap mx-auto max-w-6xl">
-      <header className="course-world-hero mb-6 grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
-        <CourseWorld seed={data.course.id} title={data.course.title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={courseProgress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="min-h-64 sm:min-h-80 lg:min-h-[27rem]" />
-        <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
-          <Link href="/" className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/65 hover:text-white"><span aria-hidden="true">←</span> Your worlds</Link>
-          <p className="mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Learning journey</p>
-          <h1 className="display mt-3 text-[clamp(2.8rem,9vw,5.2rem)] leading-[0.9]">{data.course.title}</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-white/70">{data.course.description}</p>
-          <div className="mt-7">
-            <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/65"><span>{completedLessons} of {allLessons.length} lessons discovered</span><span>{courseProgress}%</span></div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${data.course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={courseProgress}><div className="course-accent-bg h-full rounded-full" style={{ width: `${courseProgress}%` }} /></div>
-          </div>
-        </div>
-        {["extracting", "outlining", "generating"].includes(
-          data.course.status
-        ) && (
-          <div className="col-span-full flex items-center gap-2 border-t border-white/10 bg-white/5 px-6 py-4 text-sm font-semibold text-white/80">
-            <span className="inline-block h-2 w-2 rounded-full bg-primary animate-pulse" />
-            Still writing lessons — new ones appear below as they finish.
-          </div>
-        )}
-      </header>
+      <div className={styles.page}>
+        <CourseOverviewHero
+          courseId={data.course.id}
+          title={data.course.title}
+          description={data.course.description}
+          appearance={appearance}
+          progress={courseProgress}
+          completedLessons={completedLessons}
+          totalLessons={allLessons.length}
+          moduleCount={data.modules.length}
+          nextLessonId={firstIncomplete?.id}
+        />
 
-      {data.course.isOwner && data.course.status === "ready" && (
-          <section className="mb-8 rounded-[1.35rem] border border-line bg-card p-4 shadow-card sm:flex sm:items-center sm:justify-between sm:gap-5 sm:p-5" aria-label="Course publishing controls">
-            <div className="mb-4 sm:mb-0"><p className="section-label">Creator controls</p><p className="mt-1 text-sm text-ink-soft">Edit the source-linked draft or manage who can enter this world.</p></div>
-            <div className="flex flex-col gap-2 sm:min-w-72 sm:flex-row">
-            <Link href={`/studio/${id}`} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-transform hover:-translate-y-0.5">
-              Edit in Studio <AppIcon name="arrow" className="h-4 w-4" />
-            </Link>
-            {data.course.published ? (
-              <>
-                <Link href={`/c/${data.course.public_slug}`} className="min-h-11 shrink-0 rounded-full border border-line-deep px-4 py-3 text-center text-xs font-bold text-ink-soft">Public page</Link>
-                <ShareCourseButton compact slug={data.course.public_slug} title={data.course.title} />
-                <button
-                  onClick={() => togglePublish(false)}
-                  disabled={publishing}
-                  className="min-h-11 shrink-0 rounded-full border border-line-deep px-4 py-2.5 text-xs font-bold text-ink-soft"
-                >
-                  Unpublish
-                </button>
-              </>
-            ) : (
-              <div className="flex min-w-0 flex-1 gap-2">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  aria-label="Course category"
-                  className="min-w-0 flex-1 rounded-full border border-line-deep bg-paper px-3 py-2 text-sm font-semibold"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => togglePublish(true)}
-                  disabled={publishing}
-                  className="min-h-11 shrink-0 rounded-full bg-teal px-4 py-2 text-xs font-bold text-white transition active:scale-95"
-                >
-                  {publishing ? "Publishing…" : "Publish"}
-                </button>
-              </div>
-            )}
+        {busy && <div className={styles.generationNotice}><span />Still shaping this world — new lessons appear as they finish.</div>}
+
+        {data.course.isOwner && data.course.status === "ready" && (
+          <section className={styles.creatorDock} aria-label="Course publishing controls">
+            <div className={styles.creatorCopy}><span><AppIcon name="create" className="h-4 w-4" /></span><div><p>Creator dock</p><strong>Shape, preview, and release this world.</strong></div></div>
+            <div className={styles.creatorActions}>
+              <Link href={`/studio/${id}`} className={styles.studioButton}>Edit in Studio <AppIcon name="arrow" className="h-4 w-4" /></Link>
+              {data.course.published ? (
+                <>
+                  <Link href={`/c/${data.course.public_slug}`} className={styles.quietButton}>Public page</Link>
+                  <ShareCourseButton compact slug={data.course.public_slug} title={data.course.title} />
+                  <button onClick={() => void togglePublish(false)} disabled={publishing} className={styles.quietButton}>Unpublish</button>
+                </>
+              ) : (
+                <div className={styles.publishGroup}>
+                  <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Course category">{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select>
+                  <button onClick={() => void togglePublish(true)} disabled={publishing} className="course-accent-button">{publishing ? "Publishing…" : "Publish"}</button>
+                </div>
+              )}
             </div>
           </section>
         )}
 
-      {data.course.isOwner && data.course.status === "ready" && (
-        <CourseAppearanceEditor
-          courseId={data.course.id}
-          courseTitle={data.course.title}
-          value={appearance}
-          onSaved={(nextAppearance) => setData((current) => current ? {
-            ...current,
-            course: { ...current.course, appearance: nextAppearance },
-          } : current)}
-        />
-      )}
+        {data.course.isOwner && data.course.status === "ready" && (
+          <CourseAppearanceEditor courseId={data.course.id} courseTitle={data.course.title} value={appearance} onSaved={(nextAppearance) => setData((current) => current ? { ...current, course: { ...current.course, appearance: nextAppearance } } : current)} />
+        )}
 
-      <div className="mb-8 flex flex-wrap gap-3">
-        <Link href={`/course/${id}/read`} className="inline-flex min-h-11 items-center rounded-full border border-line-deep bg-card px-5 text-sm font-semibold">Read source document</Link>
+        <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
+          <header className={styles.journeyHeading}>
+            <div><p>Course atlas</p><h2 id="journey-heading" className="display">Choose your next region.</h2><span>The active region opens wide. Completed and future regions stay compact so the whole journey remains visible.</span></div>
+            <div><span>{data.modules.length} regions</span><span>{allLessons.length} lessons</span><Link href={`/course/${id}/read`}>Source document <AppIcon name="source" className="h-4 w-4" /></Link></div>
+          </header>
+          <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />
+        </section>
+
+        {data.course.isOwner && (
+          <details className={styles.dangerZone}>
+            <summary>Course settings</summary>
+            <div><p>Deleting removes the course and its learner progress.</p><button onClick={() => void remove()} aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>
+          </details>
+        )}
       </div>
-
-      {data.course.isOwner && <div className="mb-6 flex justify-end"><button onClick={remove} className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-no hover:bg-no-soft" aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>}
-
-      <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />
-    </div>
     </CourseAppearanceFrame>
   );
 }

@@ -7,7 +7,6 @@ import CourseWorld from "@/components/CourseWorld";
 import {
   COURSE_ACCENTS,
   COURSE_ACCENT_HEX,
-  COURSE_APPEARANCE_TEMPLATES,
   COURSE_ATMOSPHERES,
   COURSE_READING_WIDTHS,
   COURSE_SURFACES,
@@ -16,6 +15,11 @@ import {
   parseCourseAppearance,
   type CourseAppearance,
 } from "@/lib/course-appearance";
+import {
+  COURSE_SURFACE_TOKENS,
+  COURSE_THEME_PRESETS,
+  resolveCourseThemeDefinition,
+} from "@/lib/course-themes";
 
 const labels: Record<string, string> = {
   editorial: "Editorial serif",
@@ -28,8 +32,21 @@ const labels: Record<string, string> = {
   herbarium: "Herbarium",
   rose: "Soft rose",
   noir: "Noir charcoal",
+  evergreen: "Evergreen vault",
+  sand: "Warm strategy sand",
+  pearl: "Quiet pearl",
+  frost: "Luminous frost",
   shadow: "Shadow chamber",
+  wealth: "Wealth vault",
+  strategy: "Strategy atlas",
+  sanctuary: "Reading sanctuary",
+  science: "Science lab",
+  neutral: "Classic study",
   crimson: "Crimson",
+  gold: "Brushed gold",
+  emerald: "Emerald",
+  jade: "Jade",
+  cyan: "Signal cyan",
   full: "Full atmosphere",
   quiet: "Quiet atmosphere",
   focused: "Focused",
@@ -54,6 +71,7 @@ export default function CourseAppearanceEditor({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const draftTheme = resolveCourseThemeDefinition(draft);
   useEffect(() => setDraft(parseCourseAppearance(value)), [value]);
 
   function customize<K extends keyof CourseAppearance>(key: K, next: CourseAppearance[K]) {
@@ -90,40 +108,44 @@ export default function CourseAppearanceEditor({
   }
 
   return (
-    <details id="course-appearance" className="group mb-8 overflow-hidden rounded-[1.5rem] border border-line bg-card shadow-card">
+    <details id="course-appearance" className="course-theme-editor group mb-8 overflow-hidden border border-line bg-card shadow-card">
       <summary className="flex min-h-20 items-center justify-between gap-5 px-5 py-4 sm:px-7" aria-controls="course-appearance-controls">
-        <span><span className="section-label block">Course appearance</span><span className="mt-1 block text-base font-semibold">Design this world</span></span>
-        <span className="flex shrink-0 items-center gap-3 text-xs font-semibold text-ink-soft"><span className="hidden sm:inline">{titleCase(draft.worldTheme)} · {titleCase(draft.typography)}</span><span className="grid h-10 w-10 place-items-center rounded-full bg-paper transition-transform group-open:rotate-45" aria-hidden="true">+</span></span>
+        <span><span className="section-label block">World system</span><span className="mt-1 block text-base font-semibold">{draftTheme.name}</span></span>
+        <span className="flex shrink-0 items-center gap-3 text-xs font-semibold text-ink-soft"><span className="hidden sm:inline">{titleCase(draftTheme.cardStyle)} cards · {titleCase(draftTheme.lockStyle)} locks</span><span className="grid h-10 w-10 place-items-center rounded-full bg-paper transition-transform group-open:rotate-45" aria-hidden="true">+</span></span>
       </summary>
-      <div id="course-appearance-controls" className="grid border-t border-line lg:grid-cols-[.95fr_1.05fr]">
+      <div id="course-appearance-controls" className="grid border-t border-line lg:grid-cols-[1.08fr_.92fr]">
         <div className="p-5 sm:p-7">
-          <p className="section-label">Design choices</p>
-          <h2 id="course-appearance-heading" className="display mt-2 text-4xl">Choose how this world feels.</h2>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">Templates set a complete, accessible starting point. You can then tune the world, typography, reading background, accent, atmosphere, and line length.</p>
+          <p className="section-label">Subject atmosphere</p>
+          <h2 id="course-appearance-heading" className="display mt-2 text-4xl">Choose the world, keep the rules.</h2>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">Every preset changes the mood, card treatment, pattern language, locks, and controls while navigation and reading behaviour stay familiar.</p>
 
           <fieldset className="mt-6">
-            <legend className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">Starting templates</legend>
+            <legend className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">Premium presets</legend>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {COURSE_APPEARANCE_TEMPLATES.map((template) => {
-                const selected = draft.template === template.id;
+              {COURSE_THEME_PRESETS.map((theme) => {
+                const selected = draft.template === theme.id;
+                const surface = COURSE_SURFACE_TOKENS[theme.appearance.surface];
                 return (
                   <button
-                    key={template.id}
+                    key={theme.id}
                     type="button"
                     aria-pressed={selected}
-                    onClick={() => { setDraft(template.appearance); setMessage(""); }}
-                    className={`min-h-28 rounded-2xl border p-4 text-left transition-colors ${selected ? "border-ink bg-ink text-white" : "border-line bg-paper/55 hover:border-line-deep"}`}
+                    onClick={() => { setDraft(theme.appearance); setMessage(""); }}
+                    className="theme-preset-card min-h-32 border p-4 text-left transition-all"
+                    data-selected={selected ? "true" : "false"}
                   >
-                    <span className="text-sm font-semibold">{template.name}</span>
-                    <span className={`mt-1.5 block text-xs leading-5 ${selected ? "text-white/70" : "text-ink-soft"}`}>{template.description}</span>
+                    <span className="mb-4 flex gap-1.5" aria-hidden="true"><span style={{ background: theme.colors.primary }} /><span style={{ background: surface.canvas }} /><span style={{ background: theme.colors.ambient }} /></span>
+                    <span className="text-sm font-semibold">{theme.name}</span>
+                    <span className="mt-1.5 block text-xs leading-5 text-ink-soft">{theme.tagline}</span>
+                    <span className="mt-3 flex flex-wrap gap-1.5 text-[9px] font-bold uppercase tracking-[.1em] text-ink-soft"><span>{theme.decorativePattern}</span><span>{theme.lockStyle}</span></span>
                   </button>
                 );
               })}
             </div>
           </fieldset>
 
-          <details className="mt-5 rounded-2xl border border-line p-4" open>
-            <summary className="flex min-h-11 items-center justify-between gap-3 font-semibold">Fine-tune this template <AppIcon name="settings" className="h-4 w-4 text-ink-soft" /></summary>
+          <details className="mt-5 rounded-2xl border border-line p-4">
+            <summary className="flex min-h-11 items-center justify-between gap-3 font-semibold">Fine-tune this world <AppIcon name="settings" className="h-4 w-4 text-ink-soft" /></summary>
             <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
               <label className="text-xs font-semibold">World background<select value={draft.worldTheme} onChange={(event) => customize("worldTheme", event.target.value as CourseAppearance["worldTheme"])} className="field mt-2">{COURSE_WORLD_THEMES.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}</select></label>
               <label className="text-xs font-semibold">Typography<select value={draft.typography} onChange={(event) => customize("typography", event.target.value as CourseAppearance["typography"])} className="field mt-2">{COURSE_TYPOGRAPHIES.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}</select></label>
@@ -134,19 +156,19 @@ export default function CourseAppearanceEditor({
             </div>
           </details>
 
-          <button type="button" onClick={() => void save()} disabled={saving} className="btn-primary mt-5 w-full">{saving ? "Saving appearance…" : "Save course appearance"}<AppIcon name="spark" className="h-4 w-4" /></button>
+          <button type="button" onClick={() => void save()} disabled={saving} className="course-accent-button mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-bold">{saving ? "Saving appearance…" : "Save course appearance"}<AppIcon name="spark" className="h-4 w-4" /></button>
           {message && <p role="status" className="mt-3 rounded-xl bg-go-soft px-4 py-3 text-xs font-semibold leading-5 text-go-deep">{message}</p>}
           {error && <p role="alert" className="mt-3 rounded-xl bg-no-soft px-4 py-3 text-xs font-semibold leading-5 text-no">{error}</p>}
         </div>
 
         <CourseAppearanceFrame appearance={draft} className="course-preview-bg border-t border-line p-4 sm:p-6 lg:border-l lg:border-t-0">
-          <div className="sticky top-5 overflow-hidden rounded-[1.4rem] border border-[var(--course-line)] bg-[var(--course-canvas)] shadow-pop">
-            <CourseWorld seed={`appearance:${courseId}`} title={courseTitle} theme={draft.worldTheme} accent={COURSE_ACCENT_HEX[draft.accent]} mood={draft.atmosphere === "full" ? "bright" : "calm"} progress={42} className="min-h-48" />
-            <div className="course-reading-surface p-5 sm:p-7">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft">Live learner preview</p>
-              <h3 className="display mt-2 text-4xl leading-[0.95]">{courseTitle}</h3>
-              <p className="reading mt-4 text-ink-soft">One idea at a time, in a world shaped to fit the subject and the people reading it.</p>
-              <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full w-[42%] rounded-full bg-[var(--course-accent)]" /></div>
+          <div className="sticky top-5 overflow-hidden border border-[var(--course-line)] bg-[var(--course-canvas)] shadow-pop" style={{ borderRadius: "var(--course-card-radius)" }}>
+            <CourseWorld seed={`appearance:${courseId}`} title={courseTitle} theme={draft.worldTheme} accent={COURSE_ACCENT_HEX[draft.accent]} mood={draft.atmosphere === "full" ? "bright" : "calm"} progress={42} className="min-h-44" />
+            <div className="course-reading-surface p-5 sm:p-6">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft">{draftTheme.name} · Learner preview</p>
+              <h3 className="display mt-2 text-3xl leading-[0.98]">{courseTitle}</h3>
+              <p className="reading mt-3 text-ink-soft">One idea at a time, in a world shaped to fit the subject.</p>
+              <div className="mt-5 h-1 overflow-hidden rounded-full bg-line"><div className="h-full w-[42%] rounded-full bg-[var(--course-accent)]" /></div>
             </div>
           </div>
         </CourseAppearanceFrame>

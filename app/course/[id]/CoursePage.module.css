@@ -1,0 +1,242 @@
+.page {
+  width: min(100%, 86rem);
+  margin-inline: auto;
+  padding: clamp(1rem, 3vw, 2.5rem) clamp(0.8rem, 3vw, 2rem) 5rem;
+}
+
+.generationNotice {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.8rem;
+  border: 1px solid var(--course-line);
+  border-radius: 0.8rem;
+  background: var(--course-canvas);
+  padding: 0.8rem 1rem;
+  color: var(--course-ink-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.generationNotice span {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--course-accent);
+  box-shadow: 0 0 8px var(--course-accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.creatorDock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  margin-block: 0.8rem;
+  border: 1px solid var(--course-line);
+  border-radius: var(--course-card-radius);
+  background: color-mix(in srgb, var(--course-canvas) 92%, transparent);
+  padding: 0.75rem;
+  box-shadow: var(--course-card-shadow);
+  backdrop-filter: blur(14px);
+}
+
+.creatorCopy,
+.creatorActions,
+.publishGroup {
+  display: flex;
+  align-items: center;
+}
+
+.creatorCopy {
+  gap: 0.75rem;
+  padding-left: 0.25rem;
+}
+
+.creatorCopy > span {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--course-accent) 26%, var(--course-line));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--course-accent) 7%, var(--course-canvas));
+  color: var(--course-accent);
+}
+
+.creatorCopy p {
+  color: var(--course-accent);
+  font-size: 0.53rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.creatorCopy strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--course-ink);
+  font-size: 0.74rem;
+}
+
+.creatorActions {
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 0.45rem;
+}
+
+.studioButton,
+.quietButton,
+.publishGroup button,
+.journeyHeading a {
+  display: inline-flex;
+  min-height: 2.65rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  padding: 0.62rem 0.95rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.studioButton {
+  background: var(--course-primary);
+  color: var(--course-on-primary);
+}
+
+.quietButton {
+  border: 1px solid var(--course-line-deep);
+  color: var(--course-ink-soft);
+}
+
+.publishGroup {
+  gap: 0.35rem;
+}
+
+.publishGroup select {
+  min-height: 2.65rem;
+  min-width: 8rem;
+  border: 1px solid var(--course-line-deep);
+  border-radius: 999px;
+  background: var(--course-page);
+  padding-inline: 0.8rem;
+  color: var(--course-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.publishGroup button {
+  border: 0;
+}
+
+.journeySection {
+  padding-top: clamp(2rem, 5vw, 4rem);
+}
+
+.journeyHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 1.35rem;
+}
+
+.journeyHeading > div:first-child > p {
+  color: var(--course-accent);
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.journeyHeading h2 {
+  margin-top: 0.4rem;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  line-height: 0.92;
+}
+
+.journeyHeading > div:first-child > span {
+  display: block;
+  max-width: 42rem;
+  margin-top: 0.7rem;
+  color: var(--course-ink-soft);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.journeyHeading > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: end;
+}
+
+.journeyHeading > div:last-child > span,
+.journeyHeading a {
+  border: 1px solid var(--course-line);
+  border-radius: 999px;
+  background: var(--course-canvas);
+  padding: 0.55rem 0.75rem;
+  color: var(--course-ink-soft);
+  font-size: 0.61rem;
+  font-weight: 700;
+}
+
+.journeyHeading a { min-height: auto; }
+
+.dangerZone {
+  margin-top: 2rem;
+  border-top: 1px solid var(--course-line);
+  padding-top: 1rem;
+  color: var(--course-ink-soft);
+  font-size: 0.7rem;
+}
+
+.dangerZone summary {
+  width: fit-content;
+  font-weight: 700;
+}
+
+.dangerZone > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.8rem;
+  border: 1px solid var(--course-line);
+  border-radius: 0.8rem;
+  padding: 0.8rem;
+}
+
+.dangerZone button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-no);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 48rem) {
+  .creatorDock,
+  .journeyHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .creatorActions,
+  .journeyHeading > div:last-child { justify-content: start; }
+  .studioButton { flex: 1; }
+  .publishGroup { width: 100%; }
+  .publishGroup select { min-width: 0; flex: 1; }
+  .dangerZone > div { align-items: start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generationNotice span { animation: none; }
+}

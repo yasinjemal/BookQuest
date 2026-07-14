@@ -47,19 +47,19 @@ export default function QuizCard({ card, onAnswered }: { card: QuizCardType; onA
   }
 
   return (
-    <article className="lesson-quiz overflow-hidden rounded-[1.6rem] border border-dusk/25 bg-card shadow-card">
-      <header className="lesson-quiz-header border-b border-line bg-dusk px-6 py-6 text-white sm:px-9">
+    <article className="lesson-quiz overflow-hidden border border-dusk/25 bg-card">
+      <header className="lesson-quiz-header border-b border-line bg-dusk px-5 py-5 text-white sm:px-6">
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.17em] text-white/70"><AppIcon name="compass" className="h-4 w-4" />Decision moment</div>
-        {card.type === "quiz_mcq" && <h2 className="display mt-4 text-[clamp(2.2rem,8vw,3.7rem)] leading-[0.96]">{card.question}</h2>}
-        {card.type === "quiz_truefalse" && <><p className="mt-4 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55">True or false?</p><h2 className="display mt-2 text-[clamp(2.1rem,8vw,3.5rem)] leading-[0.98]">{card.statement}</h2></>}
-        {card.type === "quiz_fillblank" && <h2 className="display mt-4 text-[clamp(2.2rem,8vw,3.7rem)] leading-[0.96]">Complete the thought</h2>}
+        {card.type === "quiz_mcq" && <h2 className="display mt-3 text-[clamp(1.8rem,5vw,2.75rem)] leading-[0.98]">{card.question}</h2>}
+        {card.type === "quiz_truefalse" && <><p className="mt-3 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55">True or false?</p><h2 className="display mt-2 text-[clamp(1.8rem,5vw,2.65rem)] leading-[0.98]">{card.statement}</h2></>}
+        {card.type === "quiz_fillblank" && <h2 className="display mt-3 text-[clamp(1.8rem,5vw,2.75rem)] leading-[0.98]">Complete the thought</h2>}
       </header>
 
-      <div className="p-5 sm:p-8">
-        {card.type === "quiz_mcq" && <div className="space-y-3" role="group" aria-label="Answer choices">{card.options.map((option, index) => {
+      <div className="lesson-quiz-body p-5 sm:p-6">
+        {card.type === "quiz_mcq" && <div className="quiz-options grid gap-2 sm:grid-cols-2" role="group" aria-label="Answer choices">{card.options.map((option, index) => {
           const isCorrect = revealed && index === card.correct_index;
           const isChosenWrong = revealed && index === choice && index !== card.correct_index;
-          return <button key={option} type="button" onClick={() => submit(index)} disabled={revealed} aria-pressed={choice === index} className={`flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors ${isCorrect ? "border-go bg-go-soft" : isChosenWrong ? "border-no bg-no-soft" : "border-line-deep bg-ivory hover:border-dusk/45"}`}><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold ${isCorrect ? "bg-go text-white" : isChosenWrong ? "bg-no text-white" : "bg-paper text-ink-soft"}`}>{isCorrect ? <AppIcon name="check" className="h-4 w-4" /> : String.fromCharCode(65 + index)}</span><span className="min-w-0 flex-1">{option}</span>{isCorrect && <span className="text-[10px] font-bold uppercase tracking-wide text-go">Correct answer</span>}{isChosenWrong && <span className="text-[10px] font-bold uppercase tracking-wide text-no">Your answer</span>}</button>;
+          return <button key={option} type="button" onClick={() => submit(index)} disabled={revealed} aria-pressed={choice === index} className={`flex min-h-12 w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm font-medium transition-colors ${isCorrect ? "border-go bg-go-soft" : isChosenWrong ? "border-no bg-no-soft" : "border-line-deep bg-ivory hover:border-dusk/45"}`}><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${isCorrect ? "bg-go text-white" : isChosenWrong ? "bg-no text-white" : "bg-paper text-ink-soft"}`}>{isCorrect ? <AppIcon name="check" className="h-4 w-4" /> : String.fromCharCode(65 + index)}</span><span className="min-w-0 flex-1">{option}</span>{isCorrect && <span className="text-[9px] font-bold uppercase tracking-wide text-go">Correct</span>}{isChosenWrong && <span className="text-[9px] font-bold uppercase tracking-wide text-no">Yours</span>}</button>;
         })}</div>}
 
         {card.type === "quiz_truefalse" && <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="Choose true or false">{[true, false].map((value) => {
