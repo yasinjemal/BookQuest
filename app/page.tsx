@@ -60,11 +60,11 @@ function PublicHome() {
       <div className="px-3 sm:px-6">
         <section className="relative mx-auto grid max-w-[92rem] overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:min-h-[44rem] lg:grid-cols-[1.04fr_.96fr]">
           <div className="relative z-10 flex flex-col justify-center px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
-            <span className="eyebrow w-fit text-signal">Living story worlds</span>
-            <h1 className="display mt-7 max-w-[12ch] text-[clamp(3.2rem,15vw,6.9rem)] leading-[0.87] text-white">Every course is a <em className="text-signal">world.</em></h1>
-            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Turn trusted sources into calm, memorable journeys people can read, practise, and return to.</p>
+            <span className="eyebrow w-fit text-signal">Document to interactive course</span>
+            <h1 className="display mt-7 max-w-[12ch] text-[clamp(3.2rem,15vw,6.9rem)] leading-[0.87] text-white">Your material, made <em className="text-signal">teachable.</em></h1>
+            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <Link href="/register" className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5">Begin with a source <AppIcon name="arrow" className="h-4 w-4" /></Link>
+              <Link href="/register" className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5">Create your first course <AppIcon name="arrow" className="h-4 w-4" /></Link>
               <Link href="/verify-credential" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">Verify learning evidence</Link>
             </div>
             <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55"><span>Human reviewed</span><span>Source traceable</span><span>Offline ready</span></div>

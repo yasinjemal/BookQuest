@@ -835,11 +835,10 @@ export default function SpacePage() {
         </details>
       )}
       {view === "settings" && administers && data.space.type !== "personal" && (
-        <Link href={`/spaces/${id}/integrations`} className="block rounded-2xl bg-card border border-line p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-primary">Developer settings</p>
-          <h2 className="mt-1 font-bold">OAuth clients &amp; signed webhooks</h2>
-          <p className="mt-1 text-xs leading-5 text-ink-soft">Create scoped machine access, receive versioned events and revoke credentials without exposing learner accounts.</p>
-        </Link>
+        <details className="rounded-2xl border border-line bg-card p-4">
+          <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-4 font-semibold"><span>Advanced &amp; developer settings</span><span className="text-xs font-normal text-ink-soft">Optional</span></summary>
+          <div className="mt-4 border-t border-line pt-4"><p className="text-xs leading-5 text-ink-soft">Machine integrations and LMS connections are for teams with technical requirements. Normal course creation, teaching, and sharing do not need them.</p><Link href={`/spaces/${id}/integrations`} className="quiet-button mt-4 text-xs">Open developer integrations</Link></div>
+        </details>
       )}
       {view === "settings" && administers && data.space.type !== "personal" && (
         <form

@@ -1,7 +1,10 @@
 # Phase 4 Skill Passport domain model
 
 **Slice:** immutable eligible evidence to selective verification
-**Status:** early implementation; not production-ready while Phase 3 is open
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 ## Aggregate and ownership
 

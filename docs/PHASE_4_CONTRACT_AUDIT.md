@@ -1,5 +1,12 @@
 # Phase 4 contract audit
 
+**Engineering status:** Tested
+
+**Disposition:** incorporated into the deployed Phase 4 scope
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
+
 **Audit date:** 14 July 2026
 **Scope:** the Phase 3 credential, evidence, verification, revocation, tenancy and
 privacy contracts that the first Skill Passport slice must preserve.

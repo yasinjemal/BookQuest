@@ -1,5 +1,10 @@
 # Phase 4 private claim correction and dispute contract
 
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
+
 **Decision date:** 14 July 2026
 
 ## Safe correction boundary

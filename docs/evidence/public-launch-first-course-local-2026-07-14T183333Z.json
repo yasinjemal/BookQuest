@@ -1,0 +1,40 @@
+{
+  "schema": "bookquest-public-launch-evidence-v1",
+  "recordedAt": "2026-07-14T18:33:33Z",
+  "slice": "registration-verification-guided-first-course",
+  "engineeringStatus": "Tested",
+  "externalValidationStatus": "Pending user acquisition",
+  "externalValidationReason": "Pending user acquisition and partner access",
+  "changes": [
+    "Public home states the document-to-interactive-course positioning",
+    "Verified creators continue to /create?welcome=1",
+    "Document upload is the single primary creation action",
+    "Blank, saved-source, recipe, and Space choices use progressive disclosure",
+    "QTI is labelled as advanced assessment exchange",
+    "OAuth, webhook, and LTI controls are labelled as advanced developer settings"
+  ],
+  "automatedVerification": {
+    "focused": "tests/productization.test.ts: 3/3 passed",
+    "postgresRegression": "33/33 files and 183/183 tests passed against isolated PostgreSQL 16",
+    "typecheck": "npm run typecheck passed",
+    "productionBuild": "npm run build passed; 49 static pages generated",
+    "dependencyAudit": "npm run security:dependencies passed; 0 vulnerabilities",
+    "diffCheck": "git diff --check passed"
+  },
+  "browserVerification": {
+    "journey": "Created a synthetic local QA account, verified it through the development-only link, and confirmed the Create my first course action opened the guided creation page",
+    "primaryCopy": "Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.",
+    "mobileViewport": "390x844",
+    "horizontalOverflow": false,
+    "consoleErrors": 0,
+    "optionalPaths": [
+      "Create manually",
+      "Build from saved sources",
+      "Start from a recipe"
+    ]
+  },
+  "claimsNotMade": [
+    "No early-user, pilot, partner, assessor, or institutional validation is claimed",
+    "No willingness-to-pay, accessibility-assessment, penetration-test, or LMS-acceptance evidence is fabricated"
+  ]
+}

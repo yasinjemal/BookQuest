@@ -2,6 +2,15 @@
 
 Last updated: 2026-07-13
 
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
+
+The engineering workflow is independent from the Blacksteel, penetration-test,
+independent-accessibility and stakeholder-acceptance backlog. Those items remain
+open without blocking product development.
+
 ## Proven local slice
 
 The institutional evidence model is anchored to immutable versions:

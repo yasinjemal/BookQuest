@@ -1,5 +1,10 @@
 # Phase 4 competency frameworks and evidence summaries
 
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
+
 ## Boundary
 
 This slice creates BookQuest's internal versioning contract for competency
@@ -69,10 +74,11 @@ an unaligned claim remains valid and contains no invented alignment.
 - Frameworks, versions, items, mappings and claim alignment snapshots reject
   update and deletion at the database boundary.
 
-## Remaining gates
+## External validation backlog
 
 CASE conformance endpoints, certification testing, bulk import/export and
-external framework validation remain future interoperability work. Phase 3's
-pilot, penetration test, WCAG 2.2 AA assessment, production evidence, restore
-exercise and stakeholder acceptance still gate any production-ready Phase 4
-claim.
+external framework validation remain future demand-driven work. Institutional
+claims still require real pilot, security, accessibility and stakeholder
+evidence. Status: Pending user acquisition. Reason:
+`Pending user acquisition and partner access`. None of these items blocks public
+product development.

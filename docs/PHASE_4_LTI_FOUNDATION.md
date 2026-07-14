@@ -1,8 +1,12 @@
 # Phase 4 LTI 1.3 launch foundation
 
 **Implemented:** 14 July 2026
-**Status:** secure core implemented; pilot integration and LTI Advantage services
-remain open.
+**Engineering status:** Deployed
+
+**Engineering scope:** secure Resource Link core
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 BookQuest acts as an LTI 1.3 tool for a deliberately bounded Resource Link
 launch. The implementation follows the 1EdTech LTI Core 1.3 and Security
@@ -72,12 +76,11 @@ a launch, but it does not yet request an LMS service token or post a score. Deep
 Linking, Names and Role Provisioning, Assignment and Grade Services passback,
 dynamic registration and iframe/cookie fallback are deliberately disabled.
 
-Those features must be chosen from evidence produced by a named LMS pilot. At
-minimum, grade passback requires a BookQuest tool signing key, the Security
-Framework JWT client assertion, an exact requested AGS score scope, and an
-idempotent completion-to-score delivery contract. No tracker item may call the
-LTI Advantage integration complete before that real endpoint and acceptance
-evidence exist.
+Those features are demand-driven. If real LMS access becomes available, grade
+passback requires a BookQuest tool signing key, the Security Framework JWT client
+assertion, an exact requested AGS score scope, and an idempotent completion-to-
+score delivery contract. This external validation backlog does not block current
+productization.
 
 ## Privacy and retention
 
@@ -93,5 +96,5 @@ The PostgreSQL integration suite covers wrong-tenant registration, unsafe URLs,
 duplicate deployment, exact initiation parameters, forged signature, claim
 substitution, replay, missing Space membership, second-account takeover, keyed
 subject storage, account export, erasure and terminal registration revocation.
-These are local implementation checks; a production LMS conformance test and
-the mandatory Phase 3 external gates remain open.
+These are engineering checks. Real LMS conformance and institutional validation
+remain open in the external validation backlog.

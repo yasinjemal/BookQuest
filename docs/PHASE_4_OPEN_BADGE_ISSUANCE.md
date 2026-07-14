@@ -2,7 +2,12 @@
 
 **Proof format:** Open Badges 3.0 VC-JWT / Compact JWS  
 **Algorithm:** RS256  
-**Status:** early implementation evidence; not a claim of 1EdTech certification
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+
+**External validation reason:** `Pending user acquisition and partner access`
+**Certification:** no 1EdTech certification is claimed
 
 ## Standards profile
 

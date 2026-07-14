@@ -2,6 +2,10 @@
 
 **Implemented:** 14 July 2026  
 **Profile:** `bookquest-qti-3.0-item-bank-v1`
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 BookQuest exchanges a deliberately small, fail-closed QTI 3.0 Item Bank
 profile. It is implementation evidence, not a claim of 1EdTech product

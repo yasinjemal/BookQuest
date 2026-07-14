@@ -65,10 +65,10 @@ export default function VerifyEmailClient({
       {message && <p className="text-sm font-semibold mt-3">{message}</p>}
       {isVerified ? (
         <Link
-          href="/"
+          href="/create?welcome=1"
           className="block mt-6 rounded-2xl bg-primary text-white font-bold py-3.5"
         >
-          Continue to BookQuest
+          Create my first course
         </Link>
       ) : (
         <div className="mt-6 space-y-3">

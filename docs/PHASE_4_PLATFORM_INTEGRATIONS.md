@@ -2,6 +2,10 @@
 
 **Implemented:** 14 July 2026
 **API version:** `2026-07-14`
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 This slice publishes a small read-only machine API, OAuth 2.0 client-credentials
 access and signed outbound webhooks. It follows the client-credentials pattern
@@ -100,5 +104,6 @@ the initial event payloads. Endpoint and client lifecycle rows, events and token
 records are retained as security evidence and protected by terminal/append-only
 database triggers.
 
-This is implementation evidence, not a Phase 4 production-readiness statement.
-Phase 3 closure and external production validation remain mandatory.
+This is deployed engineering evidence, not institutional validation or a
+certification statement. External validation remains open without blocking
+public-product development.

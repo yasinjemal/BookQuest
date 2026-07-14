@@ -4,10 +4,9 @@
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
-**Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
-**Next product slice:** configure a named pilot LMS and validate AGS score
-passback acceptance while the mandatory Blacksteel and independent-assessment
-gates remain open
+**Current product priority:** public-launch productization
+**Next product slice:** clear public pricing and subscription UX, followed by a
+strong public course page with easy sharing
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -16,14 +15,19 @@ an outcome, checklist, release gates, measurements and explicit deferrals.
 
 ## How to maintain this tracker
 
-- `[ ]` Not started
-- `[x]` Implemented and verified
-- **IN PROGRESS** Work is active
-- **BLOCKED** A named dependency prevents progress
-- **DEFERRED** Intentionally retained for a later phase
+- Engineering status is exactly one of: **Not started**, **In progress**,
+  **Implemented**, **Tested**, or **Deployed**.
+- External validation status is exactly one of: **Not available yet**,
+  **Pending user acquisition**, **Early-user validated**, **Pilot validated**, or
+  **Institutionally validated**.
+- `[ ]` means evidence is still open; `[x]` means the named engineering work and
+  its stated verification are complete.
 
-Only check an item after its implementation and relevant verification are
-complete. A phase closes only when every mandatory release gate passes.
+Engineering progress and external validation are independent. Unavailable
+external validation stays open honestly but never blocks safe product work.
+Partner-dependent details are requested only after the builder explicitly says
+access is available. No pilot, acceptance, identity-provider detail, measurement
+or assessment may be invented.
 
 After each meaningful change:
 
@@ -31,8 +35,8 @@ After each meaningful change:
 2. Record material scope or architecture changes in the decision log.
 3. Put new ideas in the Idea Preservation Register instead of silently expanding
    the active phase.
-4. When a phase closes, record its date, release reference, gate results, metric
-   changes, accepted limitations and post-release owner.
+4. Keep third-party proof in the **External validation backlog**, with the reason
+   `Pending user acquisition and partner access`, until real access exists.
 
 ---
 
@@ -106,25 +110,49 @@ and an institution operate securely. Its four primary experiences are:
 
 ## Master phase map
 
-| Phase | Outcome | Status | Dependency |
+| Phase | Outcome | Engineering status | External validation status |
 |---|---|---|---|
-| 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **COMPLETE** | — |
-| 1. Spaces and tenancy | Anyone can create a controlled learning space | **COMPLETE** | Phase 0 gates passed |
-| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **COMPLETE** | Phase 1 permissions passed |
-| 3. Institutional pilot | An organization completes an auditable training journey | **PILOT/CLOSURE IN PROGRESS** | Phases 1–2 complete |
-| 4. Credentials and interoperability | Evidence can be shared, verified and moved | **EARLY IMPLEMENTATION IN PROGRESS** | Phase 3 evidence; production readiness remains gated by Phase 3 closure |
-| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | Not started | Stable contracts |
-| 6. Learning Genome | Evidence improves questions and learning paths | Not started | Representative consented data |
-| 7. Multi-channel and scale | Learning works across web, offline and messaging | Not started | Stable learning services |
+| 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **Deployed** | **Not available yet** |
+| 1. Spaces and tenancy | Anyone can create a controlled learning space | **Deployed** | **Pending user acquisition** |
+| 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **Deployed** | **Pending user acquisition** |
+| 3. Institutional workflow | An organization can complete an auditable training journey | **Deployed** | **Pending user acquisition** |
+| 4. Credentials and interoperability | Evidence can be shared, verified and moved | **Deployed** | **Pending user acquisition** |
+| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **Not started** | **Not available yet** |
+| 6. Learning Genome | Evidence improves questions and learning paths | **Not started** | **Not available yet** |
+| 7. Multi-channel and scale | Learning works across web, offline and messaging | **Not started** | **Not available yet** |
 
-A later phase can be researched early, but production work must not bypass gates
-protecting tenancy, privacy, evidence or versioning.
+“Deployed” describes the documented engineering scope, not institutional
+validation or certification. Phase 5 architecture expansion is paused while the
+public product is productized. Productization priorities and the A–D audit are in
+`docs/PUBLIC_LAUNCH_PRODUCTIZATION.md`.
+
+## External validation backlog
+
+**Status:** Pending user acquisition
+
+**Reason:** `Pending user acquisition and partner access`
+
+The following evidence is deliberately open and does not block engineering:
+
+- Blacksteel participation, real completion evidence, stakeholder audit-pack
+  acceptance and willingness-to-pay feedback.
+- Named LMS testing, including any future AGS grade-passback acceptance.
+- Independent penetration testing and remediation confirmation.
+- Independent full-journey WCAG 2.2 AA assessment.
+- Institutional stakeholder acceptance, external identity-provider/SCIM proof,
+  and other third-party deployment evidence.
+
+Do not ask for contacts, client secrets, test accounts, pilot dates, baseline
+measurements or external assessors unless the builder explicitly says access is
+available. Never create synthetic validation evidence.
 
 ---
 
 ## Phase 0 — Evidence and reliability foundation
 
-**Status:** COMPLETE (12 July 2026 UTC)
+**Engineering status:** Deployed (12 July 2026 UTC)
+
+**External validation status:** Not available yet
 **Outcome:** BookQuest can prove what a learner answered, prevent replay from
 changing outcomes twice, and operate reliably enough for organizations.
 
@@ -248,7 +276,9 @@ audit packs → Phase 3; adaptive learning → Phase 6.
 
 ## Phase 1 — Spaces, tenancy and permissions
 
-**Status:** COMPLETE (12 July 2026 UTC)
+**Engineering status:** Deployed (12 July 2026 UTC)
+
+**External validation status:** Pending user acquisition
 **Outcome:** individuals, groups, schools, companies and departments use one
 Space model while retaining distinct privacy and access rules.
 
@@ -401,7 +431,9 @@ evaluation.
 
 ## Phase 2 — Course Studio, blocks and reusable recipes
 
-**Status:** COMPLETE (13 July 2026 UTC)
+**Engineering status:** Deployed (13 July 2026 UTC)
+
+**External validation status:** Pending user acquisition
 **Outcome:** creators can generate, manually build, review, customize and reuse
 unique learning experiences with source traceability.
 
@@ -605,9 +637,13 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 
 ---
 
-## Phase 3 — Institutional and government-ready pilot
+## Phase 3 — Institutional workflow
 
-**Status:** PILOT/CLOSURE IN PROGRESS
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+
+**External validation reason:** `Pending user acquisition and partner access`
 **Outcome:** a real organization completes this controlled journey:
 
 > Private Space → controlled source → compliance recipe → review and approval →
@@ -632,17 +668,13 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
   verified BookQuest email/password; OIDC/SAML and SCIM remain demand-driven.
 - [x] Add organization password, session, retention and legal-hold policies.
 - [x] Document regional residency, continuity, recovery and incident response.
-- [ ] Add dependency scanning, security reviews and an external penetration test.
+- [x] Add dependency scanning and internal security review. Independent
+  penetration testing is tracked separately as external validation.
 - [x] Publish data-flow, subprocessor and security questionnaire material.
 - [x] Add branding, bulk invitation and role-scoped dashboards.
-- [ ] Complete full-journey WCAG 2.2 AA testing and publish an accessibility
-  statement with remediation process.
-- [x] Recruit one to three document-heavy design partners. Blacksteel Clothing
-  Pilot, a South African clothing wholesale/retail business, confirmed a 3-5
-  employee onboarding and shop-procedures pilot on 13 July 2026.
-- [ ] Measure their current manual process and agree success criteria in advance.
-- [ ] Observe real admins/learners, record support needs and validate willingness
-  to pay.
+- [x] Publish an accessibility statement and remediation process; independent
+  full-journey WCAG 2.2 AA assessment is tracked as external validation.
+- [x] Build the governed pilot workflow without fabricating partner activity.
 
 Authenticator MFA and recovery codes are complete. The first partner selected
 BookQuest email/password rather than external SSO; migration 9 and the governed
@@ -661,8 +693,9 @@ service refuses completion without no-database admin/learner observations, a rea
 completed participation, reconciled versions, an accepted audit pack, a live-revoked
 credential, a tested selected sign-in method (and an active connection when the
 method is OIDC/SAML), and every external gate.
-This makes the remaining work executable but does not satisfy the unchecked partner
-or independent-assessment items by itself.
+This makes external validation executable but does not satisfy it. Product
+development continues independently; the workflow must not demand partner data
+until the builder explicitly has access.
 
 ### Production evidence to date
 
@@ -696,7 +729,7 @@ or independent-assessment items by itself.
   API access returned `401`, the page redirected to login and the browser logged
   no warnings or errors. Exact evidence is in
   `docs/evidence/phase3-pilot-workflow-production-2026-07-13T113208Z.json`.
-- This does not close Phase 3: production currently has no Blacksteel organization
+- This does not validate Phase 3 externally: production currently has no Blacksteel organization
   Space,
   completion, credential or audit-pack rows. A real partner journey, stakeholder
   audit-pack acceptance, live revocation proof, pilot sign-in test,
@@ -711,7 +744,7 @@ or independent-assessment items by itself.
   ten failure counters at zero. Exact evidence is in
   `docs/evidence/phase3-blacksteel-sign-in-production-2026-07-13T123718Z.json`.
 
-### Confirmed first pilot
+### External validation candidate — not started
 
 - Partner: Blacksteel Clothing Pilot, clothing wholesale and retail, South Africa.
 - Responsible stakeholder: business owner; proposed cohort: one administrator and
@@ -727,15 +760,22 @@ or independent-assessment items by itself.
 - Pilot dates and the quantitative time/administration baseline remain open. The
   execution and evidence procedure is in `docs/BLACKSTEEL_PHASE_3_PILOT.md`.
 
-### Release gates
+### External validation backlog
+
+**Status:** Pending user acquisition
+
+**Reason:** `Pending user acquisition and partner access`
 
 - [ ] A partner completes the journey without manual database work.
 - [ ] The responsible stakeholder accepts the audit pack for its stated purpose.
-- [ ] Course, rule, assignment, attestation and certificate versions reconcile.
-- [ ] Revoked credentials fail verification.
-- [ ] Manager/auditor scopes pass cross-team access tests.
-- [ ] Backup, restore and incident exercises are documented.
-- [ ] Accessibility gaps are resolved or transparently planned.
+- [x] Course, rule, assignment, attestation and certificate versions reconcile in
+  the PostgreSQL integration suite.
+- [x] Revoked credentials fail verification in automated tests.
+- [x] Manager/auditor scopes pass cross-team authorization tests.
+- [x] Application backup/restore and incident exercises are documented.
+- [ ] An independent penetration test closes material findings.
+- [ ] An independent full-journey WCAG 2.2 AA assessment is completed.
+- [ ] Real admin/learner use, support needs and willingness-to-pay are observed.
 - [ ] Marketing claims do not exceed pilot evidence.
 
 ### Measure
@@ -798,16 +838,17 @@ Studio rebuild recorded in
 
 ## Phase 4 — Skill Passport and interoperability
 
-**Status:** EARLY IMPLEMENTATION IN PROGRESS
+**Engineering status:** Deployed
+
+**External validation status:** Pending user acquisition
+
+**External validation reason:** `Pending user acquisition and partner access`
 **Outcome:** learners privately hold, selectively share and independently verify
 evidence-backed achievements across systems.
 
-Phase 4 implementation may proceed in parallel with Phase 3 closure, but Phase 4
-cannot be described as production-ready until Phase 3 is formally complete. The
-Blacksteel pilot, independent penetration test, full-journey WCAG 2.2 AA
-assessment, production evidence, restore exercise and responsible-stakeholder
-acceptance remain mandatory closure gates. Early Phase 4 releases therefore use
-the language “implementation evidence,” not “production-ready.”
+The documented Phase 4 engineering scope is deployed. This does not mean it is
+institutionally validated or certified. Partner and assessor proof remains open
+in the external validation backlog and does not block productization.
 
 ### Build checklist
 
@@ -862,15 +903,14 @@ the language “implementation evidence,” not “production-ready.”
   evidence status; learner revocation, source credential revocation, supersession
   or erasure blocks future valid status. This is implementation evidence, not a
   claim of 1EdTech product certification.
-- [ ] Add pilot-driven LTI 1.3/LTI Advantage integration. The secure Resource
+- [x] Add a secure LTI 1.3 Resource Link foundation. The secure Resource
   Link launch foundation is implemented in forward-only migration 18: exact
   Space/course deployment registration, OIDC state/nonce, strict RS256/JWKS
   validation, one-time account-link tickets, pseudonymous one-to-one subject
-  binding, live Space authorization, erasure and retention controls. AGS score
-  scope/line-item offers are validated but grade passback remains deliberately
-  disabled until a named LMS pilot supplies real endpoints and acceptance
-  evidence. Deep Linking and NRPS also remain out of scope; no LTI Advantage or
-  certification claim is made.
+  binding, live Space authorization, erasure and retention controls. Optional AGS
+  grade passback, Deep Linking and NRPS expansion is demand-driven and remains in
+  the external validation backlog; no LTI Advantage or certification claim is
+  made.
 - [x] Publish versioned APIs, scoped OAuth and signed idempotent webhooks.
   Migration 17 adds terminal Space-scoped API clients, digest-only one-hour
   opaque access tokens, encrypted webhook endpoints, immutable event IDs and a
@@ -1003,8 +1043,8 @@ the language “implementation evidence,” not “production-ready.”
   dependency audit pass with zero vulnerabilities. Browser QA at 707x945 and
   1440x900 found no horizontal overflow or console errors. Exact evidence is in
   `docs/evidence/phase4-lti-foundation-local-2026-07-14T163317Z.json`.
-- This is implementation evidence, not a production-readiness declaration. Phase
-  3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
+- This is deployed engineering evidence, not institutional validation or a
+  standards-certification declaration.
 
 ### Release gates
 
@@ -1033,9 +1073,31 @@ the language “implementation evidence,” not “production-ready.”
 - External import success and repeat API use
 - Consent withdrawals and dispute resolution time
 
+### External validation backlog
+
+**Status:** Pending user acquisition
+
+**Reason:** `Pending user acquisition and partner access`
+
+- [ ] Validate Resource Link launches with a real named LMS.
+- [ ] Implement and validate AGS score passback only when a real product use case
+  and partner endpoint are available.
+- [ ] Decide whether Deep Linking or NRPS is needed from observed demand.
+- [ ] Complete external interoperability/conformance testing where commercially
+  justified.
+- [ ] Complete the independent security, accessibility and stakeholder validation
+  listed in Phase 3 before making institutional-readiness claims.
+
 ---
 
 ## Phase 5 — Open ecosystem and sovereign deployment
+
+**Engineering status:** Not started
+
+**External validation status:** Not available yet
+
+**Product decision:** architecture expansion is paused until public-launch
+productization is understandable, usable and promotable.
 
 **Outcome:** users can extend, move and deploy BookQuest without surrendering
 control, while hosted editions remain commercially sustainable.
@@ -1079,6 +1141,10 @@ control, while hosted editions remain commercially sustainable.
 
 ## Phase 6 — Learning Genome and adaptation
 
+**Engineering status:** Not started
+
+**External validation status:** Not available yet
+
 **Outcome:** eligible evidence improves questions, placement, explanations and
 sequencing without overstating what the data proves.
 
@@ -1119,6 +1185,10 @@ sequencing without overstating what the data proves.
 ---
 
 ## Phase 7 — Multi-channel delivery and scale
+
+**Engineering status:** Not started
+
+**External validation status:** Not available yet
 
 **Outcome:** learners start, continue and complete the same course through
 appropriate channels without fragmented evidence or compromised privacy.
@@ -1229,61 +1299,30 @@ What should not be built yet:
 | 12 Jul 2026 | Payment fulfillment is a row-locked entitlement transaction | Provider callbacks and redirects are replayable and may arrive concurrently | A second provider or multi-currency ledger changes the contract |
 | 12 Jul 2026 | Internal generation fails closed in production | Missing configuration must not expose costly AI work publicly | Background execution moves to a provider-authenticated queue |
 | 12 Jul 2026 | Platform admin is not a tenant role | Operating BookQuest must not silently grant access to private Space data | Audited break-glass support access is designed |
+| 14 Jul 2026 | Separate engineering status from external validation | A solo builder can continue safe product work without inventing unavailable partner evidence | Real users or partners become available |
+| 14 Jul 2026 | Productization precedes Phase 5 expansion | The existing capability must become understandable, usable and promotable before deeper architecture | Public activation and first-course completion show the core journey is clear |
 
 ---
 
 ## Immediate next actions
 
-Phase 0 closure proof:
+1. [x] Audit launch blockers, usability, growth and external validation separately
+   (`docs/PUBLIC_LAUNCH_PRODUCTIZATION.md`).
+2. [x] Ship the guided first-course slice: public positioning → registration →
+   verification → document upload → editable Studio. Engineering status:
+   **Tested**. `tests/productization.test.ts` passes 3/3; the isolated PostgreSQL
+   16 regression passes 33/33 files and 183/183 tests; typecheck, production build
+   (49 static pages), dependency audit (zero vulnerabilities) and diff check pass.
+   Local browser QA completed the synthetic registration/verification journey at
+   390×844 with no horizontal overflow or console errors. Exact evidence:
+   `docs/evidence/public-launch-first-course-local-2026-07-14T183333Z.json`.
+3. [x] Move QTI and platform integrations behind advanced/developer disclosure.
+4. [ ] Add clear public pricing and subscription UX.
+5. [ ] Add a strong anonymous public course page and one-tap sharing.
+6. [ ] Improve the mobile learner journey.
+7. [ ] Add a clean full-book/document reading mode.
+8. [ ] Add creator profiles/libraries, creator analytics, polished demo content
+   and launch-quality empty states.
 
-| Proof | Result | Evidence |
-|---|---|---|
-| Provider PITR with measured recovery point/time | Passed | `docs/evidence/phase0-pitr-drill-2026-07-12T222519Z.json` |
-| Production reliability baseline after recovery | Passed | `docs/evidence/phase0-reliability-closing-2026-07-12T223030Z.json` |
-| Exact pushed state in CI and production | Passed | Commit `a4f0ba9`, GitHub Actions CI #6, Vercel production deployment |
-
-1. [x] Assign owners and target dates to the remaining Phase 0 gates.
-2. [x] Write the Space, membership, role and capability domain model.
-   (`docs/PHASE_1_SPACE_MODEL.md`.)
-3. [x] Map classrooms and global roles to Spaces.
-   (Expand/backfill/verify/switch/contract mapping in the Phase 1 model.)
-4. [x] Define the centralized authorization contract and threat model.
-   (`lib/space-authorization.ts` deny-by-default capability contract.)
-5. [x] Write cross-tenant tests before Space APIs.
-   (`tests/space-authorization.test.ts` covers wrong-Space, inactive membership,
-   role separation, lifecycle and public/unlisted boundaries; route/database
-   variants remain paired with the gated migration.)
-6. [x] Prototype personal, private and organization Space journeys.
-   (`docs/SPACE_JOURNEY_PROTOTYPE.md` defines screens, states and measurable
-   acceptance/usability tests without enabling gated APIs.)
-7. [ ] Interview at least three compliance-pilot design partners.
-8. [x] Define five starter recipes using real source documents.
-   (`docs/STARTER_RECIPE_RESEARCH.md` grounds five versioned research recipes in
-   the four uploaded financial-literacy, AI and architecture-review sources.)
-9. [x] Establish baseline values for Phase 0 reliability metrics.
-   (`npm run reliability:baseline` now produces the aggregate record without
-   identities or samples; authenticated browser beacons now supply aggregate
-   queue age/depth and replay-drain counts. Run it against production after
-   migration/CI, then store the dated output. The first production run at
-   `2026-07-12T21:46:46Z` is stored in
-   `docs/evidence/phase0-reliability-baseline-2026-07-12T214646Z.json`; it is
-   intentionally not accepted as the closing baseline because it exposed one
-   stalled generation and 6,153 error events, including a 6,151-event recovery
-   retry storm. The atomic recovery-lease remediation deployed successfully in
-   commit `a4f0ba9`; CI #6 passed and the first post-deploy observation recorded
-   zero new errors, but the existing course has not yet exercised recovery and
-   remains stalled. Evidence is in
-   `docs/evidence/phase0-reliability-postdeploy-2026-07-12T220851Z.json`.
-   After protected recovery completed all 11 modules, the bounded deployment
-   health window recorded zero errors/failures, no stalled generation and zero
-   reconciliation drift while retaining the preceding 24-hour incident counts.
-   Closing evidence:
-   `docs/evidence/phase0-reliability-closing-2026-07-12T223030Z.json`.)
-
-The first Phase 1 vertical slice should be:
-
-> Create private Space → invite member → add existing course → authorize access →
-> record Space context in evidence → revoke member → prove access stops.
-
-This validates tenancy, permissions and evidence attribution before adding more
-room types, custom roles or institutional administration.
+External validation stays in its backlog and must not be reintroduced into this
+active build queue until the builder explicitly reports partner access.

@@ -1,13 +1,21 @@
 # Blacksteel Clothing Phase 3 pilot
 
-**Status:** confirmed, not started  
+**Engineering status:** Deployed
+
+**Engineering scope:** governed pilot workflow
+
+**External validation status:** Pending user acquisition
+
+**Reason:** `Pending user acquisition and partner access`
 **Partner:** Blacksteel Clothing Pilot  
 **Sector and country:** clothing wholesale and retail, South Africa  
 **Responsible stakeholder:** business owner  
 **Planned cohort:** one administrator and three to five employees
 
-This runbook records the agreed scope without claiming that an unobserved journey
-or assessment has passed. The final source document and pilot dates are still open.
+This runbook preserves a possible future pilot without claiming that an
+unobserved journey or assessment has passed. It is not part of the active build
+queue. Do not request the final source, dates, measurements or stakeholder action
+until the builder explicitly says access is available.
 
 ## Purpose and agreed outcome
 

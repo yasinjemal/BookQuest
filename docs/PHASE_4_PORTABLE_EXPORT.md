@@ -1,7 +1,13 @@
 # Phase 4 portable achievement export
 
 **Profile:** `bookquest-open-badges-3.0-jsonld-document-v1`  
-**Status:** readable export remains unsigned; signed VC-JWT is a separate workflow
+**Engineering status:** Deployed
+
+**Engineering scope:** readable export remains unsigned; signed VC-JWT is a
+separate deployed workflow
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 ## Standards decision
 

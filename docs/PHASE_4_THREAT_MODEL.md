@@ -2,6 +2,12 @@
 
 **Reviewed:** 14 July 2026
 **Boundary:** the early private Passport and selective-share vertical slice.
+**Engineering status:** Tested
+
+**Disposition:** controls are implemented in the deployed Phase 4 scope
+
+**External validation status:** Pending user acquisition
+**External validation reason:** `Pending user acquisition and partner access`
 
 | Threat | Required control | Verification |
 |---|---|---|
@@ -64,8 +70,7 @@ view; revocation prevents future BookQuest access but cannot erase an external
 copy. The UI must say this plainly before sharing. Endpoint rate limiting reduces
 online guessing but infrastructure-level abuse monitoring remains required.
 
-This threat model is an internal design review, not the mandatory independent
-penetration test. Phase 4 cannot be called production-ready until Phase 3's
-Blacksteel pilot, independent penetration test, full-journey WCAG 2.2 AA
-assessment, production evidence, restore exercise and stakeholder acceptance are
-formally closed.
+This threat model is an internal design review, not an independent penetration
+test or institutional validation. Those items remain open in the external
+validation backlog with the reason `Pending user acquisition and partner access`;
+they do not block product development.
