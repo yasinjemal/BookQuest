@@ -5,8 +5,8 @@
   "status": "implementation evidence; not production-ready and not a 1EdTech certification claim",
   "profile": "bookquest-open-badges-3.0-vc-jwt-v1",
   "verification": {
-    "focusedPostgres": { "files": 1, "tests": 21, "passed": true },
-    "fullPostgres": { "files": 29, "tests": 163, "passed": true },
+    "focusedPostgres": { "files": 1, "tests": 22, "passed": true },
+    "fullPostgres": { "files": 29, "tests": 164, "passed": true },
     "typecheck": true,
     "productionBuild": true,
     "productionDependencyAudit": { "passed": true, "vulnerabilities": 0 },

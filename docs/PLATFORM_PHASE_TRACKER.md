@@ -931,7 +931,7 @@ the language “implementation evidence,” not “production-ready.”
   mutation, underlying evidence revocation and terminal lifecycle transitions.
   The exact contract is documented in `docs/PHASE_4_OPEN_BADGE_ISSUANCE.md`.
 - The signed-issuance regression passes 29/29 PostgreSQL 16 test files and
-  163/163 tests. It includes active-credential account-erasure revocation,
+  164/164 tests. It includes active-credential account-erasure revocation,
   terminal signed-credential lifecycle enforcement and encrypted issuer-key
   handling. TypeScript, the production build and dependency audit pass with zero
   reported vulnerabilities. Authenticated Passport browser QA confirmed the

@@ -6,9 +6,16 @@ import { skillPassportApiError } from "@/lib/skill-passport-api";
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const [user, unauth] = await requireUser(req);
-  if (!user) return unauth;
+  if (!user) {
+    unauth.headers.set("Cache-Control", "private, no-store");
+    return unauth;
+  }
   const limit = await consumeRateLimit(RATE_LIMITS.passportMutationUser, rateLimitSubject("user", user.id));
-  if (!limit.allowed) return tooManyRequests(limit);
+  if (!limit.allowed) {
+    const response = tooManyRequests(limit);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
   try {
     return NextResponse.json({ credential: await revokeSignedOpenBadge(user.id, (await params).id) }, {
       headers: { "Cache-Control": "private, no-store" },

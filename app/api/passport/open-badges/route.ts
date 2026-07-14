@@ -9,13 +9,23 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
-  if (!user) return unauth;
+  if (!user) {
+    unauth.headers.set("Cache-Control", "private, no-store");
+    return unauth;
+  }
   const limit = await consumeRateLimit(RATE_LIMITS.passportMutationUser, rateLimitSubject("user", user.id));
-  if (!limit.allowed) return tooManyRequests(limit);
+  if (!limit.allowed) {
+    const response = tooManyRequests(limit);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
   let body: { claimVersionId?: string };
   try { body = await req.json() as typeof body; }
-  catch { return NextResponse.json({ error: "Invalid request" }, { status: 400 }); }
-  if (!body.claimVersionId) return NextResponse.json({ error: "Choose a current claim" }, { status: 400 });
+  catch { return NextResponse.json({ error: "Invalid request" }, { status: 400, headers: { "Cache-Control": "private, no-store" } }); }
+  if (!body.claimVersionId) return NextResponse.json({ error: "Choose a current claim" }, {
+    status: 400,
+    headers: { "Cache-Control": "private, no-store" },
+  });
   try {
     return NextResponse.json({ credential: await issueSignedOpenBadge(user.id, body.claimVersionId, req.nextUrl.origin) }, {
       headers: { "Cache-Control": "private, no-store" },

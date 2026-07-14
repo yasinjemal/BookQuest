@@ -25,6 +25,9 @@ let otherClaimVersionId: string;
 let learnerSignedBadge: Awaited<ReturnType<typeof import("../lib/open-badges").issueSignedOpenBadge>>;
 let learnerSignedStatusToken: string;
 let verifyRoute: typeof import("../app/api/passport/verify/route").GET;
+let openBadgeStatusRoute: typeof import("../app/api/open-badges/status/[token]/route").GET;
+let openBadgeVerifyRoute: typeof import("../app/api/open-badges/verify/route").POST;
+let openBadgeIssueRoute: typeof import("../app/api/passport/open-badges/route").POST;
 
 function verificationRequest(token: string) {
   return new NextRequest(`http://bookquest.test/api/passport/verify?token=${encodeURIComponent(token)}`, {
@@ -45,6 +48,9 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     openBadges = await import("../lib/open-badges");
     privacy = await import("../lib/privacy");
     ({ GET: verifyRoute } = await import("../app/api/passport/verify/route"));
+    ({ GET: openBadgeStatusRoute } = await import("../app/api/open-badges/status/[token]/route"));
+    ({ POST: openBadgeVerifyRoute } = await import("../app/api/open-badges/verify/route"));
+    ({ POST: openBadgeIssueRoute } = await import("../app/api/passport/open-badges/route"));
     await pg.ready();
     await pg.q("TRUNCATE users RESTART IDENTITY CASCADE");
 
@@ -269,6 +275,37 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       .rejects.toThrow(/immutable/i);
     await expect(pg.q("UPDATE open_badge_credentials SET compact_jws='tampered' WHERE id=$1", [learnerSignedBadge.id]))
       .rejects.toThrow(/terminal/i);
+  });
+
+  it("keeps signed-credential failures private, no-store and no-index", async () => {
+    const unknownStatus = await openBadgeStatusRoute(
+      new NextRequest(`http://bookquest.test/api/open-badges/status/${"A".repeat(43)}`, {
+        headers: { "x-forwarded-for": "127.0.0.95" },
+      }),
+      { params: Promise.resolve({ token: "A".repeat(43) }) },
+    );
+    expect(unknownStatus.status).toBe(404);
+    expect(unknownStatus.headers.get("cache-control")).toBe("no-store");
+    expect(unknownStatus.headers.get("x-robots-tag")).toContain("noindex");
+
+    const unknownCredential = await openBadgeVerifyRoute(new NextRequest(
+      "http://bookquest.test/api/open-badges/verify",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "127.0.0.96" },
+        body: JSON.stringify({}),
+      },
+    ));
+    expect(unknownCredential.status).toBe(404);
+    expect(unknownCredential.headers.get("cache-control")).toBe("no-store");
+    expect(unknownCredential.headers.get("x-robots-tag")).toContain("noindex");
+
+    const unauthenticatedIssue = await openBadgeIssueRoute(new NextRequest(
+      "http://bookquest.test/api/passport/open-badges",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) },
+    ));
+    expect(unauthenticatedIssue.status).toBe(401);
+    expect(unauthenticatedIssue.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("rotates issuer keys only for the exact Space while old credentials remain verifiable", async () => {
