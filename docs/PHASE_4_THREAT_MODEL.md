@@ -39,6 +39,11 @@
 | Infer mastery from course completion | Report mastery as `not_assessed`; evidence confidence has no numeric score and describes reconciliation only | Passport and selected-share response tests |
 | Align another tenant's course or framework | Require `assignments.manage`, same-Space framework ownership, attached course and exact existing course version | Cross-role and cross-Space negative tests |
 | Substitute a newer competency during export | Build Passport shares and Open Badges alignment only from the item/framework versions frozen into the claim | Versioned alignment and export tests |
+| Expand a malicious QTI zip before validating it | Inspect the central directory first; cap compressed, per-file and total expanded sizes, file count and item count; reject encryption and unsupported compression | Oversized archive tests |
+| Read files through a QTI path or XML entity | Normalize and reject absolute, empty, duplicate and parent paths; prohibit DTD, entity and stylesheet declarations | Traversal and active-XML tests |
+| Partially import a malformed bank | Parse every declared item before one tenant-authorized transaction writes; reject unsupported interactions rather than approximating them | Mixed-package atomicity test |
+| Duplicate an item bank on client retry | Freeze the package SHA-256 in provenance and reject the same digest inside the draft transaction | Duplicate-import test |
+| Import into or export from another tenant | Reuse exact-course Studio authorization and require `content.update` inside the import transaction | Cross-tenant import/export tests |
 
 ## Residual risks and production boundary
 

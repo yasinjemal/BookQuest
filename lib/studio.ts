@@ -1375,6 +1375,86 @@ export async function addCourseBlock(
   });
 }
 
+export async function importCourseBlocks(
+  userId: number,
+  courseId: number,
+  input: {
+    moduleKey: string;
+    moduleTitle: string;
+    lessonKey: string;
+    lessonTitle: string;
+    blocks: Array<{ blockType: BlockType; content: unknown; sourceIdentifier: string }>;
+    provenance: { format: "QTI 3.0"; packageHash: string };
+  },
+) {
+  if (!input.blocks.length || input.blocks.length > 100) {
+    throw new StudioConflictError("Import between 1 and 100 assessment items");
+  }
+  for (const block of input.blocks) {
+    const validation = validateBlockContent(block.blockType, block.content);
+    if (!validation.valid) throw new StudioConflictError(validation.issues.join("; "));
+  }
+  return tx(async (client) => {
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    if (!course.current_draft_version_id) throw new StudioConflictError("Branch a draft before importing assessments");
+    const duplicate = await client.query(
+      `SELECT 1
+       FROM course_blocks block
+       JOIN course_block_revisions revision
+         ON revision.block_id=block.id AND revision.revision=block.current_revision
+       WHERE block.course_version_id=$1 AND block.deleted_at IS NULL
+         AND revision.provenance_json::jsonb->>'format'=$2
+         AND revision.provenance_json::jsonb->>'packageHash'=$3
+       LIMIT 1`,
+      [course.current_draft_version_id, input.provenance.format, input.provenance.packageHash],
+    );
+    if (duplicate.rowCount) {
+      throw new StudioConflictError("This QTI package is already imported into this draft");
+    }
+    const modulePosition = Number((await client.query<{ position: number }>(
+      `SELECT COALESCE(MAX(module_position),-1)+1 AS position
+       FROM course_blocks WHERE course_version_id=$1 AND deleted_at IS NULL`,
+      [course.current_draft_version_id],
+    )).rows[0]?.position ?? 0);
+    const startPosition = Number((await client.query<{ position: number }>(
+      `SELECT COALESCE(MAX(position),-1)+1 AS position FROM course_blocks
+       WHERE course_version_id=$1 AND lesson_key=$2 AND deleted_at IS NULL`,
+      [course.current_draft_version_id, input.lessonKey],
+    )).rows[0]?.position ?? 0);
+    const importedIds: string[] = [];
+    for (const [index, item] of input.blocks.entries()) {
+      const block = (await client.query<{ id: string }>(
+        `INSERT INTO course_blocks
+          (course_version_id,lineage_id,module_key,module_title,module_summary,
+           lesson_key,lesson_title,module_position,lesson_position,position,
+           block_type,current_revision)
+         VALUES ($1,$2,$3,$4,'',$5,$6,$7,0,$8,$9,1) RETURNING id`,
+        [course.current_draft_version_id, crypto.randomUUID(), input.moduleKey,
+         input.moduleTitle, input.lessonKey, input.lessonTitle, modulePosition,
+         startPosition + index, item.blockType],
+      )).rows[0];
+      await client.query(
+        `INSERT INTO course_block_revisions
+          (block_id,revision,content_json,source_refs_json,accessibility_json,
+           provenance_json,edit_origin,created_by_user_id)
+         VALUES ($1,1,$2,'[]',$3,$4,'imported',$5)`,
+        [block.id, JSON.stringify(item.content),
+         JSON.stringify({ status: "checked", issues: [] }),
+         JSON.stringify({ ...input.provenance, sourceIdentifier: item.sourceIdentifier }),
+         userId],
+      );
+      importedIds.push(block.id);
+    }
+    await client.query(
+      "UPDATE course_versions SET content_hash=$2,updated_at=$3 WHERE id=$1",
+      [course.current_draft_version_id,
+       hash(`${input.provenance.packageHash}:${importedIds.join(":")}`), nowIso()],
+    );
+    const all = await readStudioBlocks(client, course.current_draft_version_id);
+    return all.filter((block) => importedIds.includes(block.id));
+  });
+}
+
 export async function duplicateCourseBlock(
   userId: number,
   courseId: number,

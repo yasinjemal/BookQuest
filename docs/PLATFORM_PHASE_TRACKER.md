@@ -5,8 +5,8 @@ document-to-course app into an open, trusted and configurable learning platform.
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
 **Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
-**Next product slice:** QTI 3 assessment package import/export while the mandatory
-Blacksteel and independent-assessment gates remain open
+**Next product slice:** pilot-configured LTI 1.3 launch and Advantage boundary
+while the mandatory Blacksteel and independent-assessment gates remain open
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -848,7 +848,12 @@ the language “implementation evidence,” not “production-ready.”
   default, the complete evidence chain is frozen into the document and stale or
   cross-user claims fail uniformly. The UI and response explicitly distinguish
   this unsigned readable document from the separately signed VC-JWT workflow.
-- [ ] Import/export compatible assessments using QTI 3.
+- [x] Import/export compatible assessments using QTI 3. The deliberately
+  bounded `bookquest-qti-3.0-item-bank-v1` profile round-trips single-response
+  choice, true/false and text-entry items. Imports are tenant-authorized,
+  all-or-nothing and provenance-preserving; zip-bomb, path, active-XML,
+  unsupported-interaction and duplicate-retry cases fail closed. This is not a
+  claim of 1EdTech product certification or general QTI conformance.
 - [x] Issue verifiable achievements using Open Badges 3.0. Migration 15 stores
   encrypted, rotatable Space-scoped RS256 keys, immutable learner-owned VC-JWTs,
   digest-only opaque status identifiers and append-only lifecycle evidence.
@@ -959,6 +964,15 @@ the language “implementation evidence,” not “production-ready.”
   1440x900 without page-level horizontal overflow or console errors. Exact dated
   evidence is stored in
   `docs/evidence/phase4-competency-frameworks-local-2026-07-14T150730Z.json`.
+- `docs/PHASE_4_QTI.md` defines the bounded QTI 3.0 Item Bank profile and its
+  explicit non-conformance boundary. The PostgreSQL 16 regression passes 30/30
+  files and 169/169 tests, including cross-tenant denial, traversal, active XML,
+  archive limits, unsupported-interaction atomicity and duplicate-retry safety.
+  TypeScript and the production build pass, and the dependency audit reports
+  zero vulnerabilities. Studio browser QA exposed the import/export workflow at
+  707x945 and 1440x900 with no page overflow or console errors. Exact dated
+  evidence is stored in
+  `docs/evidence/phase4-qti-local-2026-07-14T153631Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 

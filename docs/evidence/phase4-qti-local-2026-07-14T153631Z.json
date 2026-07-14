@@ -1,0 +1,38 @@
+{
+  "slice": "Phase 4 QTI 3 assessment exchange",
+  "capturedAt": "2026-07-14T15:36:31Z",
+  "profile": "bookquest-qti-3.0-item-bank-v1",
+  "environment": {
+    "database": "isolated local PostgreSQL 16 scratch database",
+    "productionDataUsed": false
+  },
+  "verification": {
+    "focusedDatabaseTests": { "files": 1, "tests": 3, "status": "passed" },
+    "fullRegression": { "files": 30, "tests": 169, "status": "passed" },
+    "typecheck": "passed after production build regenerated Next.js route types",
+    "productionBuild": "passed",
+    "dependencyAudit": { "status": "passed", "reportedVulnerabilities": 0 },
+    "browser": {
+      "course": "QTI exchange sample",
+      "workflow": "Studio > Source & checks > Quality > QTI 3.0 exchange",
+      "controls": [
+        "Choose QTI zip",
+        "Import item bank",
+        "Export compatible items"
+      ],
+      "desktop": { "viewport": "1440x900", "horizontalOverflow": false },
+      "responsive": { "viewport": "707x945", "horizontalOverflow": false },
+      "consoleErrors": 0
+    }
+  },
+  "negativeCoverage": [
+    "cross-tenant import and export denied",
+    "unsafe archive path rejected",
+    "DTD and external entity declaration rejected",
+    "oversized archive entry rejected before decompression",
+    "unsupported interaction rejected before any write",
+    "mixed package import is atomic",
+    "same package retry cannot duplicate blocks"
+  ],
+  "statusBoundary": "Implementation evidence only; Phase 4 is not production-ready while Phase 3 closure gates remain open."
+}
