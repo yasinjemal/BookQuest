@@ -7,7 +7,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 7;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 8;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -105,7 +105,8 @@ export async function createAccountExport(userId: number) {
         client,
         `SELECT id, email, name, role, credits, premium_until,
                 email_verified_at, account_status, deletion_scheduled_at,
-                erased_at, created_at
+                erased_at, created_at, creator_slug, creator_headline,
+                creator_bio, creator_public
            FROM users WHERE id = $1`,
         [userId]
       )
@@ -116,7 +117,7 @@ export async function createAccountExport(userId: number) {
       client,
       `SELECT id, title, description, source_filename, source_json, status,
               error, published, category, price_cents, content_version,
-              generation_run_id, lifecycle_status, archived_at, created_at
+              generation_run_id, lifecycle_status, archived_at, created_at, public_slug
          FROM courses WHERE owner_id = $1 ORDER BY id`,
       [userId]
     );
@@ -396,7 +397,9 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
     `UPDATE users SET email = $1, name = 'Deleted learner', password_hash = $2,
             role = 'user', credits = 0, premium_until = NULL,
             email_verified_at = NULL, account_status = 'erased',
-            deletion_scheduled_at = NULL, erased_at = $3
+            deletion_scheduled_at = NULL, erased_at = $3,
+            creator_slug = 'deleted-' || id, creator_headline = '',
+            creator_bio = '', creator_public = FALSE
       WHERE id = $4`,
     [`erased-${userId}@deleted.invalid`, randomPassword, erasedAt, userId]
   );

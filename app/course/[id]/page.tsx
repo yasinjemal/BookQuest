@@ -9,6 +9,7 @@ import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
+import ShareCourseButton from "@/components/ShareCourseButton";
 import {
   COURSE_ACCENT_HEX,
   DEFAULT_COURSE_APPEARANCE,
@@ -39,6 +40,7 @@ interface CourseData {
     published: number;
     category: string;
     appearance: CourseAppearance;
+    public_slug: string;
   };
   modules: ModuleData[];
 }
@@ -146,6 +148,9 @@ export default function CoursePathPage() {
               Edit in Studio <AppIcon name="arrow" className="h-4 w-4" />
             </Link>
             {data.course.published ? (
+              <>
+                <Link href={`/c/${data.course.public_slug}`} className="min-h-11 shrink-0 rounded-full border border-line-deep px-4 py-3 text-center text-xs font-bold text-ink-soft">Public page</Link>
+                <ShareCourseButton compact slug={data.course.public_slug} title={data.course.title} />
                 <button
                   onClick={() => togglePublish(false)}
                   disabled={publishing}
@@ -153,6 +158,7 @@ export default function CoursePathPage() {
                 >
                   Unpublish
                 </button>
+              </>
             ) : (
               <div className="flex min-w-0 flex-1 gap-2">
                 <select
@@ -189,6 +195,10 @@ export default function CoursePathPage() {
           } : current)}
         />
       )}
+
+      <div className="mb-8 flex flex-wrap gap-3">
+        <Link href={`/course/${id}/read`} className="inline-flex min-h-11 items-center rounded-full border border-line-deep bg-card px-5 text-sm font-semibold">Read source document</Link>
+      </div>
 
       {data.course.isOwner && <div className="mb-6 flex justify-end"><button onClick={remove} className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-no hover:bg-no-soft" aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>}
 

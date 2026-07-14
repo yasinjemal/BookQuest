@@ -14,8 +14,8 @@ describe("public-launch productization contract", () => {
       "Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.",
     );
     expect(home).toContain("Create your first course");
-    expect(verification).toContain('href="/create?welcome=1"');
-    expect(verification).toContain("Create my first course");
+    expect(verification).toContain('href={nextPath}');
+    expect(verification).toContain("bookquest.after-verification");
   });
 
   it("keeps document upload primary while preserving optional creation paths", () => {
@@ -36,5 +36,38 @@ describe("public-launch productization contract", () => {
     expect(studio).toContain("Advanced assessment exchange");
     expect(space).toContain("Advanced &amp; developer settings");
     expect(space).toContain("Normal course creation, teaching, and sharing do not need them.");
+  });
+
+  it("ships the complete public launch surface with privacy-safe defaults", () => {
+    const publicCourse = source("app/c/[slug]/page.tsx");
+    const sharing = source("components/ShareCourseButton.tsx");
+    const pricing = source("app/pricing/page.tsx");
+    const reader = source("components/DocumentReader.tsx");
+    const analytics = source("components/CreatorDashboard.tsx");
+    const creator = source("app/creator/[slug]/page.tsx");
+    const demo = source("app/demo/page.tsx");
+    const migration = source("lib/migrations.ts");
+
+    expect(publicCourse).toContain("Inside the course");
+    expect(sharing).toContain("navigator.share");
+    expect(sharing).toContain("navigator.clipboard.writeText");
+    expect(pricing).toContain("30 days · renew manually");
+    expect(pricing).toContain("not an automatically recurring subscription");
+    expect(reader).toContain("Find in document");
+    expect(reader).toContain("Increase text size");
+    expect(analytics).toContain("Make my creator page public");
+    expect(creator).toContain("Published courses");
+    expect(demo).toContain("The Blacksteel Shop Playbook");
+    expect(migration).toContain("public_course_events");
+    expect(migration).not.toContain("visitor_id");
+  });
+
+  it("keeps source reading authenticated and public course lookup published-only", () => {
+    const readerRoute = source("app/api/courses/[id]/reader/route.ts");
+    const publicProduct = source("lib/public-product.ts");
+    expect(readerRoute).toContain("requireUser");
+    expect(publicProduct).toContain("c.published = 1 AND c.status = 'ready'");
+    expect(publicProduct).toContain("creator_public = TRUE");
+    expect(publicProduct).toContain("await canAccessCourse(userId, courseId)");
   });
 });

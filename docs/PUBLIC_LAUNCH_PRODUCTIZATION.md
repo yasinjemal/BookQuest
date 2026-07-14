@@ -110,13 +110,40 @@ Implemented in this slice:
 - QTI is under “Advanced assessment exchange.”
 - OAuth, webhooks and LTI are under “Advanced & developer settings.”
 
+## Public launch productization slice â€” implemented 14 July 2026
+
+- Public `/pricing` explains Free, the 30-day manually renewed Creator Pass and
+  one-time credit packs without presenting the existing billing contract as an
+  automatic subscription.
+- Anonymous `/c/[slug]` pages include creator attribution, a public outline,
+  social metadata, focused start action and native-share/clipboard fallback.
+  Drafts and source text remain unavailable anonymously.
+- Registration preserves the requested public course through verification.
+- Mobile lessons use a thumb-safe, safe-area-aware bottom action dock.
+- Authenticated `/course/[id]/read` provides document selection, contents,
+  search, font controls, reading-position memory and a return-to-course action.
+- Public creator profiles/libraries are opt-in. Private is the migration default.
+- Creator analytics summarizes privacy-minimal aggregate views, shares, starts,
+  enrollments, completions and reader opens without visitor identifiers.
+- `/demo` provides polished Blacksteel example content, while analytics,
+  creator libraries and the reader have useful zero-data states.
+- Migration 19 is forward-only; account export schema 8 includes creator/public
+  fields and erasure removes public creator identity.
+
+Engineering evidence: `tests/public-product.test.ts` exercises unpublished
+course denial, anonymous source non-disclosure, creator opt-in, slug validation,
+aggregate-event privacy, owner-only analytics and reader authorization.
+`tests/productization.test.ts` covers the launch surface. The full PostgreSQL 16
+suite passes 34 files / 189 tests after the migration-ledger expectation update;
+production build and high-severity dependency audit pass. Browser QA verified
+pricing, the anonymous Blacksteel page and the demo at a narrow viewport.
+
 ## Active queue after this slice
 
-1. Public pricing and subscription UX.
-2. Public course page plus copy-link sharing.
-3. Mobile learner experience.
-4. Full-document reading mode.
-5. Creator profiles/libraries, analytics, demos and empty states.
+The requested launch surface is implemented and tested. The next work should be
+real public-launch polish informed by acquired users: conversion copy, content
+quality, funnel measurement and accessibility fixes found through normal use.
+Phase 5 remains paused until the builder explicitly reprioritizes it.
 
 Phase 5 architecture expansion remains paused until these launch priorities are
 understandable and browser-tested.

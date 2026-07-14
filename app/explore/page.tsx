@@ -18,6 +18,7 @@ interface ExploreCourse {
   enroll_count: number;
   mine: boolean;
   enrolled: boolean;
+  public_slug: string;
   appearance: CourseAppearance;
 }
 
@@ -36,10 +37,6 @@ export default function ExplorePage() {
     setError("");
     try {
       const response = await fetch(`/api/explore?${params}`);
-      if (response.status === 401) {
-        router.push("/login");
-        return;
-      }
       if (!response.ok) throw new Error();
       const data = await response.json();
       setCourses(data.courses);
@@ -58,6 +55,7 @@ export default function ExplorePage() {
     setEnrolling(id);
     try {
       const response = await fetch(`/api/courses/${id}/enroll`, { method: "POST" });
+      if (response.status === 401) { router.push(`/login?next=/course/${id}`); return; }
       if (!response.ok) throw new Error();
       router.push(`/course/${id}`);
     } catch {

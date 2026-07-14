@@ -65,6 +65,7 @@ function PublicHome() {
             <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link href="/register" className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5">Create your first course <AppIcon name="arrow" className="h-4 w-4" /></Link>
+              <Link href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">See the demo</Link>
               <Link href="/verify-credential" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">Verify learning evidence</Link>
             </div>
             <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55"><span>Human reviewed</span><span>Source traceable</span><span>Offline ready</span></div>

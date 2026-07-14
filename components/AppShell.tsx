@@ -11,6 +11,7 @@ const items: Array<{ href: string; label: string; icon: AppIconName }> = [
   { href: "/review", label: "Practice", icon: "practice" },
   { href: "/passport", label: "Skill Passport", icon: "shield" },
   { href: "/spaces", label: "Spaces", icon: "spaces" },
+  { href: "/analytics", label: "Analytics", icon: "trail" },
 ];
 
 const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
@@ -24,6 +25,7 @@ const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
 const barePaths = [
   "/login", "/register", "/forgot-password", "/reset-password",
   "/verify-email", "/verify-credential", "/passport/verify", "/accessibility", "/security",
+  "/c/", "/creator/", "/pricing", "/demo",
 ];
 
 function activePath(pathname: string, href: string) {
@@ -46,6 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const bare = barePaths.some((path) => pathname.startsWith(path)) ||
+    (pathname.startsWith("/course/") && pathname.endsWith("/read")) ||
     pathname.startsWith("/lesson/") || pathname.startsWith("/cert/");
   if (bare || (pathname === "/" && !signedInHome)) {
     return <main id="main-content" className="min-h-dvh">{children}</main>;
@@ -79,6 +82,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <span><span className="block text-sm">Account</span><span className="block text-[10px] font-normal text-white/65">Settings & privacy</span></span>
         </Link>
         <div className="mt-3 flex gap-3 px-3 text-[10px] text-white/65">
+          <Link href="/pricing" className="hover:text-white">Pricing</Link>
           <Link href="/security" className="hover:text-white">Security</Link>
           <Link href="/accessibility" className="hover:text-white">Accessibility</Link>
         </div>

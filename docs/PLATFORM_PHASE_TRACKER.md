@@ -5,8 +5,8 @@ document-to-course app into an open, trusted and configurable learning platform.
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
 **Current product priority:** public-launch productization
-**Next product slice:** clear public pricing and subscription UX, followed by a
-strong public course page with easy sharing
+**Next product slice:** public-launch conversion and accessibility polish based
+on acquired-user feedback; Phase 5 remains paused
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -1319,12 +1319,27 @@ What should not be built yet:
    Commit `f88f016` passed GitHub PostgreSQL CI and the dependency audit, and its
    Vercel production deployment is Ready.
 3. [x] Move QTI and platform integrations behind advanced/developer disclosure.
-4. [ ] Add clear public pricing and subscription UX.
-5. [ ] Add a strong anonymous public course page and one-tap sharing.
-6. [ ] Improve the mobile learner journey.
-7. [ ] Add a clean full-book/document reading mode.
-8. [ ] Add creator profiles/libraries, creator analytics, polished demo content
-   and launch-quality empty states.
+4. [x] Add clear public pricing and subscription UX. The page states the current
+   30-day manual-renewal contract and one-time credit packs exactly.
+5. [x] Add a strong anonymous public course page and one-tap sharing. Published-
+   only lookup, anonymous source non-disclosure, native sharing and clipboard
+   fallback are covered by `tests/public-product.test.ts` and
+   `tests/productization.test.ts`.
+6. [x] Improve the mobile learner journey with a thumb-safe, safe-area-aware
+   action dock and additional content clearance.
+7. [x] Add a clean full-book/document reading mode with authenticated access,
+   contents, search, font controls and reading-position memory.
+8. [x] Add opt-in creator profiles/libraries, privacy-minimal creator analytics,
+   polished Blacksteel demo content and launch-quality empty states.
+
+Items 4â€“8 engineering status: **Tested**. Evidence: migration 19; account export
+schema 8; `tests/public-product.test.ts` 4/4; `tests/productization.test.ts` 5/5;
+full PostgreSQL 16 regression 34 files / 189 tests (the sole initial migration-
+ledger expectation was updated and its 11/11 suite rerun); production build
+(54 pages/routes) and dependency audit (zero high-severity vulnerabilities).
+In-app browser QA verified `/pricing`, `/c/[slug]` and `/demo` at a narrow
+viewport. Exact local evidence:
+`docs/evidence/public-launch-productization-local-2026-07-14T210615Z.json`.
 
 External validation stays in its backlog and must not be reintroduced into this
 active build queue until the builder explicitly reports partner access.

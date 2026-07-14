@@ -2783,6 +2783,48 @@ CREATE TRIGGER lti_registrations_lifecycle BEFORE UPDATE OR DELETE ON lti_regist
   FOR EACH ROW EXECUTE FUNCTION phase4_lti_registration_guard();
 `;
 
+const PUBLIC_LAUNCH_PRODUCTIZATION_SQL = `
+ALTER TABLE users
+  ADD COLUMN creator_slug TEXT,
+  ADD COLUMN creator_headline TEXT NOT NULL DEFAULT '',
+  ADD COLUMN creator_bio TEXT NOT NULL DEFAULT '',
+  ADD COLUMN creator_public BOOLEAN NOT NULL DEFAULT FALSE;
+
+UPDATE users
+   SET creator_slug = 'creator-' || id
+ WHERE creator_slug IS NULL;
+
+ALTER TABLE users
+  ALTER COLUMN creator_slug SET NOT NULL,
+  ALTER COLUMN creator_slug SET DEFAULT ('creator-' || replace(gen_random_uuid()::text, '-', ''));
+
+CREATE UNIQUE INDEX users_creator_slug_unique
+  ON users (lower(creator_slug));
+
+ALTER TABLE courses
+  ADD COLUMN public_slug TEXT;
+
+UPDATE courses
+   SET public_slug = 'course-' || id || '-' || substr(md5(id::text || created_at), 1, 8)
+ WHERE public_slug IS NULL;
+
+ALTER TABLE courses
+  ALTER COLUMN public_slug SET NOT NULL,
+  ALTER COLUMN public_slug SET DEFAULT ('course-' || replace(gen_random_uuid()::text, '-', ''));
+
+CREATE UNIQUE INDEX courses_public_slug_unique
+  ON courses (lower(public_slug));
+
+CREATE TABLE public_course_events (
+  id BIGSERIAL PRIMARY KEY,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('view','share','reader_open')),
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX public_course_events_course_type_time
+  ON public_course_events(course_id, event_type, occurred_at DESC);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2806,6 +2848,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 16, name: "competency_frameworks", sql: COMPETENCY_FRAMEWORKS_SQL },
   { id: 17, name: "platform_integrations", sql: PLATFORM_INTEGRATIONS_SQL },
   { id: 18, name: "lti_tool_foundation", sql: LTI_TOOL_FOUNDATION_SQL },
+  { id: 19, name: "public_launch_productization", sql: PUBLIC_LAUNCH_PRODUCTIZATION_SQL },
 ];
 
 /**

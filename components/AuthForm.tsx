@@ -66,6 +66,9 @@ export default function AuthForm({ mode, nextPath }: { mode: "login" | "register
       if (data.previewUrl && typeof window !== "undefined") {
         sessionStorage.setItem("bookquest.verification-preview", data.previewUrl);
       }
+      if (mode === "register" && nextPath && typeof window !== "undefined") {
+        sessionStorage.setItem("bookquest.after-verification", nextPath);
+      }
       router.push(data.user && !data.user.email_verified_at ? "/verify-email" : (nextPath || "/"));
       router.refresh();
     } catch {

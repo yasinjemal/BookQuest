@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-07-14T21:06:15Z",
+  "scope": "public launch productization",
+  "engineering_status": "Tested",
+  "external_validation_status": "Pending user acquisition",
+  "migration": 19,
+  "account_export_schema": 8,
+  "tests": {
+    "full_postgres_run": { "files_passed": 33, "files_failed": 1, "tests_passed": 188, "tests_failed": 1, "failure": "migration ledger expected migrations 1-18 before migration 19 was added" },
+    "migration_rerun_after_expectation_update": { "files_passed": 1, "tests_passed": 11 },
+    "final_effective_total": { "files_passed": 34, "tests_passed": 189 },
+    "public_product": { "tests_passed": 4 },
+    "productization_contract": { "tests_passed": 5 }
+  },
+  "production_build": { "passed": true, "pages_and_routes": 54 },
+  "dependency_audit": { "passed": true, "high_severity_vulnerabilities": 0 },
+  "browser_qa": {
+    "passed": true,
+    "pages": ["/pricing", "/c/course-f4522d58a427477895bc6993cc4744e3", "/demo"],
+    "checks": ["narrow layout", "anonymous conversion CTA", "public outline", "pricing disclosure", "polished demo"]
+  },
+  "privacy_notes": [
+    "creator pages private by default",
+    "anonymous pages expose no source text",
+    "public events contain no visitor identifier",
+    "reader requires authenticated course access",
+    "external validation remains open"
+  ]
+}

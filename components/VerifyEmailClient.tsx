@@ -14,9 +14,12 @@ export default function VerifyEmailClient({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [nextPath, setNextPath] = useState("/create?welcome=1");
 
   useEffect(() => {
     const preview = sessionStorage.getItem("bookquest.verification-preview");
+    const next = sessionStorage.getItem("bookquest.after-verification");
+    if (next?.startsWith("/") && !next.startsWith("//")) setNextPath(next);
     if (preview) setPreviewUrl(preview);
     void fetch("/api/me").then(async (response) => {
       if (!response.ok) return;
@@ -65,10 +68,10 @@ export default function VerifyEmailClient({
       {message && <p className="text-sm font-semibold mt-3">{message}</p>}
       {isVerified ? (
         <Link
-          href="/create?welcome=1"
+          href={nextPath}
           className="block mt-6 rounded-2xl bg-primary text-white font-bold py-3.5"
         >
-          Create my first course
+          {nextPath === "/create?welcome=1" ? "Create my first course" : "Continue"}
         </Link>
       ) : (
         <div className="mt-6 space-y-3">

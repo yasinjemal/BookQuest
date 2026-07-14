@@ -1,0 +1,2 @@
+import CreatorDashboard from "@/components/CreatorDashboard";
+export default function AnalyticsPage() { return <div className="page-wrap"><header className="mb-9"><p className="section-label">Creator analytics</p><h1 className="display mt-3 text-[clamp(3.5rem,10vw,6rem)] leading-[.9]">See what moves people.</h1><p className="mt-4 max-w-2xl text-sm leading-6 text-ink-soft">Privacy-minimal signals for your courses. No visitor fingerprinting, rankings, or employability scores.</p></header><CreatorDashboard /></div>; }

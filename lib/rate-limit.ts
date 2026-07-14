@@ -86,6 +86,11 @@ export const RATE_LIMITS = {
     limit: 10,
     windowSeconds: 60 * 60,
   },
+  publicCourseEventIp: {
+    scope: "public.course.event.ip",
+    limit: 240,
+    windowSeconds: 60 * 60,
+  },
   classroomMutationUser: {
     scope: "classroom.mutation.user",
     limit: 30,

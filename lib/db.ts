@@ -401,6 +401,7 @@ export interface PlatformCourseCols {
   current_draft_version_id: string | null;
   published_version_id: string | null;
   appearance_json: string;
+  public_slug: string;
 }
 
 export async function getCourseAppearanceJson(id: number, preferDraft = false): Promise<string> {
