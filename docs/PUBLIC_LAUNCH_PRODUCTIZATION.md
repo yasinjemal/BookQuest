@@ -137,6 +137,8 @@ aggregate-event privacy, owner-only analytics and reader authorization.
 suite passes 34 files / 189 tests after the migration-ledger expectation update;
 production build and high-severity dependency audit pass. Browser QA verified
 pricing, the anonymous Blacksteel page and the demo at a narrow viewport.
+Commit `fd2fdd8` is deployed to production with Vercel status **Ready**; a
+production semantic smoke test passed for `/pricing`.
 
 ## Active queue after this slice
 

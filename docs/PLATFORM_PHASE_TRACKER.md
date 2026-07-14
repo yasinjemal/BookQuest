@@ -1332,7 +1332,7 @@ What should not be built yet:
 8. [x] Add opt-in creator profiles/libraries, privacy-minimal creator analytics,
    polished Blacksteel demo content and launch-quality empty states.
 
-Items 4â€“8 engineering status: **Tested**. Evidence: migration 19; account export
+Items 4â€“8 engineering status: **Deployed**. Evidence: migration 19; account export
 schema 8; `tests/public-product.test.ts` 4/4; `tests/productization.test.ts` 5/5;
 full PostgreSQL 16 regression 34 files / 189 tests (the sole initial migration-
 ledger expectation was updated and its 11/11 suite rerun); production build
@@ -1340,6 +1340,9 @@ ledger expectation was updated and its 11/11 suite rerun); production build
 In-app browser QA verified `/pricing`, `/c/[slug]` and `/demo` at a narrow
 viewport. Exact local evidence:
 `docs/evidence/public-launch-productization-local-2026-07-14T210615Z.json`.
+Commit `fd2fdd8` is live in the Vercel production deployment with status **Ready**;
+the production `/pricing` semantic smoke check confirms all plans, manual-renewal
+disclosure and public conversion actions render.
 
 External validation stays in its backlog and must not be reintroduced into this
 active build queue until the builder explicitly reports partner access.

@@ -1,7 +1,7 @@
 {
   "recorded_at": "2026-07-14T21:06:15Z",
   "scope": "public launch productization",
-  "engineering_status": "Tested",
+  "engineering_status": "Deployed",
   "external_validation_status": "Pending user acquisition",
   "migration": 19,
   "account_export_schema": 8,
@@ -18,6 +18,13 @@
     "passed": true,
     "pages": ["/pricing", "/c/course-f4522d58a427477895bc6993cc4744e3", "/demo"],
     "checks": ["narrow layout", "anonymous conversion CTA", "public outline", "pricing disclosure", "polished demo"]
+  },
+  "deployment": {
+    "commit": "fd2fdd8",
+    "provider": "Vercel",
+    "status": "Ready",
+    "production_url": "https://book-quest-silk.vercel.app",
+    "production_smoke": ["/pricing"]
   },
   "privacy_notes": [
     "creator pages private by default",
