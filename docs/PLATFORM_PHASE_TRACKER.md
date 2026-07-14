@@ -835,7 +835,12 @@ the language “implementation evidence,” not “production-ready.”
   only `assignments.manage` members can resolve it. Accepted correction requires
   a reconciled replacement credential for the same learner/course/Space and
   creates an immutable successor while old links stop verifying.
-- [ ] Add portable standards export workflows.
+- [x] Add portable standards export workflows. Authenticated learners can
+  download exactly one current claim through the versioned
+  `bookquest-open-badges-3.0-jsonld-document-v1` profile. Identity is excluded by
+  default, the complete evidence chain is frozen into the document and stale or
+  cross-user claims fail uniformly. The UI and response explicitly label the
+  document unsigned; cryptographic Open Badges issuance remains open.
 - [ ] Import/export compatible assessments using QTI 3.
 - [ ] Issue verifiable achievements using Open Badges 3.0.
 - [ ] Add pilot-driven LTI 1.3/LTI Advantage integration.
@@ -903,6 +908,16 @@ the language “implementation evidence,” not “production-ready.”
   checks at 390×844 and 1440×900 found no horizontal overflow or browser errors.
 - Exact dated evidence for this slice is stored in
   `docs/evidence/phase4-claim-corrections-local-2026-07-14T121534Z.json`.
+- The portable-export slice adds an authenticated, private/no-store JSON-LD
+  download for one current claim and validates every generated document against
+  BookQuest's selected Open Badges 3.0 document profile. Negative tests cover
+  ownership, unknown IDs, default identity exclusion and explicit name consent.
+  The standards decision and deliberate unsigned boundary are recorded in
+  `docs/PHASE_4_PORTABLE_EXPORT.md`.
+- The resulting PostgreSQL 16 regression passes 29/29 files and 160/160 tests;
+  TypeScript, the production build and dependency audit pass with zero reported
+  vulnerabilities. Dated evidence is stored in
+  `docs/evidence/phase4-portable-export-local-2026-07-14T130823Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 
@@ -915,7 +930,10 @@ the language “implementation evidence,” not “production-ready.”
 - [x] Verification reproduces issuing evidence and rule versions. The response
   contains direct course, course-version, assignment-version, completion-rule,
   completion-decision, participation, credential and evidence-hash bindings.
-- [ ] Credential exports validate against their selected profile.
+- [x] Credential exports validate against their selected profile. Generated
+  documents pass `bookquest-open-badges-3.0-jsonld-document-v1` before download;
+  malformed documents fail closed. This is profile validation, not a claim of
+  1EdTech certification or cryptographic issuer conformance.
 - [x] API clients cannot enumerate learners or unrelated credentials. Tokens are
   random and digest-only, all unavailable states use the same 404, and selective
   disclosure tests prove another learner's claim never appears.

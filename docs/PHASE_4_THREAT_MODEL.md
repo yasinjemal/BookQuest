@@ -26,6 +26,10 @@
 | Expose a learner's dispute publicly | Return disputes only in the learner's private Passport and authorized Space queue; public verification contains no dispute data | Private-read and response-shape tests |
 | Keep sensitive learner dispute text after erasure | Store free text separately, reject updates and delete it on effective account erasure while retaining structured pseudonymous lifecycle evidence | Export, append-only and erasure tests |
 | Keep sharing a corrected-but-wrong version | Verify and create shares only for the latest immutable claim version; never silently substitute a successor | Old-link and old-version denial tests |
+| Export another learner's achievement | Require authenticated ownership of the exact current claim and return one uniform unavailable result | Cross-user, manager and unknown-ID export tests |
+| Leak identity through a portable file | Use opaque URNs; omit learner name by default; never include email or numeric account ID | Default and explicit-name export tests |
+| Present unsigned metadata as a verified issuer credential | Mark the export and UI as unsigned; keep the signed Open Badges roadmap item open until managed keys, signature verification and status exist | Response header, UI copy and tracker gate |
+| Export stale or revoked evidence | Reconcile the complete live credential/completion chain and require the latest claim version under shared locks at export time | Service eligibility and supersession tests |
 
 ## Residual risks and production boundary
 

@@ -1,0 +1,25 @@
+{
+  "recordedAt": "2026-07-14T13:08:23Z",
+  "phase": "Phase 4 early implementation",
+  "slice": "Open Badges 3.0-shaped portable achievement document export",
+  "status": "implementation evidence; unsigned and not production-ready",
+  "profile": "bookquest-open-badges-3.0-jsonld-document-v1",
+  "verification": {
+    "focusedPostgres": { "files": 1, "tests": 18, "passed": true },
+    "fullPostgres": { "files": 29, "tests": 160, "passed": true },
+    "typecheck": true,
+    "productionBuild": true,
+    "productionDependencyAudit": { "passed": true, "vulnerabilities": 0 },
+    "routeIncludedInBuild": "/api/passport/exports/open-badges/[claimVersionId]"
+  },
+  "negativeCoverage": [
+    "cross-learner export denied",
+    "non-owner role export denied",
+    "unknown claim identifier denied uniformly",
+    "learner identity excluded by default",
+    "email and unrelated claims excluded",
+    "explicit learner-name disclosure required",
+    "malformed profile document fails validation"
+  ],
+  "boundary": "The document is explicitly unsigned. Managed issuer keys, cryptographic verification, status and revocation remain required before closing Open Badges issuance."
+}

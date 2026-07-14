@@ -34,6 +34,9 @@
   the structured audit record.
 - `competency_claim_dispute_events` — append-only submission and resolution
   history with the authorized actor and any resulting claim-version ID.
+- Open Badges document export — an authenticated, on-demand representation of one
+  current claim. It adds no public profile or mutable export row; the server
+  rebuilds and revalidates the exact evidence at download time.
 
 ## Eligibility invariant
 
@@ -86,5 +89,6 @@ after 90 days and deleted early by effective account erasure.
 
 This slice does not implement ranking, mastery/confidence scores, employability
 scores, hiring recommendations, public learner profiles, searchable handles,
-unsupported competency inference, QTI, Open Badges, LTI,
-OAuth, webhooks or portable standards export.
+unsupported competency inference, QTI, signed Open Badges issuance, LTI, OAuth
+or webhooks. The first Open Badges export is an explicitly unsigned,
+profile-validated JSON-LD document and is not described as a verifiable issued badge.

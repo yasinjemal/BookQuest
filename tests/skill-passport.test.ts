@@ -8,6 +8,7 @@ let spaces: typeof import("../lib/spaces");
 let studio: typeof import("../lib/studio");
 let institutional: typeof import("../lib/institutional");
 let passport: typeof import("../lib/skill-passport");
+let openBadges: typeof import("../lib/open-badges");
 let privacy: typeof import("../lib/privacy");
 let ownerId: number;
 let learnerId: number;
@@ -38,6 +39,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     studio = await import("../lib/studio");
     institutional = await import("../lib/institutional");
     passport = await import("../lib/skill-passport");
+    openBadges = await import("../lib/open-badges");
     privacy = await import("../lib/privacy");
     ({ GET: verifyRoute } = await import("../app/api/passport/verify/route"));
     await pg.ready();
@@ -170,6 +172,47 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       .rejects.toThrow(/passport not found/i);
     await expect(passport.getSkillPassport(learnerId, ownerId))
       .rejects.toThrow(/passport not found/i);
+  });
+
+  it("exports one current claim through the selected Open Badges 3.0 document profile", async () => {
+    const exported = await openBadges.createOpenBadgeDocument(learnerId, learnerClaimVersionId);
+    expect(exported).toMatchObject({
+      profile: "bookquest-open-badges-3.0-jsonld-document-v1",
+      proof: "unsigned",
+      credential: {
+        "@context": ["https://www.w3.org/ns/credentials/v2", "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json"],
+        type: ["VerifiableCredential", "OpenBadgeCredential"],
+        issuer: { type: ["Profile"], name: "Passport Evidence Organization" },
+        credentialSubject: {
+          type: ["AchievementSubject"],
+          achievement: { type: ["Achievement"], name: "Completed: Shop opening procedures" },
+        },
+        credentialSchema: [{
+          id: "https://purl.imsglobal.org/spec/ob/v3p0/schema/json/ob_v3p0_achievementcredential_schema.json",
+          type: "1EdTechJsonSchemaValidator2019",
+        }],
+      },
+    });
+    expect(openBadges.validateOpenBadgeDocument(exported.credential)).toMatchObject({ valid: true });
+    const serialized = JSON.stringify(exported.credential);
+    expect(serialized).toContain(learnerClaimVersionId);
+    expect(serialized).toContain(learnerCredentialId);
+    expect(serialized).not.toContain("passport-learner@example.test");
+    expect(exported.credential.credentialSubject).not.toHaveProperty("name");
+    expect(JSON.stringify(exported.credential)).not.toContain(otherClaimVersionId);
+  });
+
+  it("requires ownership and explicit identity disclosure for portable exports", async () => {
+    await expect(openBadges.createOpenBadgeDocument(otherLearnerId, learnerClaimVersionId))
+      .rejects.toThrow(/claim export not found/i);
+    await expect(openBadges.createOpenBadgeDocument(outsiderId, learnerClaimVersionId))
+      .rejects.toThrow(/claim export not found/i);
+    await expect(openBadges.createOpenBadgeDocument(learnerId, "00000000-0000-0000-0000-000000000000"))
+      .rejects.toThrow(/claim export not found/i);
+    const named = await openBadges.createOpenBadgeDocument(learnerId, learnerClaimVersionId, { includeLearnerName: true });
+    expect(named.credential.credentialSubject.name).toBe("Passport Learner");
+    expect(JSON.stringify(named.credential)).not.toContain("passport-learner@example.test");
+    expect(openBadges.validateOpenBadgeDocument({})).toMatchObject({ valid: false, errors: expect.any(Array) });
   });
 
   it("denies sharing another learner's claim without revealing whether it exists", async () => {
