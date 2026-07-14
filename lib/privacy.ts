@@ -6,7 +6,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 5;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 6;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -169,6 +169,15 @@ export async function createAccountExport(userId: number) {
           FROM competency_claims claim
           JOIN competency_claim_versions version ON version.claim_id=claim.id
           WHERE claim.user_id=$1 ORDER BY version.created_at,version.id`, [userId]),
+        competencyAlignments: await rows(client, `SELECT alignment.claim_version_id,
+          alignment.alignment_id,alignment.competency_item_version_id,
+          alignment.framework_version_id,alignment.conditions_snapshot,
+          alignment.created_at
+          FROM competency_claim_alignments alignment
+          JOIN competency_claim_versions version ON version.id=alignment.claim_version_id
+          JOIN competency_claims claim ON claim.id=version.claim_id
+          WHERE claim.user_id=$1 ORDER BY alignment.created_at,
+          alignment.claim_version_id,alignment.competency_item_version_id`, [userId]),
         shares: await rows(client, `SELECT id,status,include_learner_name,expires_at,
           created_at,revoked_at,consent_withdrawn_at
           FROM passport_share_grants WHERE user_id=$1 ORDER BY created_at,id`, [userId]),

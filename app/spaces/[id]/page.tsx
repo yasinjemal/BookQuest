@@ -25,6 +25,7 @@ interface Dashboard {
   assignments: Array<{
     id: string;
     course_id: number;
+    course_version: number;
     status: string;
     due_at: string | null;
   }>;
@@ -70,11 +71,29 @@ interface PassportDispute {
     expiresAt: string | null;
   }>;
 }
+interface CompetencyFrameworkItem {
+  framework_id: string;
+  stable_key: string;
+  framework_version_id: string;
+  version: number;
+  sourced_id: string;
+  title: string;
+  description: string;
+  published_at: string;
+  item_version_id: string;
+  item_id: string;
+  item_stable_key: string;
+  item_sourced_id: string;
+  item_version: number;
+  full_statement: string;
+  human_coding_scheme: string | null;
+  notes: string;
+}
 
 export default function SpacePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [view, setView] = useState<"overview" | "people" | "settings">("overview");
+  const [view, setView] = useState<"overview" | "standards" | "people" | "settings">("overview");
   const [data, setData] = useState<Dashboard | null>(null);
   const [owned, setOwned] = useState<OwnedCourse[]>([]);
   const [email, setEmail] = useState("");
@@ -87,6 +106,17 @@ export default function SpacePage() {
   const [institutional, setInstitutional] =
     useState<InstitutionalDashboard | null>(null);
   const [passportDisputes, setPassportDisputes] = useState<PassportDispute[]>([]);
+  const [frameworkItems, setFrameworkItems] = useState<CompetencyFrameworkItem[]>([]);
+  const [frameworkId, setFrameworkId] = useState("");
+  const [frameworkKey, setFrameworkKey] = useState("");
+  const [frameworkTitle, setFrameworkTitle] = useState("");
+  const [frameworkDescription, setFrameworkDescription] = useState("");
+  const [competencyKey, setCompetencyKey] = useState("");
+  const [competencyStatement, setCompetencyStatement] = useState("");
+  const [competencyCode, setCompetencyCode] = useState("");
+  const [alignmentAssignmentId, setAlignmentAssignmentId] = useState("");
+  const [alignmentItemVersionId, setAlignmentItemVersionId] = useState("");
+  const [alignmentConditions, setAlignmentConditions] = useState("");
   const [replacementChoices, setReplacementChoices] = useState<Record<string, string>>({});
   const [minimumScore, setMinimumScore] = useState("80");
   const [startAt, setStartAt] = useState("");
@@ -123,6 +153,8 @@ export default function SpacePage() {
     if (["owner", "administrator", "manager"].includes(spaceData.membership.role)) {
       const disputeResponse = await fetch(`/api/spaces/${id}/passport-disputes`, { cache: "no-store" });
       if (disputeResponse.ok) setPassportDisputes((await disputeResponse.json()).disputes);
+      const frameworksResponse = await fetch(`/api/spaces/${id}/competency-frameworks`, { cache: "no-store" });
+      if (frameworksResponse.ok) setFrameworkItems((await frameworksResponse.json()).frameworkItems);
     }
     const dashboardResponse = await fetch(
       `/api/spaces/${id}/institutional-dashboard`,
@@ -396,12 +428,55 @@ export default function SpacePage() {
     }
   }
 
+  async function publishFramework(event: FormEvent) {
+    event.preventDefault();
+    try {
+      const result = await mutate(`/api/spaces/${id}/competency-frameworks`, {
+        frameworkId: frameworkId || undefined,
+        stableKey: frameworkKey,
+        title: frameworkTitle,
+        description: frameworkDescription,
+        items: [{
+          stableKey: competencyKey,
+          fullStatement: competencyStatement,
+          humanCodingScheme: competencyCode || undefined,
+        }],
+      });
+      setFrameworkId(result.framework.frameworkId);
+      setAlignmentItemVersionId(result.framework.items[0].itemVersionId);
+      setNotice(`Published framework version ${result.framework.version}. Existing claim versions were not changed.`);
+      await load();
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+
+  async function alignCompetency(event: FormEvent) {
+    event.preventDefault();
+    const assignment = data?.assignments.find((item) => item.id === alignmentAssignmentId);
+    if (!assignment) return setError("Choose an exact assignment course version");
+    try {
+      await mutate(`/api/spaces/${id}/competency-alignments`, {
+        courseId: assignment.course_id,
+        courseVersion: assignment.course_version,
+        competencyItemVersionId: alignmentItemVersionId,
+        conditions: alignmentConditions,
+      });
+      setNotice("The author-declared competency is attached to this exact course version and will be frozen into future claims only.");
+    } catch (caught) {
+      setError((caught as Error).message);
+    }
+  }
+
   if (!data)
     return <div className="p-6 text-ink-soft">{error || "Loading…"}</div>;
   const manages = ["owner", "administrator", "manager"].includes(
     data.membership.role,
   );
   const administers = ["owner", "administrator"].includes(data.membership.role);
+  const frameworkChoices = frameworkItems.filter((item, index, all) =>
+    all.findIndex((candidate) => candidate.framework_id === item.framework_id) === index,
+  );
   return (
     <div className="page-wrap max-w-6xl space-y-5">
       <div className="premium-panel mb-8 p-7 sm:p-10">
@@ -419,8 +494,11 @@ export default function SpacePage() {
           <p className="relative z-10 mt-4 max-w-2xl text-sm leading-6 text-white/75">{data.space.description}</p>
         )}
       </div>
-      <nav aria-label="Space sections" className="flex w-fit gap-1 rounded-full border border-line bg-card p-1 shadow-card">
-        {(["overview", "people", "settings"] as const).map((item) => <button key={item} type="button" onClick={() => setView(item)} aria-current={view === item ? "page" : undefined} className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${view === item ? "bg-ink text-white shadow-card" : "text-ink-soft hover:text-ink"}`}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+      <nav aria-label="Space sections" className="flex w-full flex-wrap gap-1 rounded-[1.4rem] border border-line bg-card p-1 shadow-card sm:w-fit sm:rounded-full">
+        {(manages
+          ? ["overview", "standards", "people", "settings"]
+          : ["overview", "people", "settings"]
+        ).map((item) => <button key={item} type="button" onClick={() => setView(item as typeof view)} aria-current={view === item ? "page" : undefined} className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all ${view === item ? "bg-ink text-white shadow-card" : "text-ink-soft hover:text-ink"}`}>{item[0].toUpperCase() + item.slice(1)}</button>)}
       </nav>
       {view === "overview" && institutional && (
         <section className="paper-card p-5 sm:p-7">
@@ -447,6 +525,48 @@ export default function SpacePage() {
           <h2 id="passport-disputes-heading" className="display mt-2 text-3xl">Review evidence, never rewrite it.</h2>
           <p className="mt-3 max-w-3xl text-xs leading-5 text-ink-soft">Accept only when a replacement credential appears below. BookQuest revalidates the learner, course, Space, completion decision and evidence hash before creating an immutable successor.</p>
           <div className="mt-5 space-y-3">{passportDisputes.map((dispute) => <article key={dispute.id} className="rounded-2xl border border-line bg-paper p-4 sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><strong className="block">{dispute.title}</strong><span className="mt-1 block text-xs text-ink-soft">{dispute.learnerName} · {dispute.category.split("_").join(" ")} · {new Date(dispute.createdAt).toLocaleString()}</span></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.1em] ${dispute.status === "open" ? "bg-signal text-ink" : dispute.status === "accepted" ? "bg-go-soft text-forest" : "bg-line text-ink-soft"}`}>{dispute.status}</span></div>{dispute.statement && <p className="mt-4 rounded-xl border border-line bg-card p-3 text-xs leading-5 text-ink-soft">{dispute.statement}</p>}{dispute.status === "open" && <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><select aria-label={`Replacement credential for ${dispute.learnerName}`} value={replacementChoices[dispute.id] ?? ""} onChange={(event) => setReplacementChoices((current) => ({ ...current, [dispute.id]: event.target.value }))} className="field text-sm"><option value="">{dispute.replacementCredentials.length ? "Choose replacement evidence" : "No eligible replacement credential yet"}</option>{dispute.replacementCredentials.map((credential) => <option key={credential.credentialId} value={credential.credentialId}>Course v{credential.courseVersion} · issued {new Date(credential.issuedAt).toLocaleDateString()}</option>)}</select><button type="button" disabled={!replacementChoices[dispute.id]} onClick={() => void resolvePassportDispute(dispute, "accepted")} className="btn-primary disabled:opacity-40">Accept correction</button><button type="button" onClick={() => void resolvePassportDispute(dispute, "rejected")} className="quiet-button">Evidence is correct</button></div>}{dispute.status !== "open" && dispute.resolutionCode && <p className="mt-3 text-xs font-semibold text-ink-soft">Resolution: {dispute.resolutionCode.split("_").join(" ")}</p>}</article>)}</div>
+        </section>
+      )}
+      {view === "standards" && manages && (
+        <section className="grid gap-5 lg:grid-cols-[1.05fr_.95fr]" aria-labelledby="standards-heading">
+          <form onSubmit={publishFramework} className="paper-card p-5 sm:p-7">
+            <p className="section-label">Versioned competency framework</p>
+            <h2 id="standards-heading" className="display mt-2 text-3xl">Name the capability. Preserve every version.</h2>
+            <p className="mt-3 text-xs leading-5 text-ink-soft">This is author-declared alignment shaped for future CASE 1.1 exchange. Publishing creates immutable framework and competency versions; it does not infer learner mastery.</p>
+            <div className="mt-5 grid gap-3">
+              <label className="text-xs font-semibold text-ink-soft">Create new or publish the next version<select className="field mt-1" value={frameworkId} onChange={(event) => {
+                const nextId = event.target.value;
+                setFrameworkId(nextId);
+                const existing = frameworkChoices.find((item) => item.framework_id === nextId);
+                if (existing) {
+                  setFrameworkKey(existing.stable_key);
+                  setFrameworkTitle(existing.title);
+                  setFrameworkDescription(existing.description);
+                }
+              }}><option value="">New framework</option>{frameworkChoices.map((item) => <option key={item.framework_id} value={item.framework_id}>{item.title} · latest shown v{item.version}</option>)}</select></label>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-ink-soft">Stable framework key<input required className="field mt-1" value={frameworkKey} onChange={(event) => setFrameworkKey(event.target.value)} placeholder="shop.operations" /></label><label className="text-xs font-semibold text-ink-soft">Framework title<input required className="field mt-1" value={frameworkTitle} onChange={(event) => setFrameworkTitle(event.target.value)} placeholder="Shop operations" /></label></div>
+              <label className="text-xs font-semibold text-ink-soft">Description<textarea className="field mt-1 min-h-20" value={frameworkDescription} onChange={(event) => setFrameworkDescription(event.target.value)} placeholder="Who owns this framework and what it covers." /></label>
+              <div className="my-1 border-t border-line" />
+              <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-ink-soft">Stable competency key<input required className="field mt-1" value={competencyKey} onChange={(event) => setCompetencyKey(event.target.value)} placeholder="opening.safe-start" /></label><label className="text-xs font-semibold text-ink-soft">Human code (optional)<input className="field mt-1" value={competencyCode} onChange={(event) => setCompetencyCode(event.target.value)} placeholder="OPS-001" /></label></div>
+              <label className="text-xs font-semibold text-ink-soft">Observable competency statement<textarea required className="field mt-1 min-h-24" value={competencyStatement} onChange={(event) => setCompetencyStatement(event.target.value)} placeholder="Prepare and verify the shop for a safe opening." /></label>
+              <button className="btn-primary" type="submit">Publish immutable version</button>
+            </div>
+          </form>
+
+          <div className="grid content-start gap-5">
+            <form onSubmit={alignCompetency} className="paper-card p-5 sm:p-7">
+              <p className="section-label">Exact course alignment</p>
+              <h2 className="display mt-2 text-3xl">Attach meaning before evidence is issued.</h2>
+              <p className="mt-3 text-xs leading-5 text-ink-soft">Only future claims for this exact course version freeze the alignment. Existing claims never change retroactively.</p>
+              <div className="mt-5 grid gap-3">
+                <label className="text-xs font-semibold text-ink-soft">Assignment course version<select required className="field mt-1" value={alignmentAssignmentId} onChange={(event) => setAlignmentAssignmentId(event.target.value)}><option value="">Choose assignment</option>{data.assignments.map((assignment) => <option key={assignment.id} value={assignment.id}>Course {assignment.course_id} · version {assignment.course_version} · {assignment.status} · {assignment.id.slice(0, 8)}</option>)}</select></label>
+                <label className="text-xs font-semibold text-ink-soft">Published competency version<select required className="field mt-1" value={alignmentItemVersionId} onChange={(event) => setAlignmentItemVersionId(event.target.value)}><option value="">Choose competency</option>{frameworkItems.map((item) => <option key={item.item_version_id} value={item.item_version_id}>{item.full_statement} · framework v{item.version} / item v{item.item_version}</option>)}</select></label>
+                <label className="text-xs font-semibold text-ink-soft">Conditions for claiming alignment<textarea required className="field mt-1 min-h-24" value={alignmentConditions} onChange={(event) => setAlignmentConditions(event.target.value)} placeholder="Complete all required lessons and the published practical review." /></label>
+                <button className="btn-primary" type="submit">Attach to exact version</button>
+              </div>
+            </form>
+            <div className="rounded-[1.4rem] border border-line bg-card p-5 shadow-card"><p className="section-label">Published history</p><div className="mt-3 grid gap-2">{frameworkItems.length ? frameworkItems.map((item) => <article key={item.item_version_id} className="rounded-xl bg-paper p-4"><strong className="block text-sm">{item.full_statement}</strong><span className="mt-1 block text-xs text-ink-soft">{item.title} · framework v{item.version} · item v{item.item_version}</span><code className="mt-2 block break-all text-[10px] text-ink-soft">{item.item_sourced_id}</code></article>) : <p className="text-sm text-ink-soft">No published competency versions yet.</p>}</div></div>
+          </div>
         </section>
       )}
       {view === "people" && manages && data.space.type !== "personal" && (

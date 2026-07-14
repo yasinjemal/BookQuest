@@ -91,6 +91,16 @@ Unknown or unavailable tokens never create an event. Retained events are visible
 only to their learner, included in that learner's private account export, purged
 after 90 days and deleted early by effective account erasure.
 
+## Competency alignment and evidence summaries
+
+Migration 16 adds stable Space-owned frameworks and competency items, immutable
+framework/item versions, exact author-declared course-version mappings and
+claim-time alignment snapshots. The private Passport and selected verification
+response expose those exact mappings alongside deterministic evidence volume,
+recency, sources and completion conditions. Mastery remains explicitly
+`not_assessed`, and evidence confidence has no numeric score. The full contract
+is in `docs/PHASE_4_COMPETENCY_FRAMEWORKS.md`.
+
 ## Explicit non-goals
 
 This slice does not implement ranking, mastery/confidence scores, employability

@@ -5,8 +5,8 @@ document-to-course app into an open, trusted and configurable learning platform.
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
 **Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
-**Next product slice:** standards interoperability and stable competency versions
-while the mandatory Blacksteel and independent-assessment gates remain open
+**Next product slice:** QTI 3 assessment package import/export while the mandatory
+Blacksteel and independent-assessment gates remain open
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -810,13 +810,20 @@ the language “implementation evidence,” not “production-ready.”
 
 ### Build checklist
 
-- [ ] Create stable competency and taxonomy versions.
+- [x] Create stable competency and taxonomy versions. Migration 16 adds
+  Space-owned stable framework/item identities, immutable publication versions,
+  CASE-shaped sourced identifiers, exact author-declared course-version mapping
+  and claim-time alignment snapshots. Existing claims are never backfilled.
 - [x] Generate claims from eligible versioned evidence. Migration 12 and
   `lib/skill-passport.ts` accept only the authenticated learner's active,
   unexpired credential when its completion decision and every repeated evidence
   binding reconcile; `tests/skill-passport.test.ts` covers cross-user denial and
   immutable exact-version links.
-- [ ] Show mastery, confidence, evidence volume, recency, sources and conditions.
+- [x] Show mastery, confidence, evidence volume, recency, sources and conditions.
+  The private Passport and learner-selected verification response derive volume,
+  recency, source categories and rule conditions from immutable completion
+  evidence. Mastery is explicitly `not_assessed`; confidence means only that the
+  exact evidence chain reconciles and has no numeric score.
 - [x] Keep claims private by default and let learners choose what to share. The
   account-scoped `/passport` has no public handle or visibility switch, and each
   share freezes only learner-selected claim-version IDs. Display name disclosure
@@ -938,6 +945,20 @@ the language “implementation evidence,” not “production-ready.”
   issuance and revocation controls at 390x844 and 1440x900 with no horizontal
   overflow or console errors. Exact dated evidence is stored in
   `docs/evidence/phase4-open-badge-issuance-local-2026-07-14T135204Z.json`.
+- Migration 16 and `docs/PHASE_4_COMPETENCY_FRAMEWORKS.md` define stable
+  Space-owned framework/item identity, immutable versions, exact author-declared
+  course alignment and claim-time snapshots. CASE-shaped sourced identifiers are
+  preserved for future exchange without claiming CASE conformance. Open Badges
+  exports use only the alignment frozen into the claim.
+- The competency/evidence regression passes 29/29 PostgreSQL 16 test files and
+  166/166 tests. Negative coverage includes cross-role authoring/alignment,
+  immutable publication rows, no retroactive claim backfill, exact account export
+  and the absence of numeric mastery/confidence inference. TypeScript, production
+  build and dependency audit pass with zero vulnerabilities. Browser QA exercised
+  the owner Standards workspace and learner evidence summary at 390x844 and
+  1440x900 without page-level horizontal overflow or console errors. Exact dated
+  evidence is stored in
+  `docs/evidence/phase4-competency-frameworks-local-2026-07-14T150730Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 

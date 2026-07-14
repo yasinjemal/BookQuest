@@ -1,0 +1,37 @@
+{
+  "recordedAt": "2026-07-14T15:07:30Z",
+  "phase": "Phase 4 early implementation",
+  "slice": "Stable competency frameworks, exact alignments and transparent evidence summaries",
+  "status": "implementation evidence; not production-ready and not a CASE certification claim",
+  "standardsBasis": {
+    "case": "1EdTech CASE 1.1 framework/document and competency-item concepts",
+    "openBadges": "Open Badges 3.0 Achievement alignment"
+  },
+  "verification": {
+    "focusedPostgres": { "files": 2, "tests": 35, "passed": true },
+    "fullPostgres": { "files": 29, "tests": 166, "passed": true },
+    "typecheck": true,
+    "productionBuild": true,
+    "productionDependencyAudit": { "passed": true, "vulnerabilities": 0 },
+    "browser": {
+      "ownerStandardsWorkspaceRendered": true,
+      "learnerEvidenceSummaryRendered": true,
+      "frozenCompetencyVersionRendered": true,
+      "mobileViewport": "390x844",
+      "desktopViewport": "1440x900",
+      "pageHorizontalOverflow": false,
+      "consoleErrors": 0
+    }
+  },
+  "negativeCoverage": [
+    "learner and auditor framework authoring denied",
+    "cross-role course alignment denied",
+    "published framework and item versions reject mutation",
+    "later alignment does not backfill an existing claim",
+    "mastery remains not_assessed without a validated scale",
+    "evidence confidence exposes no numeric score",
+    "account export preserves exact claim alignment versions",
+    "Open Badges alignment uses only claim-frozen versions"
+  ],
+  "boundary": "Phase 3 remains PILOT/CLOSURE IN PROGRESS and retains every mandatory pilot, penetration, accessibility, production, restore and stakeholder gate."
+}

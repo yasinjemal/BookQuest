@@ -32,6 +32,14 @@ const openBadgeDocumentSchema = z.object({
       name: z.string().min(1),
       description: z.string().min(1),
       criteria: z.object({ narrative: z.string().min(1) }),
+      alignment: z.array(z.object({
+        type: z.array(z.string()).refine((value) => value.includes("Alignment")),
+        targetCode: z.string().min(1),
+        targetFramework: z.string().min(1),
+        targetName: z.string().min(1),
+        targetType: z.string().min(1),
+        targetUrl: uri,
+      })).optional(),
     }),
   }),
   evidence: z.array(z.object({ id: uri, type: z.array(z.string()).refine((value) => value.includes("Evidence")), name: z.string().min(1), description: z.string().min(1) })).min(1),
@@ -91,6 +99,26 @@ export async function createOpenBadgeDocument(userId: number, claimVersionId: st
     )).rows[0];
     if (!row) throw new SkillPassportError("Claim export not found");
 
+    const alignments = (await client.query<{
+      sourced_id: string; target_code: string; framework_title: string;
+      framework_version: number; full_statement: string;
+    }>(
+      `SELECT item.case_item_sourced_id AS sourced_id,
+              COALESCE(item_version.human_coding_scheme,item.stable_key) AS target_code,
+              framework_version.title AS framework_title,
+              framework_version.version AS framework_version,
+              item_version.full_statement
+       FROM competency_claim_alignments claim_alignment
+       JOIN competency_item_versions item_version
+         ON item_version.id=claim_alignment.competency_item_version_id
+       JOIN competency_items item ON item.id=item_version.competency_item_id
+       JOIN competency_framework_versions framework_version
+         ON framework_version.id=claim_alignment.framework_version_id
+       WHERE claim_alignment.claim_version_id=$1
+       ORDER BY framework_version.title,item.stable_key`,
+      [row.claim_version_id],
+    )).rows;
+
     const document: OpenBadgeDocument = {
       "@context": [VC_CONTEXT, OPEN_BADGES_CONTEXT],
       id: `urn:uuid:${row.claim_version_id}`,
@@ -108,6 +136,14 @@ export async function createOpenBadgeDocument(userId: number, claimVersionId: st
           name: row.title,
           description: row.statement,
           criteria: { narrative: "Completion was awarded under the exact BookQuest assignment and completion-rule versions recorded in the evidence entry." },
+          ...(alignments.length ? { alignment: alignments.map((alignment) => ({
+            type: ["Alignment"],
+            targetCode: alignment.target_code,
+            targetFramework: `${alignment.framework_title} (version ${alignment.framework_version})`,
+            targetName: alignment.full_statement,
+            targetType: "CFItem",
+            targetUrl: `urn:uuid:${alignment.sourced_id}`,
+          })) } : {}),
         },
       },
       evidence: [{

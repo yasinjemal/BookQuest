@@ -35,6 +35,10 @@
 | Rotate a key across tenants or invalidate old badges | Require `assignments.manage` in the exact Space; retire rather than delete; keep retired public keys dereferenceable | Cross-role rotation and old-badge verification tests |
 | Enumerate learners through status | Opaque 256-bit status value stored as a digest; response contains status only; unknown values return a uniform 404 | Status-token and response-shape tests |
 | Verify after revocation or erasure | Live underlying evidence/account checks plus shared verification locks and exclusive terminal revocation lock | Badge revocation, credential revocation and erasure tests |
+| Rewrite a competency after claims exist | Stable framework/item identity with immutable publication versions and claim-time alignment snapshots | Version and direct-SQL tamper tests |
+| Infer mastery from course completion | Report mastery as `not_assessed`; evidence confidence has no numeric score and describes reconciliation only | Passport and selected-share response tests |
+| Align another tenant's course or framework | Require `assignments.manage`, same-Space framework ownership, attached course and exact existing course version | Cross-role and cross-Space negative tests |
+| Substitute a newer competency during export | Build Passport shares and Open Badges alignment only from the item/framework versions frozen into the claim | Versioned alignment and export tests |
 
 ## Residual risks and production boundary
 

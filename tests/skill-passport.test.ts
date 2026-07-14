@@ -9,6 +9,7 @@ let studio: typeof import("../lib/studio");
 let institutional: typeof import("../lib/institutional");
 let passport: typeof import("../lib/skill-passport");
 let openBadges: typeof import("../lib/open-badges");
+let competencyFrameworks: typeof import("../lib/competency-frameworks");
 let privacy: typeof import("../lib/privacy");
 let ownerId: number;
 let learnerId: number;
@@ -24,6 +25,8 @@ let learnerClaimVersionId: string;
 let otherClaimVersionId: string;
 let learnerSignedBadge: Awaited<ReturnType<typeof import("../lib/open-badges").issueSignedOpenBadge>>;
 let learnerSignedStatusToken: string;
+let frameworkV1: Awaited<ReturnType<typeof import("../lib/competency-frameworks").publishCompetencyFrameworkVersion>>;
+let frameworkV2: Awaited<ReturnType<typeof import("../lib/competency-frameworks").publishCompetencyFrameworkVersion>>;
 let verifyRoute: typeof import("../app/api/passport/verify/route").GET;
 let openBadgeStatusRoute: typeof import("../app/api/open-badges/status/[token]/route").GET;
 let openBadgeVerifyRoute: typeof import("../app/api/open-badges/verify/route").POST;
@@ -46,6 +49,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     institutional = await import("../lib/institutional");
     passport = await import("../lib/skill-passport");
     openBadges = await import("../lib/open-badges");
+    competencyFrameworks = await import("../lib/competency-frameworks");
     privacy = await import("../lib/privacy");
     ({ GET: verifyRoute } = await import("../app/api/passport/verify/route"));
     ({ GET: openBadgeStatusRoute } = await import("../app/api/open-badges/status/[token]/route"));
@@ -100,6 +104,34 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     await spaces.attachCourseToSpace(ownerId, spaceId, course.courseId);
     courseId = course.courseId;
 
+    frameworkV1 = await competencyFrameworks.publishCompetencyFrameworkVersion(ownerId, spaceId, {
+      stableKey: "blacksteel.shop-operations",
+      title: "Blacksteel shop operations",
+      description: "Owner-declared workplace procedures for the pilot.",
+      items: [{
+        stableKey: "opening.safe-start",
+        fullStatement: "Prepare the shop for a safe and accountable opening.",
+        humanCodingScheme: "BS-OPEN-001",
+      }],
+    });
+    frameworkV2 = await competencyFrameworks.publishCompetencyFrameworkVersion(ownerId, spaceId, {
+      frameworkId: frameworkV1.frameworkId,
+      stableKey: "blacksteel.shop-operations",
+      title: "Blacksteel shop operations",
+      description: "Owner-declared workplace procedures for the pilot.",
+      items: [{
+        stableKey: "opening.safe-start",
+        fullStatement: "Prepare and verify the shop for a safe and accountable opening.",
+        humanCodingScheme: "BS-OPEN-001",
+      }],
+    });
+    await competencyFrameworks.alignCourseVersionToCompetency(ownerId, spaceId, {
+      courseId,
+      courseVersion: 1,
+      competencyItemVersionId: frameworkV2.items[0].itemVersionId,
+      conditions: "Complete every required lesson with a 100% minimum score under the published rule.",
+    });
+
     const rule = await institutional.createCompletionRuleVersion(ownerId, spaceId, course.courseId, {
       requiredLessons: "all",
       minimumScorePercent: 100,
@@ -134,6 +166,42 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     delete process.env.OPEN_BADGES_KEY_ENCRYPTION_KEY;
   });
 
+  it("publishes stable CASE-shaped framework and item versions with exact author alignment", async () => {
+    expect(frameworkV2).toMatchObject({
+      frameworkId: frameworkV1.frameworkId,
+      stableKey: "blacksteel.shop-operations",
+      version: 2,
+      caseVersion: "1.1",
+      items: [{
+        itemId: frameworkV1.items[0].itemId,
+        sourcedId: frameworkV1.items[0].sourcedId,
+        version: 2,
+        stableKey: "opening.safe-start",
+      }],
+    });
+    expect(frameworkV2.frameworkVersionId).not.toBe(frameworkV1.frameworkVersionId);
+    expect(frameworkV2.items[0].itemVersionId).not.toBe(frameworkV1.items[0].itemVersionId);
+    expect(await competencyFrameworks.listSpaceCompetencyFrameworks(ownerId, spaceId))
+      .toHaveLength(2);
+    await expect(competencyFrameworks.listSpaceCompetencyFrameworks(learnerId, spaceId))
+      .rejects.toThrow(/space access denied/i);
+    await expect(competencyFrameworks.publishCompetencyFrameworkVersion(outsiderId, spaceId, {
+      stableKey: "guessed.framework",
+      title: "Guessed framework",
+      items: [{ stableKey: "guessed.item", fullStatement: "Must not be created." }],
+    })).rejects.toThrow(/space access denied/i);
+    await expect(competencyFrameworks.alignCourseVersionToCompetency(learnerId, spaceId, {
+      courseId,
+      courseVersion: 1,
+      competencyItemVersionId: frameworkV2.items[0].itemVersionId,
+      conditions: "Must not be created.",
+    })).rejects.toThrow(/space access denied/i);
+    await expect(pg.q(
+      "UPDATE competency_item_versions SET full_statement='tampered' WHERE id=$1",
+      [frameworkV2.items[0].itemVersionId],
+    )).rejects.toThrow(/append-only/i);
+  });
+
   it("denies credential attachment by another learner, manager or outsider", async () => {
     await expect(passport.createCompetencyClaim(otherLearnerId, learnerCredentialId))
       .rejects.toThrow(/eligible credential not found/i);
@@ -163,6 +231,10 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
         evidenceHash: expect.any(String),
       },
     });
+    expect(await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM competency_claim_alignments WHERE claim_version_id=$1",
+      [learnerClaimVersionId],
+    )).toEqual({ count: 1 });
     expect(await passport.createCompetencyClaim(learnerId, learnerCredentialId)).toEqual(learnerClaim);
     await expect(pg.q(
       "UPDATE competency_claim_versions SET title='tampered' WHERE id=$1",
@@ -170,11 +242,53 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     )).rejects.toThrow(/append-only/i);
   });
 
+  it("never backfills an existing claim when a later competency version is aligned", async () => {
+    const frameworkV3 = await competencyFrameworks.publishCompetencyFrameworkVersion(ownerId, spaceId, {
+      frameworkId: frameworkV2.frameworkId,
+      stableKey: "blacksteel.shop-operations",
+      title: "Blacksteel shop operations",
+      description: "Owner-declared workplace procedures for the pilot.",
+      items: [{
+        stableKey: "opening.safe-start",
+        fullStatement: "Prepare, verify and record the shop's safe opening.",
+        humanCodingScheme: "BS-OPEN-001",
+      }],
+    });
+    await competencyFrameworks.alignCourseVersionToCompetency(ownerId, spaceId, {
+      courseId,
+      courseVersion: 1,
+      competencyItemVersionId: frameworkV3.items[0].itemVersionId,
+      conditions: "Complete every required lesson and the published opening record procedure.",
+    });
+    expect(await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM competency_claim_alignments WHERE claim_version_id=$1",
+      [learnerClaimVersionId],
+    )).toEqual({ count: 1 });
+    expect((await passport.getSkillPassport(learnerId)).claims[0].competencies)
+      .toHaveLength(1);
+  });
+
   it("keeps the passport private by default and denies cross-user reads", async () => {
     const own = await passport.getSkillPassport(learnerId);
     expect(own).toMatchObject({
       passport: { visibility: "private" },
-      claims: [{ claimVersionId: learnerClaimVersionId }],
+      claims: [{
+        claimVersionId: learnerClaimVersionId,
+        competencies: [{
+          frameworkId: frameworkV2.frameworkId,
+          frameworkVersionId: frameworkV2.frameworkVersionId,
+          frameworkVersion: 2,
+          itemVersionId: frameworkV2.items[0].itemVersionId,
+          itemVersion: 2,
+          mappingBasis: "author_declared",
+        }],
+        evidenceSummary: {
+          mastery: { status: "not_assessed", score: null },
+          confidence: { status: "verified_evidence", score: null },
+          evidenceVolume: { total: 1, lessonCompletions: 1 },
+          conditions: { minimumScorePercent: 100, observedScorePercent: 100 },
+        },
+      }],
       shares: [],
     });
     expect(JSON.stringify(own)).not.toContain(otherClaimVersionId);
@@ -195,7 +309,18 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
         issuer: { type: ["Profile"], name: "Passport Evidence Organization" },
         credentialSubject: {
           type: ["AchievementSubject"],
-          achievement: { type: ["Achievement"], name: "Completed: Shop opening procedures" },
+          achievement: {
+            type: ["Achievement"],
+            name: "Completed: Shop opening procedures",
+            alignment: [{
+              type: ["Alignment"],
+              targetCode: "BS-OPEN-001",
+              targetFramework: "Blacksteel shop operations (version 2)",
+              targetName: "Prepare and verify the shop for a safe and accountable opening.",
+              targetType: "CFItem",
+              targetUrl: `urn:uuid:${frameworkV2.items[0].sourcedId}`,
+            }],
+          },
         },
         credentialSchema: [{
           id: "https://purl.imsglobal.org/spec/ob/v3p0/schema/json/ob_v3p0_achievementcredential_schema.json",
@@ -265,8 +390,15 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(storedKey?.private_key_ciphertext).not.toContain("PRIVATE KEY");
     const accountExport = await privacy.createAccountExport(learnerId);
     expect(accountExport).toMatchObject({
-      schemaVersion: 5,
-      skillPassport: { signedCredentials: [expect.objectContaining({ id: learnerSignedBadge.id, status: "active" })] },
+      schemaVersion: 6,
+      skillPassport: {
+        competencyAlignments: [expect.objectContaining({
+          claim_version_id: learnerClaimVersionId,
+          competency_item_version_id: frameworkV2.items[0].itemVersionId,
+          framework_version_id: frameworkV2.frameworkVersionId,
+        })],
+        signedCredentials: [expect.objectContaining({ id: learnerSignedBadge.id, status: "active" })],
+      },
     });
     expect(JSON.stringify(accountExport)).not.toContain("private_key_ciphertext");
     const last = learnerSignedBadge.compactJws.at(-1) === "A" ? "B" : "A";
@@ -374,6 +506,16 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
         claimType: "verified_course_completion",
         title: "Completed: Shop opening procedures",
         evidence: { credentialId: learnerCredentialId },
+        competencies: [{
+          frameworkVersionId: frameworkV2.frameworkVersionId,
+          itemVersionId: frameworkV2.items[0].itemVersionId,
+          mappingBasis: "author_declared",
+        }],
+        evidenceSummary: {
+          mastery: { status: "not_assessed", score: null },
+          confidence: { status: "verified_evidence", score: null },
+          evidenceVolume: { total: 1 },
+        },
       }],
     });
     expect(verified?.claims).toHaveLength(1);
@@ -388,7 +530,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(await unknownResponse.json()).toEqual({ error: "Shared passport not found" });
     const exported = await privacy.createAccountExport(learnerId);
     expect(exported).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       skillPassport: { claims: [{ claim_version_id: learnerClaimVersionId }] },
     });
     expect(JSON.stringify(exported)).not.toContain("token_hash");
@@ -430,7 +572,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       learnerNameDisclosed: false,
     });
     const exportAfterAccess = await privacy.createAccountExport(learnerId);
-    expect(exportAfterAccess.schemaVersion).toBe(5);
+    expect(exportAfterAccess.schemaVersion).toBe(6);
     expect(exportAfterAccess.skillPassport?.verificationHistory).toEqual(expect.arrayContaining([
       expect.objectContaining({ share_id: share.id, claim_count: 1, learner_name_disclosed: 0 }),
     ]));
@@ -582,7 +724,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     ]));
     const privateExport = await privacy.createAccountExport(learnerId);
     expect(privateExport).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       skillPassport: {
         disputes: expect.arrayContaining([
           expect.objectContaining({ id: dispute.id, statement: expect.stringContaining("assignment record") }),

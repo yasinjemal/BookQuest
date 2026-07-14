@@ -23,6 +23,26 @@ type Claim = {
     credentialId: string;
     evidenceHash: string;
   };
+  competencies: Array<{
+    frameworkId: string; frameworkVersionId: string; frameworkVersion: number;
+    frameworkTitle: string; itemId: string; itemVersionId: string;
+    itemVersion: number; stableKey: string; sourcedId: string;
+    statement: string; conditions: string; mappingBasis: "author_declared";
+  }>;
+  evidenceSummary: {
+    mastery: { status: "not_assessed"; score: null; reason: string };
+    confidence: { status: "verified_evidence"; score: null; basis: string };
+    evidenceVolume: {
+      total: number; lessonCompletions: number; attestations: number; practicalReviews: number;
+    };
+    recency: { evidenceIssuedAt: string };
+    sources: Array<{ type: string; count: number }>;
+    conditions: {
+      minimumScorePercent: number | null; observedScorePercent: number | null;
+      requiredLessonCount: number | null; requiredAttestationCount: number | null;
+      requiredPracticalReviewCount: number | null;
+    };
+  };
 };
 type PassportData = {
   passport: { id: string; visibility: "private"; createdAt: string };
@@ -213,6 +233,20 @@ export default function PassportPage() {
     <section className="mt-12" aria-labelledby="claims-heading"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="section-label">Your evidence-backed claims</p><h2 id="claims-heading" className="display mt-2 text-4xl">Only verified completions belong here.</h2></div><span className="inline-flex items-center gap-2 rounded-full border border-line bg-card px-3 py-2 text-xs font-semibold text-ink-soft"><AppIcon name="lock" className="h-4 w-4" />Visible only to you</span></div>
       {data.claims.length === 0 ? <div className="mt-5 rounded-[1.5rem] border border-dashed border-line-deep bg-card px-6 py-12 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-sky text-dusk"><AppIcon name="shield" className="h-5 w-5" /></span><h3 className="display mt-4 text-3xl">Your Passport is quietly empty.</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-ink-soft">Complete an eligible controlled assignment, then add its credential below. No claim is inferred from activity or scores.</p></div> : <div className="mt-5 grid gap-3">{data.claims.map((claim) => <label key={claim.claimVersionId} className={`grid gap-4 rounded-[1.35rem] border p-5 shadow-card sm:grid-cols-[auto_1fr_auto] sm:items-center ${!claim.shareable ? "cursor-not-allowed border-line bg-paper opacity-75" : selected.includes(claim.claimVersionId) ? "cursor-pointer border-teal bg-teal/[.04]" : "cursor-pointer border-line bg-card"}`}><input type="checkbox" disabled={!claim.shareable} checked={selected.includes(claim.claimVersionId)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, claim.claimVersionId] : current.filter((id) => id !== claim.claimVersionId))} className="h-5 w-5 accent-teal" /><span><strong className="block text-base">{claim.title}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{claim.statement} · issued {new Date(claim.issuedAt).toLocaleDateString()}</span>{!claim.shareable && <span className="mt-2 block text-xs font-semibold text-no">This historical claim is {claim.availability}. It stays in your private record but cannot be shared or verified.</span>}</span><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[.12em] ${claim.shareable ? "bg-go-soft text-forest" : "bg-line text-ink-soft"}`}>{claim.shareable ? "Evidence linked" : claim.availability}</span><details className="sm:col-start-2 sm:col-span-2"><summary className="text-xs font-semibold text-teal-deep">View exact evidence links</summary><dl className="mt-3 grid gap-2 break-all rounded-xl bg-paper p-4 font-mono text-[10px] text-ink-soft sm:grid-cols-2"><div><dt className="font-bold text-ink">Course version</dt><dd>{claim.evidence.courseVersion}</dd></div><div><dt className="font-bold text-ink">Credential</dt><dd>{claim.evidence.credentialId}</dd></div><div><dt className="font-bold text-ink">Assignment version</dt><dd>{claim.evidence.assignmentVersionId}</dd></div><div><dt className="font-bold text-ink">Rule version</dt><dd>{claim.evidence.completionRuleVersionId}</dd></div><div><dt className="font-bold text-ink">Completion decision</dt><dd>{claim.evidence.completionEventId}</dd></div><div><dt className="font-bold text-ink">Evidence hash</dt><dd>{claim.evidence.evidenceHash}</dd></div></dl></details></label>)}</div>}
     </section>
+
+    {currentClaims.length > 0 && <section className="mt-8 rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8" aria-labelledby="evidence-depth-heading">
+      <p className="section-label">Transparent evidence summary</p>
+      <h2 id="evidence-depth-heading" className="display mt-2 text-3xl">What the proof says—and what it does not.</h2>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-ink-soft">BookQuest reports only observable evidence and author-declared competency alignment. A completion is never silently converted into a mastery, confidence, employability, or ranking score.</p>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {currentClaims.map((claim) => <article key={claim.claimVersionId} className="rounded-[1.25rem] border border-line bg-paper p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><strong className="block text-sm">{claim.title}</strong><span className="mt-1 block text-xs text-ink-soft">Evidence issued {new Date(claim.evidenceSummary.recency.evidenceIssuedAt).toLocaleDateString()}</span></div><span className="rounded-full bg-go-soft px-3 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-forest">Verified evidence</span></div>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-card p-3"><span className="block text-xl font-bold">{claim.evidenceSummary.evidenceVolume.total}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">Evidence events</span></div><div className="rounded-xl bg-card p-3"><span className="block text-xl font-bold">{claim.evidenceSummary.evidenceVolume.lessonCompletions}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">Lessons</span></div><div className="rounded-xl bg-card p-3"><span className="block text-xl font-bold">{claim.evidenceSummary.evidenceVolume.attestations}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">Attestations</span></div><div className="rounded-xl bg-card p-3"><span className="block text-xl font-bold">{claim.evidenceSummary.evidenceVolume.practicalReviews}</span><span className="text-[10px] font-semibold uppercase tracking-wide text-ink-soft">Reviews</span></div></div>
+          <div className="mt-4 rounded-xl border border-line bg-card p-4"><span className="text-[10px] font-bold uppercase tracking-[.12em] text-ink-soft">Mastery</span><strong className="mt-1 block text-sm">Not assessed</strong><p className="mt-1 text-xs leading-5 text-ink-soft">{claim.evidenceSummary.mastery.reason}</p></div>
+          {claim.competencies.length > 0 ? <div className="mt-4"><span className="text-[10px] font-bold uppercase tracking-[.12em] text-ink-soft">Author-declared competencies</span><div className="mt-2 grid gap-2">{claim.competencies.map((competency) => <div key={competency.itemVersionId} className="rounded-xl border border-line bg-card p-4"><strong className="text-sm">{competency.statement}</strong><p className="mt-1 text-xs leading-5 text-ink-soft">{competency.frameworkTitle} · framework v{competency.frameworkVersion} · item v{competency.itemVersion}</p><p className="mt-2 text-xs leading-5 text-ink-soft"><span className="font-semibold text-ink">Conditions:</span> {competency.conditions}</p></div>)}</div></div> : <p className="mt-4 text-xs leading-5 text-ink-soft">No competency framework version was attached when this claim was issued.</p>}
+        </article>)}
+      </div>
+    </section>}
 
     {currentClaims.some((claim) => claim.shareable) && <section className="mt-8 rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8" aria-labelledby="portable-export-heading">
       <p className="section-label">Portable credentials</p>

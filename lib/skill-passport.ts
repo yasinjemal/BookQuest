@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { tx } from "./pg";
 import { authorizeStoredMembership } from "./spaces";
+import { snapshotClaimCompetencyAlignments } from "./competency-frameworks";
 
 const MAX_SHARE_DAYS = 30;
 const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -54,6 +55,14 @@ type ClaimRow = {
   supersedes_claim_version_id: string | null;
 };
 
+type EvidenceSummaryRow = {
+  score_percent: number | null;
+  rule_evaluation_json: string;
+  evidence_manifest_json: string;
+  completion_rule_version_id: string;
+  issued_at: string;
+};
+
 function mapClaim(row: ClaimRow) {
   return {
     claimId: row.claim_id,
@@ -76,6 +85,115 @@ function mapClaim(row: ClaimRow) {
       evidenceHash: row.evidence_hash,
     },
   };
+}
+
+function parseJsonObject(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function evidenceSummary(row: EvidenceSummaryRow) {
+  const evaluation = parseJsonObject(row.rule_evaluation_json);
+  const manifest = parseJsonObject(row.evidence_manifest_json);
+  const lessons = Array.isArray(manifest.lessonCompletions) ? manifest.lessonCompletions.length : 0;
+  const attestations = Array.isArray(manifest.attestations) ? manifest.attestations.length : 0;
+  const practicalReviews = Array.isArray(manifest.practicalReviews)
+    ? manifest.practicalReviews.filter((entry) => entry && typeof entry === "object"
+      && (entry as Record<string, unknown>).reviewId).length
+    : 0;
+  return {
+    mastery: {
+      status: "not_assessed" as const,
+      score: null,
+      reason: "Completion evidence is verified, but no validated competency mastery scale is attached.",
+    },
+    confidence: {
+      status: "verified_evidence" as const,
+      score: null,
+      basis: "Exact assignment, rule, completion, credential and evidence-hash bindings reconcile.",
+    },
+    evidenceVolume: {
+      total: lessons + attestations + practicalReviews,
+      lessonCompletions: lessons,
+      attestations,
+      practicalReviews,
+    },
+    recency: { evidenceIssuedAt: row.issued_at },
+    sources: [
+      { type: "lesson_completion" as const, count: lessons },
+      { type: "attestation" as const, count: attestations },
+      { type: "practical_review" as const, count: practicalReviews },
+    ].filter((source) => source.count > 0),
+    conditions: {
+      completionRuleVersionId: row.completion_rule_version_id,
+      minimumScorePercent: typeof evaluation.minimumScorePercent === "number"
+        ? evaluation.minimumScorePercent : null,
+      observedScorePercent: row.score_percent === null ? null : Number(row.score_percent),
+      requiredLessonCount: Array.isArray(evaluation.requiredLessons)
+        ? evaluation.requiredLessons.length : null,
+      requiredAttestationCount: Array.isArray(evaluation.missingAttestations)
+        ? attestations + evaluation.missingAttestations.length : null,
+      requiredPracticalReviewCount: Array.isArray(evaluation.missingPracticalReviews)
+        ? practicalReviews + evaluation.missingPracticalReviews.length : null,
+    },
+  };
+}
+
+async function claimCompetencyAlignments(client: PoolClient, claimVersionIds: string[]) {
+  const result = new Map<string, Array<{
+    frameworkId: string; frameworkVersionId: string; frameworkVersion: number;
+    frameworkTitle: string; itemId: string; itemVersionId: string;
+    itemVersion: number; stableKey: string; sourcedId: string;
+    statement: string; conditions: string; mappingBasis: "author_declared";
+  }>>();
+  if (!claimVersionIds.length) return result;
+  const rows = (await client.query<{
+    claim_version_id: string; framework_id: string; framework_version_id: string;
+    framework_version: number; framework_title: string; item_id: string;
+    item_version_id: string; item_version: number; stable_key: string;
+    sourced_id: string; full_statement: string; conditions_snapshot: string;
+  }>(
+    `SELECT alignment.claim_version_id,framework.id AS framework_id,
+            framework_version.id AS framework_version_id,
+            framework_version.version AS framework_version,
+            framework_version.title AS framework_title,item.id AS item_id,
+            item_version.id AS item_version_id,item_version.version AS item_version,
+            item.stable_key,item.case_item_sourced_id AS sourced_id,
+            item_version.full_statement,alignment.conditions_snapshot
+     FROM competency_claim_alignments alignment
+     JOIN competency_item_versions item_version
+       ON item_version.id=alignment.competency_item_version_id
+     JOIN competency_items item ON item.id=item_version.competency_item_id
+     JOIN competency_framework_versions framework_version
+       ON framework_version.id=alignment.framework_version_id
+     JOIN competency_frameworks framework ON framework.id=framework_version.framework_id
+     WHERE alignment.claim_version_id=ANY($1::text[])
+     ORDER BY framework.stable_key,item.stable_key`,
+    [claimVersionIds],
+  )).rows;
+  for (const row of rows) {
+    const values = result.get(row.claim_version_id) ?? [];
+    values.push({
+      frameworkId: row.framework_id,
+      frameworkVersionId: row.framework_version_id,
+      frameworkVersion: Number(row.framework_version),
+      frameworkTitle: row.framework_title,
+      itemId: row.item_id,
+      itemVersionId: row.item_version_id,
+      itemVersion: Number(row.item_version),
+      stableKey: row.stable_key,
+      sourcedId: row.sourced_id,
+      statement: row.full_statement,
+      conditions: row.conditions_snapshot,
+      mappingBasis: "author_declared",
+    });
+    result.set(row.claim_version_id, values);
+  }
+  return result;
 }
 
 async function ensurePassport(client: PoolClient, userId: number) {
@@ -179,6 +297,12 @@ export async function createCompetencyClaim(userId: number, credentialId: string
        eligible.completion_event_id, eligible.participation_id,
        eligible.credential_id, eligible.evidence_hash, eligible.issued_at],
     )).rows[0];
+    await snapshotClaimCompetencyAlignments(client, {
+      claimVersionId: version.claim_version_id,
+      spaceId: eligible.space_id,
+      courseId: eligible.course_id,
+      courseVersion: eligible.course_version,
+    });
     await client.query(
       `INSERT INTO skill_passport_entries (passport_id,claim_version_id)
        VALUES ($1,$2)`,
@@ -197,6 +321,9 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       credential_expires_at: string | null;
       completion_decision: string;
       is_current: boolean;
+      score_percent: number | null;
+      rule_evaluation_json: string;
+      evidence_manifest_json: string;
     })>(
       `SELECT claim.id AS claim_id,version.id AS claim_version_id,version.version,
          version.claim_type,version.title,version.statement,version.course_id,
@@ -209,7 +336,8 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
            WHERE newer.claim_id=claim.id AND newer.version>version.version
          ) AS is_current,credential.status AS credential_status,
          credential.expires_at AS credential_expires_at,
-         completion.decision AS completion_decision
+         completion.decision AS completion_decision,completion.score_percent,
+         completion.rule_evaluation_json,completion.evidence_manifest_json
        FROM competency_claims claim
        JOIN competency_claim_versions version ON version.claim_id=claim.id
        JOIN skill_passport_entries entry ON entry.claim_version_id=version.id
@@ -219,12 +347,18 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
        ORDER BY version.issued_at DESC,version.id`,
       [actorUserId, passport.id],
     )).rows;
+    const alignmentsByClaim = await claimCompetencyAlignments(
+      client,
+      claimRows.map((row) => row.claim_version_id),
+    );
     const claims = claimRows.map((row) => {
       const expired = Boolean(row.credential_expires_at && Date.parse(row.credential_expires_at) <= Date.now());
       const shareable = row.is_current && row.credential_status === "active"
         && !expired && row.completion_decision === "completed";
       return {
         ...mapClaim(row),
+        competencies: alignmentsByClaim.get(row.claim_version_id) ?? [],
+        evidenceSummary: evidenceSummary(row),
         isCurrent: row.is_current,
         shareable,
         availability: !row.is_current ? "superseded" : shareable ? "active"
@@ -468,6 +602,9 @@ export async function verifyPassportShare(token: string, at = new Date()) {
       completion_assignment_version_id: string;
       completion_rule_version_id_live: string;
       completion_evidence_hash: string;
+      score_percent: number | null;
+      rule_evaluation_json: string;
+      evidence_manifest_json: string;
     })>(
       `SELECT claim.id AS claim_id,version.id AS claim_version_id,version.version,
               version.claim_type,version.title,version.statement,version.course_id,
@@ -481,7 +618,9 @@ export async function verifyPassportShare(token: string, at = new Date()) {
               completion.participation_id AS completion_participation_id,
               completion.assignment_version_id AS completion_assignment_version_id,
               completion.completion_rule_version_id AS completion_rule_version_id_live,
-              completion.evidence_hash AS completion_evidence_hash
+              completion.evidence_hash AS completion_evidence_hash,
+              completion.score_percent,completion.rule_evaluation_json,
+              completion.evidence_manifest_json
        FROM passport_share_claims selected
        JOIN competency_claim_versions version ON version.id=selected.claim_version_id
        JOIN competency_claims claim
@@ -511,6 +650,10 @@ export async function verifyPassportShare(token: string, at = new Date()) {
         || row.completion_rule_version_id_live !== row.completion_rule_version_id
         || row.completion_evidence_hash !== row.evidence_hash) return null;
     }
+    const alignmentsByClaim = await claimCompetencyAlignments(
+      client,
+      rows.map((row) => row.claim_version_id),
+    );
     const retainUntil = new Date(at.getTime() + 90 * 86_400_000).toISOString();
     await client.query(
       `INSERT INTO passport_verification_events
@@ -522,7 +665,11 @@ export async function verifyPassportShare(token: string, at = new Date()) {
       learnerName: share.include_learner_name === 1 ? share.learner_name : null,
       expiresAt: share.expires_at,
       verifiedAt: at.toISOString(),
-      claims: rows.map(mapClaim),
+      claims: rows.map((row) => ({
+        ...mapClaim(row),
+        competencies: alignmentsByClaim.get(row.claim_version_id) ?? [],
+        evidenceSummary: evidenceSummary(row),
+      })),
     };
   });
 }
@@ -807,6 +954,12 @@ export async function resolveCompetencyClaimDispute(
        replacement.participation_id,replacement.credential_id,replacement.evidence_hash,
        replacement.issued_at,dispute.disputed_claim_version_id],
     )).rows[0];
+    await snapshotClaimCompetencyAlignments(client, {
+      claimVersionId: version.claim_version_id,
+      spaceId,
+      courseId: replacement.course_id,
+      courseVersion: replacement.course_version,
+    });
     const passportId = (await client.query<{ passport_id: string }>(
       "SELECT passport_id FROM competency_claims WHERE id=$1",
       [dispute.claim_id],

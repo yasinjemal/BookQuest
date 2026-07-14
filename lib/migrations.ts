@@ -2487,6 +2487,102 @@ CREATE TRIGGER open_badge_issuer_keys_lifecycle
   FOR EACH ROW EXECUTE FUNCTION phase4_open_badge_key_guard();
 `;
 
+const COMPETENCY_FRAMEWORKS_SQL = `
+CREATE TABLE competency_frameworks (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  stable_key TEXT NOT NULL CHECK (char_length(stable_key) BETWEEN 2 AND 100),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (space_id, stable_key)
+);
+
+CREATE TABLE competency_framework_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  framework_id TEXT NOT NULL REFERENCES competency_frameworks(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  case_document_sourced_id TEXT NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+  title TEXT NOT NULL CHECK (char_length(title) BETWEEN 2 AND 200),
+  description TEXT NOT NULL DEFAULT '',
+  case_version TEXT NOT NULL DEFAULT '1.1' CHECK (case_version='1.1'),
+  status TEXT NOT NULL DEFAULT 'published' CHECK (status='published'),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  published_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (framework_id, version)
+);
+
+CREATE TABLE competency_items (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  framework_id TEXT NOT NULL REFERENCES competency_frameworks(id) ON DELETE RESTRICT,
+  stable_key TEXT NOT NULL CHECK (char_length(stable_key) BETWEEN 2 AND 100),
+  case_item_sourced_id TEXT NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (framework_id, stable_key)
+);
+
+CREATE TABLE competency_item_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  competency_item_id TEXT NOT NULL REFERENCES competency_items(id) ON DELETE RESTRICT,
+  framework_version_id TEXT NOT NULL REFERENCES competency_framework_versions(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  full_statement TEXT NOT NULL CHECK (char_length(full_statement) BETWEEN 3 AND 2000),
+  human_coding_scheme TEXT,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (competency_item_id, framework_version_id),
+  UNIQUE (competency_item_id, version)
+);
+
+CREATE TABLE course_competency_alignments (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  course_version INTEGER NOT NULL CHECK (course_version > 0),
+  competency_item_version_id TEXT NOT NULL REFERENCES competency_item_versions(id) ON DELETE RESTRICT,
+  mapping_basis TEXT NOT NULL CHECK (mapping_basis='author_declared'),
+  conditions TEXT NOT NULL CHECK (char_length(conditions) BETWEEN 3 AND 1000),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (space_id, course_id, course_version, competency_item_version_id)
+);
+
+CREATE TABLE competency_claim_alignments (
+  claim_version_id TEXT NOT NULL REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  alignment_id TEXT NOT NULL REFERENCES course_competency_alignments(id) ON DELETE RESTRICT,
+  competency_item_version_id TEXT NOT NULL REFERENCES competency_item_versions(id) ON DELETE RESTRICT,
+  framework_version_id TEXT NOT NULL REFERENCES competency_framework_versions(id) ON DELETE RESTRICT,
+  conditions_snapshot TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (claim_version_id, competency_item_version_id)
+);
+
+CREATE INDEX idx_competency_frameworks_space
+  ON competency_frameworks(space_id, created_at);
+CREATE INDEX idx_course_competency_alignment_version
+  ON course_competency_alignments(course_id, course_version, space_id);
+CREATE INDEX idx_claim_competency_alignment_claim
+  ON competency_claim_alignments(claim_version_id);
+
+CREATE TRIGGER competency_frameworks_no_write
+  BEFORE UPDATE OR DELETE ON competency_frameworks
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_framework_versions_no_write
+  BEFORE UPDATE OR DELETE ON competency_framework_versions
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_items_no_write
+  BEFORE UPDATE OR DELETE ON competency_items
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_item_versions_no_write
+  BEFORE UPDATE OR DELETE ON competency_item_versions
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER course_competency_alignments_no_write
+  BEFORE UPDATE OR DELETE ON course_competency_alignments
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_claim_alignments_no_write
+  BEFORE UPDATE OR DELETE ON competency_claim_alignments
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2507,6 +2603,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 13, name: "passport_access_history", sql: PASSPORT_ACCESS_HISTORY_SQL },
   { id: 14, name: "passport_claim_corrections", sql: PASSPORT_CLAIM_CORRECTIONS_SQL },
   { id: 15, name: "open_badge_issuance", sql: OPEN_BADGE_ISSUANCE_SQL },
+  { id: 16, name: "competency_frameworks", sql: COMPETENCY_FRAMEWORKS_SQL },
 ];
 
 /**
