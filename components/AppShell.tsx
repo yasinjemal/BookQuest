@@ -9,6 +9,7 @@ const items: Array<{ href: string; label: string; icon: AppIconName }> = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/explore", label: "Library", icon: "library" },
   { href: "/review", label: "Practice", icon: "practice" },
+  { href: "/passport", label: "Skill Passport", icon: "shield" },
   { href: "/spaces", label: "Spaces", icon: "spaces" },
 ];
 
@@ -16,13 +17,13 @@ const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
   items[0],
   items[1],
   { href: "/create", label: "Create", icon: "create" },
-  items[3],
+  items[4],
   { href: "/profile", label: "Account", icon: "account" },
 ];
 
 const barePaths = [
   "/login", "/register", "/forgot-password", "/reset-password",
-  "/verify-email", "/verify-credential", "/accessibility", "/security",
+  "/verify-email", "/verify-credential", "/passport/verify", "/accessibility", "/security",
 ];
 
 function activePath(pathname: string, href: string) {

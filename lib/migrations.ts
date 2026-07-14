@@ -2144,6 +2144,148 @@ CREATE INDEX idx_course_blocks_active_lesson
   WHERE deleted_at IS NULL;
 `;
 
+const SKILL_PASSPORT_FOUNDATION_SQL = `
+CREATE TABLE skill_passports (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE RESTRICT,
+  visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility = 'private'),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE TABLE competency_claims (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  passport_id TEXT NOT NULL REFERENCES skill_passports(id) ON DELETE RESTRICT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  claim_type TEXT NOT NULL CHECK (claim_type = 'verified_course_completion'),
+  credential_id TEXT NOT NULL REFERENCES credential_records(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (user_id, credential_id)
+);
+CREATE INDEX idx_competency_claims_passport ON competency_claims(passport_id, created_at);
+
+CREATE TABLE competency_claim_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  claim_id TEXT NOT NULL REFERENCES competency_claims(id) ON DELETE RESTRICT,
+  version INTEGER NOT NULL CHECK (version > 0),
+  claim_type TEXT NOT NULL CHECK (claim_type = 'verified_course_completion'),
+  title TEXT NOT NULL,
+  statement TEXT NOT NULL,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE RESTRICT,
+  course_version INTEGER NOT NULL CHECK (course_version > 0),
+  assignment_version_id TEXT NOT NULL REFERENCES assignment_versions(id) ON DELETE RESTRICT,
+  completion_rule_version_id TEXT NOT NULL REFERENCES completion_rule_versions(id) ON DELETE RESTRICT,
+  completion_event_id TEXT NOT NULL REFERENCES assignment_completion_events(id) ON DELETE RESTRICT,
+  participation_id TEXT NOT NULL REFERENCES assignment_participations(id) ON DELETE RESTRICT,
+  credential_id TEXT NOT NULL REFERENCES credential_records(id) ON DELETE RESTRICT,
+  evidence_hash TEXT NOT NULL,
+  issued_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (claim_id, version),
+  UNIQUE (credential_id)
+);
+
+CREATE TABLE skill_passport_entries (
+  passport_id TEXT NOT NULL REFERENCES skill_passports(id) ON DELETE RESTRICT,
+  claim_version_id TEXT NOT NULL UNIQUE REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  added_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (passport_id, claim_version_id)
+);
+
+CREATE TABLE passport_share_grants (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  passport_id TEXT NOT NULL REFERENCES skill_passports(id) ON DELETE RESTRICT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  token_hash TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked','consent_withdrawn')),
+  include_learner_name SMALLINT NOT NULL DEFAULT 0 CHECK (include_learner_name IN (0,1)),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  revoked_at TEXT,
+  consent_withdrawn_at TEXT
+);
+CREATE INDEX idx_passport_shares_owner ON passport_share_grants(user_id, created_at DESC);
+CREATE INDEX idx_passport_shares_token ON passport_share_grants(token_hash);
+
+CREATE TABLE passport_share_claims (
+  share_id TEXT NOT NULL REFERENCES passport_share_grants(id) ON DELETE RESTRICT,
+  claim_version_id TEXT NOT NULL REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (share_id, claim_version_id),
+  UNIQUE (share_id, position)
+);
+
+CREATE TABLE passport_share_consent_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  share_id TEXT NOT NULL REFERENCES passport_share_grants(id) ON DELETE RESTRICT,
+  decision TEXT NOT NULL CHECK (decision IN ('granted','withdrawn')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX idx_passport_share_consent ON passport_share_consent_events(share_id, occurred_at DESC);
+
+CREATE TABLE passport_share_status_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  share_id TEXT NOT NULL REFERENCES passport_share_grants(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('issued','revoked','consent_withdrawn')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE OR REPLACE FUNCTION phase4_passport_append_only_guard() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'Phase 4 passport history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER skill_passports_no_write
+  BEFORE UPDATE OR DELETE ON skill_passports FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_claims_no_write
+  BEFORE UPDATE OR DELETE ON competency_claims FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER competency_claim_versions_no_write
+  BEFORE UPDATE OR DELETE ON competency_claim_versions FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER skill_passport_entries_no_write
+  BEFORE UPDATE OR DELETE ON skill_passport_entries FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER passport_share_claims_no_write
+  BEFORE UPDATE OR DELETE ON passport_share_claims FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER passport_share_consent_events_no_write
+  BEFORE UPDATE OR DELETE ON passport_share_consent_events FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE TRIGGER passport_share_status_events_no_write
+  BEFORE UPDATE OR DELETE ON passport_share_status_events FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+
+CREATE OR REPLACE FUNCTION phase4_passport_share_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'Phase 4 passport shares are retained';
+  END IF;
+  IF OLD.status = 'active' AND NEW.status = 'revoked'
+     AND NEW.revoked_at IS NOT NULL
+     AND NEW.consent_withdrawn_at IS NOT DISTINCT FROM OLD.consent_withdrawn_at
+     AND ROW(NEW.id,NEW.passport_id,NEW.user_id,NEW.token_hash,
+             NEW.include_learner_name,NEW.expires_at,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.passport_id,OLD.user_id,OLD.token_hash,
+             OLD.include_learner_name,OLD.expires_at,OLD.created_at)
+  THEN RETURN NEW;
+  END IF;
+  IF OLD.status = 'active' AND NEW.status = 'consent_withdrawn'
+     AND NEW.consent_withdrawn_at IS NOT NULL
+     AND NEW.revoked_at IS NOT DISTINCT FROM OLD.revoked_at
+     AND ROW(NEW.id,NEW.passport_id,NEW.user_id,NEW.token_hash,
+             NEW.include_learner_name,NEW.expires_at,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.passport_id,OLD.user_id,OLD.token_hash,
+             OLD.include_learner_name,OLD.expires_at,OLD.created_at)
+  THEN RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Phase 4 passport share state is terminal';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER passport_share_grants_lifecycle
+  BEFORE UPDATE OR DELETE ON passport_share_grants
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_share_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2160,6 +2302,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 9, name: "pilot_password_sign_in", sql: PILOT_PASSWORD_SIGN_IN_SQL },
   { id: 10, name: "versioned_course_appearance", sql: COURSE_APPEARANCE_SQL },
   { id: 11, name: "studio_reversible_authoring", sql: STUDIO_REVERSIBLE_AUTHORING_SQL },
+  { id: 12, name: "skill_passport_foundation", sql: SKILL_PASSPORT_FOUNDATION_SQL },
 ];
 
 /**

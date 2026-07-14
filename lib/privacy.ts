@@ -6,7 +6,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 1;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 2;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -132,6 +132,9 @@ export async function createAccountExport(userId: number) {
     )[0] ?? null;
     const learnerKey = identity?.learner_key as string | undefined;
 
+    const passport = (
+      await rows(client, "SELECT id, visibility, created_at FROM skill_passports WHERE user_id = $1", [userId])
+    )[0] ?? null;
     const payload = {
       schemaVersion: ACCOUNT_EXPORT_SCHEMA_VERSION,
       generatedAt: new Date().toISOString(),
@@ -155,6 +158,33 @@ export async function createAccountExport(userId: number) {
         memberships: await rows(client, `SELECT cm.classroom_id, cm.joined_at, c.name FROM classroom_members cm JOIN classrooms c ON c.id = cm.classroom_id WHERE cm.user_id = $1 ORDER BY cm.joined_at`, [userId]),
       },
       credentials: await rows(client, `SELECT ct.id, ct.course_id, ct.score_pct, ct.issued_at, c.title AS course_title FROM certificates ct JOIN courses c ON c.id = ct.course_id WHERE ct.user_id = $1 ORDER BY ct.issued_at`, [userId]),
+      skillPassport: passport ? {
+        passport,
+        claims: await rows(client, `SELECT claim.id AS claim_id, version.id AS claim_version_id,
+          version.version, version.claim_type, version.title, version.statement,
+          version.course_id, version.course_version, version.assignment_version_id,
+          version.completion_rule_version_id, version.completion_event_id,
+          version.participation_id, version.credential_id, version.evidence_hash,
+          version.issued_at, version.created_at
+          FROM competency_claims claim
+          JOIN competency_claim_versions version ON version.claim_id=claim.id
+          WHERE claim.user_id=$1 ORDER BY version.created_at,version.id`, [userId]),
+        shares: await rows(client, `SELECT id,status,include_learner_name,expires_at,
+          created_at,revoked_at,consent_withdrawn_at
+          FROM passport_share_grants WHERE user_id=$1 ORDER BY created_at,id`, [userId]),
+        selections: await rows(client, `SELECT selected.share_id,selected.claim_version_id,selected.position
+          FROM passport_share_claims selected
+          JOIN passport_share_grants share ON share.id=selected.share_id
+          WHERE share.user_id=$1 ORDER BY selected.share_id,selected.position`, [userId]),
+        consentHistory: await rows(client, `SELECT consent.share_id,consent.decision,consent.occurred_at
+          FROM passport_share_consent_events consent
+          JOIN passport_share_grants share ON share.id=consent.share_id
+          WHERE share.user_id=$1 ORDER BY consent.occurred_at,consent.id`, [userId]),
+        statusHistory: await rows(client, `SELECT event.share_id,event.event_type,event.occurred_at
+          FROM passport_share_status_events event
+          JOIN passport_share_grants share ON share.id=event.share_id
+          WHERE share.user_id=$1 ORDER BY event.occurred_at,event.id`, [userId]),
+      } : null,
       billing: await rows(client, "SELECT tx_ref, product, amount_cents, currency, provider, provider_ref, status, created_at FROM transactions WHERE user_id = $1 ORDER BY created_at", [userId]),
     };
     await client.query("COMMIT");
@@ -231,6 +261,30 @@ export async function cancelAccountDeletion(userId: number) {
 }
 
 async function eraseAccount(client: PoolClient, userId: number, erasedAt: string) {
+  const activePassportShares = (await client.query<{ id: string }>(
+    `SELECT id FROM passport_share_grants
+     WHERE user_id=$1 AND status='active' FOR UPDATE`,
+    [userId]
+  )).rows;
+  for (const share of activePassportShares) {
+    await client.query(
+      `UPDATE passport_share_grants
+       SET status='consent_withdrawn',consent_withdrawn_at=$2 WHERE id=$1`,
+      [share.id, erasedAt]
+    );
+    await client.query(
+      `INSERT INTO passport_share_consent_events
+        (share_id,decision,actor_user_id,occurred_at)
+       VALUES ($1,'withdrawn',$2,$3)`,
+      [share.id, userId, erasedAt]
+    );
+    await client.query(
+      `INSERT INTO passport_share_status_events
+        (share_id,event_type,actor_user_id,occurred_at)
+       VALUES ($1,'consent_withdrawn',$2,$3)`,
+      [share.id, userId, erasedAt]
+    );
+  }
   // Published content is withdrawn and retained only as an archived evidentiary
   // version. Private content is destroyed. Original source text is always erased.
   await client.query(
@@ -268,7 +322,10 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
   await client.query(
     `INSERT INTO privacy_actions (user_id, action, effective_at, metadata_json)
      VALUES ($1, 'erasure_completed', $2, $3)`,
-    [userId, erasedAt, JSON.stringify({ retained: ["pseudonymous_learning_evidence", "consent_history", "financial_records"] })]
+    [userId, erasedAt, JSON.stringify({
+      retained: ["pseudonymous_learning_evidence", "credential_history", "passport_claim_history", "consent_history", "financial_records"],
+      withdrawnPassportShares: activePassportShares.length,
+    })]
   );
 }
 

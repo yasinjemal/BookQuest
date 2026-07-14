@@ -3,9 +3,10 @@
 **Purpose:** the single execution tracker for growing BookQuest from a
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
-**Last updated:** 13 July 2026
-**Current phase:** Phase 3 — Institutional and government-ready pilot
-**Next product slice:** close the real Blacksteel pilot gates before Phase 4
+**Last updated:** 14 July 2026
+**Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
+**Next product slice:** private, evidence-backed Skill Passport sharing while
+the mandatory Blacksteel and independent-assessment gates remain open
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -109,8 +110,8 @@ and an institution operate securely. Its four primary experiences are:
 | 0. Evidence and reliability | Activity is trustworthy, replay-safe and operable | **COMPLETE** | — |
 | 1. Spaces and tenancy | Anyone can create a controlled learning space | **COMPLETE** | Phase 0 gates passed |
 | 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **COMPLETE** | Phase 1 permissions passed |
-| 3. Institutional pilot | An organization completes an auditable training journey | **IN PROGRESS** | Phases 1–2 complete |
-| 4. Credentials and interoperability | Evidence can be shared, verified and moved | Not started | Phase 3 evidence |
+| 3. Institutional pilot | An organization completes an auditable training journey | **PILOT/CLOSURE IN PROGRESS** | Phases 1–2 complete |
+| 4. Credentials and interoperability | Evidence can be shared, verified and moved | **EARLY IMPLEMENTATION IN PROGRESS** | Phase 3 evidence; production readiness remains gated by Phase 3 closure |
 | 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | Not started | Stable contracts |
 | 6. Learning Genome | Evidence improves questions and learning paths | Not started | Representative consented data |
 | 7. Multi-channel and scale | Learning works across web, offline and messaging | Not started | Stable learning services |
@@ -605,7 +606,7 @@ automatic legal-compliance claims → permanent non-goal; adaptation → Phase 6
 
 ## Phase 3 — Institutional and government-ready pilot
 
-**Status:** IN PROGRESS
+**Status:** PILOT/CLOSURE IN PROGRESS
 **Outcome:** a real organization completes this controlled journey:
 
 > Private Space → controlled source → compliance recipe → review and approval →
@@ -796,32 +797,91 @@ Studio rebuild recorded in
 
 ## Phase 4 — Skill Passport and interoperability
 
+**Status:** EARLY IMPLEMENTATION IN PROGRESS
 **Outcome:** learners privately hold, selectively share and independently verify
 evidence-backed achievements across systems.
+
+Phase 4 implementation may proceed in parallel with Phase 3 closure, but Phase 4
+cannot be described as production-ready until Phase 3 is formally complete. The
+Blacksteel pilot, independent penetration test, full-journey WCAG 2.2 AA
+assessment, production evidence, restore exercise and responsible-stakeholder
+acceptance remain mandatory closure gates. Early Phase 4 releases therefore use
+the language “implementation evidence,” not “production-ready.”
 
 ### Build checklist
 
 - [ ] Create stable competency and taxonomy versions.
-- [ ] Generate claims from eligible versioned evidence.
+- [x] Generate claims from eligible versioned evidence. Migration 12 and
+  `lib/skill-passport.ts` accept only the authenticated learner's active,
+  unexpired credential when its completion decision and every repeated evidence
+  binding reconcile; `tests/skill-passport.test.ts` covers cross-user denial and
+  immutable exact-version links.
 - [ ] Show mastery, confidence, evidence volume, recency, sources and conditions.
-- [ ] Keep claims private by default and let learners choose what to share.
-- [ ] Add expiring/revocable links, access history and consent withdrawal.
+- [x] Keep claims private by default and let learners choose what to share. The
+  account-scoped `/passport` has no public handle or visibility switch, and each
+  share freezes only learner-selected claim-version IDs. Display name disclosure
+  is off by default.
+- [x] Add expiring/revocable links and consent withdrawal. Opaque 256-bit bearer
+  tokens are stored only as digests; terminal database transitions and live
+  verification checks block future access after expiry, learner revocation,
+  consent withdrawal, credential revocation or effective account erasure.
+- [ ] Add privacy-bounded recipient access history. Share consent/status history
+  is append-only in this slice, but recipient verification events are not yet
+  retained pending a minimisation and retention decision.
 - [ ] Add correction, dispute and portable export workflows.
 - [ ] Import/export compatible assessments using QTI 3.
 - [ ] Issue verifiable achievements using Open Badges 3.0.
 - [ ] Add pilot-driven LTI 1.3/LTI Advantage integration.
 - [ ] Publish versioned APIs, scoped OAuth and signed idempotent webhooks.
-- [ ] Add a verification API for opaque IDs, expiry, revocation and only
-  learner-granted claims.
-- [ ] Prohibit ranking, employability inference and hiring decisions.
+- [x] Add a verification API for opaque IDs, expiry, revocation and only
+  learner-granted claims. `/api/passport/verify` is rate-limited, no-store,
+  no-index and returns the same 404 for unknown, expired, revoked,
+  consent-withdrawn or evidence-invalid tokens.
+- [x] Prohibit ranking, employability inference and hiring decisions. The first
+  claim type is server-derived `verified_course_completion`; arbitrary or
+  model-inferred competency statements, scores, recommendations and public
+  learner profiles are absent from the schema and API.
+
+### Early implementation evidence
+
+- The prerequisite Phase 3 audit, Phase 4 domain model and internal threat model
+  are recorded in `docs/PHASE_4_CONTRACT_AUDIT.md`,
+  `docs/PHASE_4_SKILL_PASSPORT_MODEL.md` and `docs/PHASE_4_THREAT_MODEL.md`.
+- Forward-only migration 12 adds learner-owned private passports, stable claims,
+  immutable claim versions with direct course/rule/assignment/completion/
+  participation/credential/evidence links, selective grants, frozen claim
+  selections and append-only consent/status history. Terminal share guards reject
+  reactivation and claim/history triggers reject update or deletion.
+- The local PostgreSQL 16 suite passes 29/29 files and 152/152 tests, including
+  negative authorization, token enumeration, unrelated-claim disclosure,
+  boundary-time expiry, share revocation, consent withdrawal, credential
+  revocation, export-secret exclusion and account-erasure withdrawal. TypeScript,
+  the production build and the production dependency audit also pass;
+  the audit reports zero vulnerabilities.
+- Isolated browser QA created a second eligible sample claim, selected exactly one
+  claim, issued a seven-day identity-hidden link, verified the version/evidence
+  chain, withdrew consent and confirmed the same URL immediately returned the
+  uniform not-found state. Revoked historical claims are visible only in the
+  learner's private record and disabled for sharing. Checks at 390×844 and
+  1440×900 found no horizontal overflow.
+- Exact dated evidence is stored in
+  `docs/evidence/phase4-skill-passport-local-2026-07-14T075827Z.json`.
+- This is implementation evidence, not a production-readiness declaration. Phase
+  3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 
 ### Release gates
 
-- [ ] Share one claim without exposing the full profile.
-- [ ] Withdrawal, revocation or expiry blocks future verification immediately.
-- [ ] Verification reproduces issuing evidence and rule versions.
+- [x] Share one claim without exposing the full profile. The verifier receives
+  only the frozen claim selection and omits learner identity by default.
+- [x] Withdrawal, revocation or expiry blocks future verification immediately.
+  Service, route and isolated browser tests cover the terminal paths.
+- [x] Verification reproduces issuing evidence and rule versions. The response
+  contains direct course, course-version, assignment-version, completion-rule,
+  completion-decision, participation, credential and evidence-hash bindings.
 - [ ] Credential exports validate against their selected profile.
-- [ ] API clients cannot enumerate learners or unrelated credentials.
+- [x] API clients cannot enumerate learners or unrelated credentials. Tokens are
+  random and digest-only, all unavailable states use the same 404, and selective
+  disclosure tests prove another learner's claim never appears.
 - [ ] Corrections preserve historical auditability.
 
 ### Measure

@@ -1,0 +1,96 @@
+{
+  "evidence_version": "bookquest-phase4-early-implementation/1.0",
+  "recorded_at": "2026-07-14T07:58:27Z",
+  "scope": "Smallest safe Phase 4 Skill Passport vertical slice",
+  "phase_status": {
+    "phase_3": "PILOT/CLOSURE IN PROGRESS",
+    "phase_4": "EARLY IMPLEMENTATION IN PROGRESS",
+    "production_ready": false
+  },
+  "contract_documents": [
+    "docs/PHASE_4_CONTRACT_AUDIT.md",
+    "docs/PHASE_4_SKILL_PASSPORT_MODEL.md",
+    "docs/PHASE_4_THREAT_MODEL.md"
+  ],
+  "implemented_chain": [
+    "immutable eligible Phase 3 completion evidence",
+    "versioned verified-course-completion claim",
+    "private learner-owned Skill Passport",
+    "selective expiring digest-only bearer link",
+    "rate-limited no-store no-index verification",
+    "terminal learner revocation and consent withdrawal",
+    "live credential revocation and expiry enforcement",
+    "effective account-erasure share withdrawal"
+  ],
+  "exact_claim_bindings": [
+    "course_id",
+    "course_version",
+    "assignment_version_id",
+    "completion_rule_version_id",
+    "completion_event_id",
+    "participation_id",
+    "credential_id",
+    "evidence_hash"
+  ],
+  "migration": {
+    "id": 12,
+    "name": "skill_passport_foundation",
+    "forward_only": true,
+    "legacy_upgrade_tested": true
+  },
+  "automated_verification": {
+    "postgres_version": 16,
+    "test_files": { "passed": 29, "total": 29 },
+    "tests": { "passed": 152, "total": 152 },
+    "typecheck": "passed",
+    "production_build": { "status": "passed", "static_generation_units": 47 },
+    "production_dependency_audit": { "status": "passed", "vulnerabilities": 0 }
+  },
+  "negative_coverage": [
+    "cross-user credential attachment denied",
+    "manager and outsider Passport access denied",
+    "cross-user claim sharing denied without existence disclosure",
+    "unknown and altered tokens return not found",
+    "unrelated credentials are absent from selective disclosure",
+    "share expiry blocks at the exact boundary",
+    "share revocation is terminal",
+    "consent withdrawal is terminal",
+    "credential revocation blocks an otherwise active share",
+    "account erasure withdraws every active share",
+    "exports omit bearer tokens and token digests"
+  ],
+  "isolated_browser_verification": {
+    "database": "local scratch PostgreSQL only",
+    "journey": [
+      "add a second eligible verified completion claim",
+      "select exactly one live claim",
+      "create a seven-day link with learner name hidden",
+      "verify only that claim and its exact evidence versions",
+      "withdraw learner consent",
+      "confirm the identical URL returns the uniform not-found state"
+    ],
+    "revoked_claim_ui": "historical claim retained privately, clearly labelled and disabled for sharing",
+    "viewports": [
+      { "width": 390, "height": 844, "horizontal_overflow": false },
+      { "width": 1440, "height": 900, "horizontal_overflow": false }
+    ],
+    "new_console_errors": 0
+  },
+  "explicit_non_goals": [
+    "ranking",
+    "mastery or confidence scoring",
+    "employability scoring",
+    "hiring recommendations",
+    "public learner profiles",
+    "unsupported competency inference",
+    "QTI, Open Badges, LTI, OAuth or webhook interoperability claims"
+  ],
+  "mandatory_phase_3_gates_still_open": [
+    "Blacksteel pilot",
+    "independent penetration test",
+    "full-journey WCAG 2.2 AA assessment",
+    "production evidence",
+    "restore exercise",
+    "responsible-stakeholder acceptance"
+  ]
+}

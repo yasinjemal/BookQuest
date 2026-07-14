@@ -111,6 +111,16 @@ export const RATE_LIMITS = {
     limit: 120,
     windowSeconds: 60 * 60,
   },
+  passportMutationUser: {
+    scope: "passport.mutation.user",
+    limit: 60,
+    windowSeconds: 60 * 60,
+  },
+  passportVerifyIp: {
+    scope: "passport.verify.ip",
+    limit: 120,
+    windowSeconds: 60 * 60,
+  },
   mfaUser: {
     scope: "auth.mfa.user",
     limit: 20,
