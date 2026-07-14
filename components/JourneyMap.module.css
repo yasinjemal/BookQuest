@@ -92,6 +92,13 @@
   opacity: 0.72;
 }
 
+.regionHeader,
+.stateLabel,
+.lessonTitle,
+.lockHint {
+  position: relative;
+}
+
 .lessonCard {
   min-width: 0;
   border: 1px solid transparent;
@@ -111,9 +118,99 @@ a.lessonCard:hover {
   background: color-mix(in srgb, var(--color-teal) 6%, var(--color-card));
 }
 
+:global(.course-appearance[data-course-world="shadow"]) .region {
+  border-color: #39272e;
+  background:
+    linear-gradient(rgb(255 255 255 / 0.018) 1px, transparent 1px),
+    #100f13;
+  background-size: 100% 2.75rem;
+  box-shadow: 0 26px 80px rgb(0 0 0 / 0.38);
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .regionHeader {
+  border-bottom: 1px solid #4c2934;
+  background: #09090c;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .routeBase {
+  stroke: #3c2930;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .routeDone {
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--course-accent) 48%, transparent));
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future {
+  opacity: 1;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .landmark {
+  border-color: #7b3448;
+  background: #0a090c;
+  color: #e0526f;
+  box-shadow: 0 0 0 5px rgb(224 82 111 / 0.06), 0 0 24px rgb(224 82 111 / 0.14);
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .landmark::after {
+  position: absolute;
+  inset: -0.45rem;
+  border: 1px solid rgb(224 82 111 / 0.28);
+  border-radius: inherit;
+  content: "";
+  animation: sealed-pulse 3.1s ease-in-out infinite;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .lessonCard {
+  position: relative;
+  overflow: hidden;
+  border-color: #3b252d;
+  background:
+    linear-gradient(105deg, rgb(224 82 111 / 0.06), transparent 38%),
+    #141116;
+  box-shadow: inset 3px 0 0 rgb(224 82 111 / 0.35);
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .lessonCard::after {
+  position: absolute;
+  top: 0.7rem;
+  right: -1.85rem;
+  width: 7rem;
+  padding-block: 0.14rem;
+  background: rgb(224 82 111 / 0.12);
+  color: #d7778c;
+  content: "SEALED";
+  font-size: 0.48rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-align: center;
+  transform: rotate(35deg);
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .stateLabel {
+  color: #d7778c;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .lessonTitle {
+  max-width: 82%;
+  opacity: 0.35;
+  filter: blur(3.2px);
+  user-select: none;
+}
+
+:global(.course-appearance[data-course-world="shadow"]) .future .lockHint {
+  max-width: 28rem;
+  color: #a8999e;
+  line-height: 1.5;
+}
+
 @keyframes current-pulse {
   0%, 100% { opacity: 0.28; transform: scale(0.96); }
   50% { opacity: 0.7; transform: scale(1.04); }
+}
+
+@keyframes sealed-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(0.94); }
+  50% { opacity: 0.78; transform: scale(1.05); }
 }
 
 @media (min-width: 40rem) {
@@ -126,5 +223,6 @@ a.lessonCard:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .current .landmark::after { animation: none; }
+  :global(.course-appearance[data-course-world="shadow"]) .future .landmark::after { animation: none; }
   .routeDone { transition: none; }
 }

@@ -32,6 +32,7 @@ const palettes: Record<WorldTheme, WorldPalette> = {
   winter: { top: "#8097ad", bottom: "#394f62", far: "#d9e1e2", mid: "#9aadb5", near: "#344957", accent: "#d8ff63", light: "#f8f3df" },
   manuscript: { top: "#a27d52", bottom: "#4e3828", far: "#c6a776", mid: "#826343", near: "#38281e", accent: "#f0b35a", light: "#f8e3b5" },
   "knowledge-city": { top: "#286b70", bottom: "#142a38", far: "#65959a", mid: "#285867", near: "#10232d", accent: "#d8ff63", light: "#d9faf0" },
+  shadow: { top: "#24141a", bottom: "#07070a", far: "#3b222b", mid: "#21151a", near: "#08080b", accent: "#e0526f", light: "#ff8ca2" },
 };
 
 function hashSeed(value: string) {
@@ -49,6 +50,14 @@ export function resolveWorldTheme(seed: string | number, preferred?: string): Wo
 }
 
 function landscape(theme: WorldTheme, variant: number): ReactNode {
+  if (theme === "shadow") return <>
+    <path className={styles.far} fillRule="evenodd" d="M0 0h100v100H0Zm29 20h42l16 80H13Z" />
+    <path className={styles.middle} d="M0 100 29 20h9L25 100Zm100 0L71 20h-9l13 80Z" />
+    <path className={styles.near} d="M25 100 40 37h20l15 63Z" />
+    <path className={styles.detail} d="M40 37h20v52H40zM50 37v52M44 37 31 100m25-63 13 63M7 18h17m52 0h17" />
+    <path className={styles.seal} d="M47 63h6v8h-6zM48.5 63v-2.2a1.5 1.5 0 0 1 3 0V63" />
+  </>;
+
   if (theme === "ocean") return <>
     <path className={styles.far} d="M0 58 C18 50 31 66 50 57 C68 48 84 61 100 54 V100 H0Z" />
     <path className={styles.middle} d="M0 69 C17 62 31 78 49 68 C68 58 81 75 100 65 V100 H0Z" />

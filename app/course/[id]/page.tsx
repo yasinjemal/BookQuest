@@ -118,7 +118,7 @@ export default function CoursePathPage() {
   return (
     <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
     <div className="page-wrap mx-auto max-w-6xl">
-      <header className="mb-6 grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
+      <header className="course-world-hero mb-6 grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
         <CourseWorld seed={data.course.id} title={data.course.title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={courseProgress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="min-h-64 sm:min-h-80 lg:min-h-[27rem]" />
         <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
           <Link href="/" className="inline-flex w-fit items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/65 hover:text-white"><span aria-hidden="true">←</span> Your worlds</Link>

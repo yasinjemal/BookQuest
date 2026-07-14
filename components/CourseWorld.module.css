@@ -81,6 +81,13 @@
   opacity: 0.5;
 }
 
+.seal {
+  fill: color-mix(in srgb, var(--world-accent) 82%, black);
+  stroke: var(--world-light);
+  stroke-width: 0.35;
+  filter: drop-shadow(0 0 5px var(--world-accent));
+}
+
 .trailBase,
 .trailProgress {
   fill: none;
@@ -124,6 +131,32 @@
 
 .dusk {
   filter: saturate(0.82) brightness(0.88);
+}
+
+.world[data-world-theme="shadow"] {
+  background:
+    radial-gradient(circle at var(--world-light-x) 20%, color-mix(in srgb, var(--world-accent) 30%, transparent), transparent 18%),
+    linear-gradient(158deg, var(--world-sky-top), var(--world-sky-bottom));
+}
+
+.world[data-world-theme="shadow"]::before {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 39px, rgb(255 255 255 / 0.025) 40px),
+    repeating-linear-gradient(0deg, transparent 0 39px, rgb(255 255 255 / 0.018) 40px),
+    linear-gradient(to bottom, transparent 48%, rgb(3 3 5 / 0.45));
+}
+
+.world[data-world-theme="shadow"] .light {
+  opacity: 0.48;
+  filter: drop-shadow(0 0 12px var(--world-accent));
+}
+
+.world[data-world-theme="shadow"] .halo {
+  opacity: 0.16;
+}
+
+.world[data-world-theme="shadow"] .spark {
+  animation-duration: 9s;
 }
 
 @keyframes breathe {

@@ -16,11 +16,12 @@ export const COURSE_WORLD_THEMES = [
   "winter",
   "manuscript",
   "knowledge-city",
+  "shadow",
 ] as const;
 
 export const COURSE_TYPOGRAPHIES = ["editorial", "literary", "modern", "clear"] as const;
-export const COURSE_SURFACES = ["parchment", "ivory", "mist", "herbarium", "rose"] as const;
-export const COURSE_ACCENTS = ["lime", "amber", "teal", "rose", "dusk", "moss"] as const;
+export const COURSE_SURFACES = ["parchment", "ivory", "mist", "herbarium", "rose", "noir"] as const;
+export const COURSE_ACCENTS = ["lime", "amber", "teal", "rose", "dusk", "moss", "crimson"] as const;
 export const COURSE_ATMOSPHERES = ["full", "quiet"] as const;
 export const COURSE_READING_WIDTHS = ["focused", "balanced", "wide"] as const;
 export const COURSE_TEMPLATE_IDS = [
@@ -30,6 +31,7 @@ export const COURSE_TEMPLATE_IDS = [
   "modern-atlas",
   "quiet-library",
   "clear-focus",
+  "shadow-files",
   "custom",
 ] as const;
 
@@ -105,6 +107,12 @@ export const COURSE_APPEARANCE_TEMPLATES: ReadonlyArray<{
     description: "Low-decoration, highly legible typography for dense or accessibility-led learning.",
     appearance: { template: "clear-focus", worldTheme: "laboratory", typography: "clear", surface: "ivory", accent: "dusk", atmosphere: "quiet", readingWidth: "balanced" },
   },
+  {
+    id: "shadow-files",
+    name: "Shadow Files",
+    description: "A cinematic charcoal case room with oxblood detail, sealed lessons, and a focused reading rhythm.",
+    appearance: { template: "shadow-files", worldTheme: "shadow", typography: "modern", surface: "noir", accent: "crimson", atmosphere: "full", readingWidth: "focused" },
+  },
 ];
 
 export const COURSE_ACCENT_HEX: Record<CourseAccent, string> = {
@@ -114,16 +122,55 @@ export const COURSE_ACCENT_HEX: Record<CourseAccent, string> = {
   rose: "#C98C83",
   dusk: "#526A8C",
   moss: "#6E8B72",
+  crimson: "#E0526F",
 };
 
-export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, "#183029" | "#FFFFFF"> = {
+export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, "#183029" | "#FFFFFF" | "#160B0F"> = {
   lime: "#183029",
   amber: "#183029",
   teal: "#FFFFFF",
   rose: "#183029",
   dusk: "#FFFFFF",
   moss: "#FFFFFF",
+  crimson: "#160B0F",
 };
+
+export type CourseWorldLockCopy = {
+  eyebrow: string;
+  hint: string;
+};
+
+const DEFAULT_LOCK_COPY: CourseWorldLockCopy = {
+  eyebrow: "Further along the path",
+  hint: "Complete the previous lesson to reveal this stop.",
+};
+
+const WORLD_LOCK_COPY: Partial<Record<CourseWorldTheme, CourseWorldLockCopy>> = {
+  shadow: {
+    eyebrow: "Restricted lesson",
+    hint: "Continue the investigation to earn clearance.",
+  },
+  archive: {
+    eyebrow: "Archive sealed",
+    hint: "Complete the previous record to break the seal.",
+  },
+  manuscript: {
+    eyebrow: "Sealed folio",
+    hint: "Follow the text to reveal the next page.",
+  },
+  cosmic: {
+    eyebrow: "Signal encrypted",
+    hint: "Reach this coordinate to decode the transmission.",
+  },
+  workshop: {
+    eyebrow: "Toolbox locked",
+    hint: "Finish the current build to open this station.",
+  },
+};
+
+export function courseWorldLockCopy(theme: CourseWorldTheme): CourseWorldLockCopy {
+  return WORLD_LOCK_COPY[theme] ?? DEFAULT_LOCK_COPY;
+}
 
 export function parseCourseAppearance(value: unknown): CourseAppearance {
   let candidate = value;

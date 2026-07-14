@@ -21,7 +21,7 @@ export default function ReadingCanvas({
   children: ReactNode;
 }) {
   return (
-    <article data-reading-variant={variant} className={`course-reading-surface relative overflow-hidden rounded-[1.6rem] border p-6 sm:p-9 ${variants[variant]}`}>
+    <article data-reading-variant={variant} className={`course-reading-surface lesson-reading-card relative overflow-hidden rounded-[1.6rem] border p-6 sm:p-9 ${variants[variant]}`}>
       {variant === "notebook" && <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: "linear-gradient(transparent 31px, rgba(82,106,140,.16) 32px)", backgroundSize: "100% 32px" }} aria-hidden="true" />}
       <div className="relative">
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-teal"><span className="grid h-8 w-8 place-items-center rounded-full border border-current/20"><AppIcon name={icon} className="h-4 w-4" /></span>{label}</div>

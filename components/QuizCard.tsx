@@ -47,8 +47,8 @@ export default function QuizCard({ card, onAnswered }: { card: QuizCardType; onA
   }
 
   return (
-    <article className="overflow-hidden rounded-[1.6rem] border border-dusk/25 bg-card shadow-card">
-      <header className="border-b border-line bg-dusk px-6 py-6 text-white sm:px-9">
+    <article className="lesson-quiz overflow-hidden rounded-[1.6rem] border border-dusk/25 bg-card shadow-card">
+      <header className="lesson-quiz-header border-b border-line bg-dusk px-6 py-6 text-white sm:px-9">
         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.17em] text-white/70"><AppIcon name="compass" className="h-4 w-4" />Decision moment</div>
         {card.type === "quiz_mcq" && <h2 className="display mt-4 text-[clamp(2.2rem,8vw,3.7rem)] leading-[0.96]">{card.question}</h2>}
         {card.type === "quiz_truefalse" && <><p className="mt-4 text-[10px] font-bold uppercase tracking-[0.15em] text-white/55">True or false?</p><h2 className="display mt-2 text-[clamp(2.1rem,8vw,3.5rem)] leading-[0.98]">{card.statement}</h2></>}

@@ -5,6 +5,8 @@ import styles from "./JourneyMap.module.css";
 import {
   COURSE_ACCENT_HEX,
   DEFAULT_COURSE_APPEARANCE,
+  courseWorldLockCopy,
+  type CourseWorldLockCopy,
   type CourseAppearance,
 } from "@/lib/course-appearance";
 
@@ -23,7 +25,7 @@ export interface JourneyModule {
   lessons: JourneyLesson[];
 }
 
-function LessonStop({ lesson, current, index }: { lesson: JourneyLesson; current: boolean; index: number }) {
+function LessonStop({ lesson, current, index, lockCopy }: { lesson: JourneyLesson; current: boolean; index: number; lockCopy: CourseWorldLockCopy }) {
   const future = !lesson.completed && !current;
   const state = lesson.completed ? "complete" : current ? "current" : "future";
   const content = <>
@@ -31,9 +33,9 @@ function LessonStop({ lesson, current, index }: { lesson: JourneyLesson; current
       <AppIcon name={lesson.completed ? "check" : current ? "compass" : "lock"} className="h-4 w-4" />
     </div>
     <div className={styles.lessonCard}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">{lesson.completed ? "Discovered" : current ? "Your current location" : "Further along the path"}</p>
-      <h3 className="mt-1 text-base font-semibold leading-snug text-ink sm:text-lg">{lesson.title}</h3>
-      <p className="mt-1 text-xs text-ink-soft">{lesson.cardCount} reading moment{lesson.cardCount === 1 ? "" : "s"}</p>
+      <p className={`${styles.stateLabel} text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft`}>{lesson.completed ? "Discovered" : current ? "Your current location" : lockCopy.eyebrow}</p>
+      <h3 className={`${styles.lessonTitle} mt-1 text-base font-semibold leading-snug text-ink sm:text-lg`}>{lesson.title}</h3>
+      {future ? <p className={`${styles.lockHint} mt-2 text-xs text-ink-soft`}>{lockCopy.hint}</p> : <p className="mt-1 text-xs text-ink-soft">{lesson.cardCount} reading moment{lesson.cardCount === 1 ? "" : "s"}</p>}
     </div>
   </>;
 
@@ -48,6 +50,7 @@ export default function JourneyMap({ modules, courseId, courseTitle, appearance 
   const firstIncomplete = modules.flatMap((module) => module.lessons).find((lesson) => !lesson.completed)?.id;
   const courseTheme = appearance.worldTheme ?? resolveWorldTheme(`${courseId}:${courseTitle}`);
   const accent = COURSE_ACCENT_HEX[appearance.accent];
+  const lockCopy = courseWorldLockCopy(courseTheme);
 
   if (modules.length === 0) return <div className="rounded-[1.5rem] border border-line bg-card px-6 py-12 text-center shadow-card"><p className="section-label">The map is being drawn</p><h2 className="display mt-3 text-3xl">Your first region will appear here.</h2></div>;
 
@@ -58,7 +61,7 @@ export default function JourneyMap({ modules, courseId, courseTitle, appearance 
         const progress = module.lessons.length > 0 ? Math.round((completed / module.lessons.length) * 100) : 0;
         return (
           <section key={module.id} className={styles.region} aria-labelledby={`region-${module.id}`}>
-            <div className="grid bg-pine text-white sm:grid-cols-[.8fr_1.2fr]">
+            <div className={`${styles.regionHeader} grid bg-pine text-white sm:grid-cols-[.8fr_1.2fr]`}>
               <CourseWorld seed={`${courseId}:${module.id}`} title={module.title} theme={courseTheme} accent={accent} progress={progress} mood={appearance.atmosphere === "quiet" ? "calm" : moduleIndex % 3 === 1 ? "dusk" : "calm"} className="min-h-36 sm:min-h-44" />
               <div className="flex flex-col justify-center p-5 sm:p-7">
                 <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-signal">Region {moduleIndex + 1} · {completed}/{module.lessons.length} discovered</p>
@@ -73,7 +76,7 @@ export default function JourneyMap({ modules, courseId, courseTitle, appearance 
                 <path className={styles.routeBase} pathLength="100" d="M40 0 C18 20 62 32 40 50 S18 78 40 100" />
                 <path className={styles.routeDone} pathLength="100" strokeDasharray="100" strokeDashoffset={100 - progress} d="M40 0 C18 20 62 32 40 50 S18 78 40 100" />
               </svg>
-              {module.lessons.map((lesson, index) => <LessonStop key={lesson.id} lesson={lesson} current={lesson.id === firstIncomplete} index={index} />)}
+              {module.lessons.map((lesson, index) => <LessonStop key={lesson.id} lesson={lesson} current={lesson.id === firstIncomplete} index={index} lockCopy={lockCopy} />)}
             </ol>
           </section>
         );

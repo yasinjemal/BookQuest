@@ -8,11 +8,25 @@ import {
 
 describe("course appearance", () => {
   it("keeps every shipped template valid and explicit", () => {
-    expect(COURSE_APPEARANCE_TEMPLATES).toHaveLength(6);
+    expect(COURSE_APPEARANCE_TEMPLATES).toHaveLength(7);
     for (const template of COURSE_APPEARANCE_TEMPLATES) {
       expect(parseCourseAppearance(template.appearance)).toEqual(template.appearance);
       expect(template.appearance.template).toBe(template.id);
     }
+  });
+
+  it("ships the shadow world as a complete bounded preset", () => {
+    const shadow = COURSE_APPEARANCE_TEMPLATES.find((item) => item.id === "shadow-files")!;
+    expect(shadow.appearance).toEqual({
+      template: "shadow-files",
+      worldTheme: "shadow",
+      typography: "modern",
+      surface: "noir",
+      accent: "crimson",
+      atmosphere: "full",
+      readingWidth: "focused",
+    });
+    expect(parseCourseAppearance(shadow.appearance)).toEqual(shadow.appearance);
   });
 
   it("falls back safely for missing, malformed, or untrusted settings", () => {
