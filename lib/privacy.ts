@@ -6,7 +6,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 4;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 5;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -203,6 +203,15 @@ export async function createAccountExport(userId: number) {
           FROM competency_claim_dispute_events event
           JOIN competency_claim_disputes dispute ON dispute.id=event.dispute_id
           WHERE dispute.learner_user_id=$1 ORDER BY event.occurred_at,event.id`, [userId]),
+        signedCredentials: await rows(client, `SELECT id,claim_version_id,space_id,
+          issuer_key_id,status,issued_at,revoked_at,compact_jws
+          FROM open_badge_credentials WHERE learner_user_id=$1
+          ORDER BY issued_at,id`, [userId]),
+        signedCredentialHistory: await rows(client, `SELECT event.open_badge_credential_id,
+          event.event_type,event.occurred_at
+          FROM open_badge_credential_events event
+          JOIN open_badge_credentials badge ON badge.id=event.open_badge_credential_id
+          WHERE badge.learner_user_id=$1 ORDER BY event.occurred_at,event.id`, [userId]),
       } : null,
       billing: await rows(client, "SELECT tx_ref, product, amount_cents, currency, provider, provider_ref, status, created_at FROM transactions WHERE user_id = $1 ORDER BY created_at", [userId]),
     };
@@ -304,6 +313,23 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
       [share.id, userId, erasedAt]
     );
   }
+  const activeSignedCredentials = (await client.query<{ id: string }>(
+    `SELECT id FROM open_badge_credentials
+     WHERE learner_user_id=$1 AND status='active' FOR UPDATE`,
+    [userId]
+  )).rows;
+  for (const badge of activeSignedCredentials) {
+    await client.query(
+      "UPDATE open_badge_credentials SET status='revoked',revoked_at=$2 WHERE id=$1",
+      [badge.id, erasedAt]
+    );
+    await client.query(
+      `INSERT INTO open_badge_credential_events
+        (open_badge_credential_id,event_type,actor_user_id,occurred_at)
+       VALUES ($1,'revoked',$2,$3)`,
+      [badge.id, userId, erasedAt]
+    );
+  }
   await client.query(
     `DELETE FROM passport_verification_events event
      USING passport_share_grants share
@@ -354,6 +380,7 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
     [userId, erasedAt, JSON.stringify({
       retained: ["pseudonymous_learning_evidence", "credential_history", "passport_claim_history", "structured_dispute_history", "consent_history", "financial_records"],
       withdrawnPassportShares: activePassportShares.length,
+      revokedSignedCredentials: activeSignedCredentials.length,
     })]
   );
 }

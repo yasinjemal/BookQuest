@@ -28,8 +28,13 @@
 | Keep sharing a corrected-but-wrong version | Verify and create shares only for the latest immutable claim version; never silently substitute a successor | Old-link and old-version denial tests |
 | Export another learner's achievement | Require authenticated ownership of the exact current claim and return one uniform unavailable result | Cross-user, manager and unknown-ID export tests |
 | Leak identity through a portable file | Use opaque URNs; omit learner name by default; never include email or numeric account ID | Default and explicit-name export tests |
-| Present unsigned metadata as a verified issuer credential | Mark the export and UI as unsigned; keep the signed Open Badges roadmap item open until managed keys, signature verification and status exist | Response header, UI copy and tracker gate |
+| Present unsigned metadata as a verified issuer credential | Mark the readable JSON-LD export and response as unsigned; issue cryptographic credentials only through the distinct RS256 VC-JWT workflow | Response header, UI copy and signed-format tests |
 | Export stale or revoked evidence | Reconcile the complete live credential/completion chain and require the latest claim version under shared locks at export time | Service eligibility and supersession tests |
+| Forge or alter a signed badge | RS256 Compact JWS; strict JOSE allowlist; public key selected by dereferenceable `kid`; duplicate JWT claims must match the validated credential | Signature, tamper and claim-consistency tests |
+| Leak issuer private keys | AES-256-GCM encryption at rest; public endpoint returns JWK without private parameters; key rows are immutable | Storage and public-key response tests |
+| Rotate a key across tenants or invalidate old badges | Require `assignments.manage` in the exact Space; retire rather than delete; keep retired public keys dereferenceable | Cross-role rotation and old-badge verification tests |
+| Enumerate learners through status | Opaque 256-bit status value stored as a digest; response contains status only; unknown values return a uniform 404 | Status-token and response-shape tests |
+| Verify after revocation or erasure | Live underlying evidence/account checks plus shared verification locks and exclusive terminal revocation lock | Badge revocation, credential revocation and erasure tests |
 
 ## Residual risks and production boundary
 

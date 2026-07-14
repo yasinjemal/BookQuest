@@ -1,0 +1,36 @@
+{
+  "recordedAt": "2026-07-14T13:52:04Z",
+  "phase": "Phase 4 early implementation",
+  "slice": "Signed Open Badges 3.0 VC-JWT issuance, verification and revocation",
+  "status": "implementation evidence; not production-ready and not a 1EdTech certification claim",
+  "profile": "bookquest-open-badges-3.0-vc-jwt-v1",
+  "verification": {
+    "focusedPostgres": { "files": 1, "tests": 21, "passed": true },
+    "fullPostgres": { "files": 29, "tests": 163, "passed": true },
+    "typecheck": true,
+    "productionBuild": true,
+    "productionDependencyAudit": { "passed": true, "vulnerabilities": 0 },
+    "browser": {
+      "authenticatedPassportRendered": true,
+      "signedIssuanceControlRendered": true,
+      "issuedCredentialAndRevocationControlRendered": true,
+      "mobileViewport": "390x844",
+      "desktopViewport": "1440x900",
+      "horizontalOverflow": false,
+      "consoleErrors": 0
+    }
+  },
+  "negativeCoverage": [
+    "forged and tampered Compact JWS rejected",
+    "cross-learner issuance and revocation denied uniformly",
+    "Space key rotation denied without assignments.manage",
+    "private issuer material never returned by the public key endpoint",
+    "retired public keys remain available for historical verification",
+    "unknown status identifiers do not enumerate credentials",
+    "source credential revocation blocks verification immediately",
+    "learner revocation is terminal",
+    "effective account erasure revokes active signed credentials",
+    "signed credential and lifecycle rows are immutable"
+  ],
+  "boundary": "Phase 3 remains PILOT/CLOSURE IN PROGRESS. Its Blacksteel pilot, independent penetration test, full-journey WCAG 2.2 AA assessment, production evidence, restore exercise and stakeholder acceptance remain mandatory before Phase 4 can be called production-ready."
+}

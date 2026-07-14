@@ -324,6 +324,25 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       resolutionCode: row.resolution_code,
       resultingClaimVersionId: row.resulting_claim_version_id,
     }));
+    const signedCredentials = (await client.query<{
+      id: string; claim_version_id: string; title: string; status: string;
+      issued_at: string; revoked_at: string | null;
+    }>(
+      `SELECT badge.id,badge.claim_version_id,version.title,badge.status,
+              badge.issued_at,badge.revoked_at
+       FROM open_badge_credentials badge
+       JOIN competency_claim_versions version ON version.id=badge.claim_version_id
+       WHERE badge.learner_user_id=$1
+       ORDER BY badge.issued_at DESC,badge.id DESC`,
+      [actorUserId],
+    )).rows.map((row) => ({
+      id: row.id,
+      claimVersionId: row.claim_version_id,
+      title: row.title,
+      status: row.status,
+      issuedAt: row.issued_at,
+      revokedAt: row.revoked_at,
+    }));
     return {
       passport: { id: passport.id, visibility: passport.visibility, createdAt: passport.created_at },
       claims,
@@ -331,6 +350,7 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       shares,
       accessHistory,
       disputes,
+      signedCredentials,
     };
   });
 }

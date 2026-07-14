@@ -2411,6 +2411,82 @@ CREATE TRIGGER competency_claim_dispute_events_no_write
   FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
 `;
 
+const OPEN_BADGE_ISSUANCE_SQL = `
+CREATE TABLE open_badge_issuer_keys (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  algorithm TEXT NOT NULL CHECK (algorithm='RS256'),
+  public_jwk JSONB NOT NULL,
+  private_key_ciphertext TEXT NOT NULL,
+  private_key_iv TEXT NOT NULL,
+  private_key_auth_tag TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','retired')),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  retired_at TEXT
+);
+CREATE UNIQUE INDEX idx_open_badge_one_active_key
+  ON open_badge_issuer_keys(space_id) WHERE status='active';
+
+CREATE TABLE open_badge_credentials (
+  id TEXT PRIMARY KEY,
+  learner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  claim_version_id TEXT NOT NULL UNIQUE REFERENCES competency_claim_versions(id) ON DELETE RESTRICT,
+  space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  issuer_key_id TEXT NOT NULL REFERENCES open_badge_issuer_keys(id) ON DELETE RESTRICT,
+  status_token_hash TEXT NOT NULL UNIQUE,
+  compact_jws TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  issued_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE INDEX idx_open_badge_credentials_learner
+  ON open_badge_credentials(learner_user_id, issued_at DESC);
+
+CREATE TABLE open_badge_credential_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  open_badge_credential_id TEXT NOT NULL REFERENCES open_badge_credentials(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('issued','revoked')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE OR REPLACE FUNCTION phase4_open_badge_credential_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Open Badge credentials are retained'; END IF;
+  IF OLD.status='active' AND NEW.status='revoked' AND NEW.revoked_at IS NOT NULL
+     AND ROW(NEW.id,NEW.learner_user_id,NEW.claim_version_id,NEW.space_id,
+             NEW.issuer_key_id,NEW.status_token_hash,NEW.compact_jws,NEW.issued_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.learner_user_id,OLD.claim_version_id,OLD.space_id,
+             OLD.issuer_key_id,OLD.status_token_hash,OLD.compact_jws,OLD.issued_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'Open Badge credential state is terminal';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER open_badge_credentials_lifecycle
+  BEFORE UPDATE OR DELETE ON open_badge_credentials
+  FOR EACH ROW EXECUTE FUNCTION phase4_open_badge_credential_guard();
+CREATE TRIGGER open_badge_credential_events_no_write
+  BEFORE UPDATE OR DELETE ON open_badge_credential_events
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+CREATE OR REPLACE FUNCTION phase4_open_badge_key_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Open Badge issuer keys are retained'; END IF;
+  IF OLD.status='active' AND NEW.status='retired' AND NEW.retired_at IS NOT NULL
+     AND ROW(NEW.id,NEW.space_id,NEW.algorithm,NEW.public_jwk,
+             NEW.private_key_ciphertext,NEW.private_key_iv,NEW.private_key_auth_tag,NEW.created_at)
+         IS NOT DISTINCT FROM
+         ROW(OLD.id,OLD.space_id,OLD.algorithm,OLD.public_jwk,
+             OLD.private_key_ciphertext,OLD.private_key_iv,OLD.private_key_auth_tag,OLD.created_at)
+  THEN RETURN NEW; END IF;
+  RAISE EXCEPTION 'Open Badge issuer key is immutable';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER open_badge_issuer_keys_lifecycle
+  BEFORE UPDATE OR DELETE ON open_badge_issuer_keys
+  FOR EACH ROW EXECUTE FUNCTION phase4_open_badge_key_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2430,6 +2506,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 12, name: "skill_passport_foundation", sql: SKILL_PASSPORT_FOUNDATION_SQL },
   { id: 13, name: "passport_access_history", sql: PASSPORT_ACCESS_HISTORY_SQL },
   { id: 14, name: "passport_claim_corrections", sql: PASSPORT_CLAIM_CORRECTIONS_SQL },
+  { id: 15, name: "open_badge_issuance", sql: OPEN_BADGE_ISSUANCE_SQL },
 ];
 
 /**

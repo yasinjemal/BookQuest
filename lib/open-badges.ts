@@ -1,6 +1,9 @@
+import crypto, { type JsonWebKey } from "crypto";
+import type { PoolClient } from "pg";
 import { z } from "zod";
-import { tx } from "./pg";
+import { one, tx } from "./pg";
 import { SkillPassportError } from "./skill-passport";
+import { authorizeStoredMembership } from "./spaces";
 
 export const OPEN_BADGES_CONTEXT = "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json";
 export const VC_CONTEXT = "https://www.w3.org/ns/credentials/v2";
@@ -36,6 +39,7 @@ const openBadgeDocumentSchema = z.object({
     id: z.literal(OPEN_BADGES_SCHEMA),
     type: z.literal("1EdTechJsonSchemaValidator2019"),
   })).min(1),
+  credentialStatus: z.object({ id: uri, type: z.literal("BookQuestCredentialStatus2026") }).optional(),
 }).strict();
 
 export type OpenBadgeDocument = z.infer<typeof openBadgeDocumentSchema>;
@@ -117,5 +121,264 @@ export async function createOpenBadgeDocument(userId: number, claimVersionId: st
     const validation = validateOpenBadgeDocument(document);
     if (!validation.valid) throw new Error(`Generated Open Badges document failed ${validation.profile}: ${validation.errors.join("; ")}`);
     return { profile: validation.profile, proof: "unsigned" as const, credential: document };
+  });
+}
+
+const digest = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
+const b64urlJson = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+
+function canonicalOrigin(requestOrigin: string) {
+  const configured = process.env.APP_URL?.trim();
+  const origin = new URL(configured || requestOrigin).origin;
+  if (process.env.NODE_ENV === "production" && !origin.startsWith("https://")) {
+    throw new Error("Open Badges issuance requires an HTTPS APP_URL");
+  }
+  return origin;
+}
+
+function keyEncryptionKey() {
+  const material = process.env.OPEN_BADGES_KEY_ENCRYPTION_KEY
+    || process.env.MFA_ENCRYPTION_KEY || process.env.GENERATION_SECRET;
+  if (!material && process.env.NODE_ENV === "production") {
+    throw new Error("OPEN_BADGES_KEY_ENCRYPTION_KEY or MFA_ENCRYPTION_KEY is required in production");
+  }
+  return crypto.createHash("sha256").update(material || "bookquest-local-open-badges-key").digest();
+}
+
+function encryptPrivateKey(privateKey: string) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", keyEncryptionKey(), iv);
+  const ciphertext = Buffer.concat([cipher.update(privateKey, "utf8"), cipher.final()]);
+  return { ciphertext: ciphertext.toString("base64"), iv: iv.toString("base64"), authTag: cipher.getAuthTag().toString("base64") };
+}
+
+function decryptPrivateKey(row: { private_key_ciphertext: string; private_key_iv: string; private_key_auth_tag: string }) {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", keyEncryptionKey(), Buffer.from(row.private_key_iv, "base64"));
+  decipher.setAuthTag(Buffer.from(row.private_key_auth_tag, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(row.private_key_ciphertext, "base64")), decipher.final()]).toString("utf8");
+}
+
+type IssuerKeyRow = {
+  id: string; public_jwk: JsonWebKey; private_key_ciphertext: string;
+  private_key_iv: string; private_key_auth_tag: string;
+};
+
+async function activeIssuerKey(client: PoolClient, spaceId: string): Promise<IssuerKeyRow> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [spaceId]);
+  const existing = (await client.query<IssuerKeyRow>(
+    `SELECT id,public_jwk,private_key_ciphertext,private_key_iv,private_key_auth_tag
+     FROM open_badge_issuer_keys WHERE space_id=$1 AND status='active' FOR UPDATE`,
+    [spaceId],
+  )).rows[0];
+  if (existing) return existing;
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const publicJwk = publicKey.export({ format: "jwk" });
+  const encrypted = encryptPrivateKey(privateKey.export({ format: "pem", type: "pkcs8" }).toString());
+  return (await client.query<IssuerKeyRow>(
+    `INSERT INTO open_badge_issuer_keys
+      (space_id,algorithm,public_jwk,private_key_ciphertext,private_key_iv,private_key_auth_tag)
+     VALUES ($1,'RS256',$2::jsonb,$3,$4,$5)
+     RETURNING id,public_jwk,private_key_ciphertext,private_key_iv,private_key_auth_tag`,
+    [spaceId, JSON.stringify(publicJwk), encrypted.ciphertext, encrypted.iv, encrypted.authTag],
+  )).rows[0];
+}
+
+function parseCompactJws(value: string) {
+  const parts = value.split(".");
+  if (parts.length !== 3 || parts.some((part) => !part)) return null;
+  try {
+    return {
+      header: JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8")) as Record<string, unknown>,
+      payload: JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as Record<string, unknown>,
+      signingInput: `${parts[0]}.${parts[1]}`,
+      signature: Buffer.from(parts[2], "base64url"),
+    };
+  } catch { return null; }
+}
+
+export async function issueSignedOpenBadge(userId: number, claimVersionId: string, requestOrigin: string) {
+  const portable = await createOpenBadgeDocument(userId, claimVersionId);
+  const origin = canonicalOrigin(requestOrigin);
+  return tx(async (client) => {
+    const eligible = (await client.query<{ space_id: string }>(
+      `SELECT assignment.space_id
+       FROM competency_claim_versions version
+       JOIN competency_claims claim ON claim.id=version.claim_id AND claim.user_id=$1
+       JOIN users learner ON learner.id=claim.user_id AND learner.account_status='active'
+       JOIN credential_records credential ON credential.id=version.credential_id
+         AND credential.status='active'
+         AND (credential.expires_at IS NULL OR credential.expires_at::timestamptz>now())
+       JOIN assignment_completion_events completion ON completion.id=version.completion_event_id
+         AND completion.decision='completed' AND completion.evidence_hash=version.evidence_hash
+       JOIN assignment_versions assignment_version ON assignment_version.id=version.assignment_version_id
+       JOIN space_assignments assignment ON assignment.id=assignment_version.assignment_id
+       WHERE version.id=$2 AND NOT EXISTS (
+         SELECT 1 FROM competency_claim_versions newer
+         WHERE newer.claim_id=claim.id AND newer.version>version.version)
+       FOR SHARE OF claim,version,credential,completion`,
+      [userId, claimVersionId],
+    )).rows[0];
+    if (!eligible) throw new SkillPassportError("Signed credential not found");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [eligible.space_id]);
+    const existing = (await client.query<{ id: string; compact_jws: string; issued_at: string }>(
+      `SELECT id,compact_jws,issued_at FROM open_badge_credentials
+       WHERE learner_user_id=$1 AND claim_version_id=$2 AND status='active'`,
+      [userId, claimVersionId],
+    )).rows[0];
+    if (existing) return { id: existing.id, compactJws: existing.compact_jws, issuedAt: existing.issued_at, proof: "VC-JWT RS256" as const };
+
+    const issuerKey = await activeIssuerKey(client, eligible.space_id);
+    const id = crypto.randomUUID();
+    const statusToken = crypto.randomBytes(32).toString("base64url");
+    const issuedAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString();
+    const credential: OpenBadgeDocument = {
+      ...portable.credential,
+      id: `${origin}/api/open-badges/credentials/${id}`,
+      issuer: { ...portable.credential.issuer, id: `${origin}/api/open-badges/issuers/${eligible.space_id}` },
+      validFrom: issuedAt,
+      credentialSubject: { ...portable.credential.credentialSubject, name: undefined },
+      credentialStatus: {
+        id: `${origin}/api/open-badges/status/${statusToken}`,
+        type: "BookQuestCredentialStatus2026",
+      },
+    };
+    const validation = validateOpenBadgeDocument(credential);
+    if (!validation.valid) throw new Error(`Signed credential failed profile validation: ${validation.errors.join("; ")}`);
+    const header = { alg: "RS256", kid: `${origin}/api/open-badges/keys/${issuerKey.id}`, typ: "JWT" };
+    const payload = {
+      iss: credential.issuer.id,
+      sub: credential.credentialSubject.id,
+      nbf: Math.floor(Date.parse(credential.validFrom) / 1000),
+      jti: credential.id,
+      ...(credential.validUntil ? { exp: Math.floor(Date.parse(credential.validUntil) / 1000) } : {}),
+      vc: credential,
+    };
+    const signingInput = `${b64urlJson(header)}.${b64urlJson(payload)}`;
+    const signature = crypto.sign("RSA-SHA256", Buffer.from(signingInput), decryptPrivateKey(issuerKey)).toString("base64url");
+    const compactJws = `${signingInput}.${signature}`;
+    await client.query(
+      `INSERT INTO open_badge_credentials
+        (id,learner_user_id,claim_version_id,space_id,issuer_key_id,status_token_hash,compact_jws,issued_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, userId, claimVersionId, eligible.space_id, issuerKey.id, digest(statusToken), compactJws, issuedAt],
+    );
+    await client.query(
+      `INSERT INTO open_badge_credential_events (open_badge_credential_id,event_type,actor_user_id,occurred_at)
+       VALUES ($1,'issued',$2,$3)`,
+      [id, userId, issuedAt],
+    );
+    return { id, compactJws, issuedAt, proof: "VC-JWT RS256" as const };
+  });
+}
+
+export async function publicOpenBadgeKey(keyId: string) {
+  const row = await one<{ public_jwk: JsonWebKey }>(
+    "SELECT public_jwk FROM open_badge_issuer_keys WHERE id=$1",
+    [keyId],
+  );
+  return row?.public_jwk ?? null;
+}
+
+export async function rotateOpenBadgeIssuerKey(actorUserId: number, spaceId: string) {
+  return tx(async (client) => {
+    await authorizeStoredMembership(actorUserId, spaceId, "assignments.manage", client);
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [spaceId]);
+    const active = (await client.query<{ id: string }>(
+      "SELECT id FROM open_badge_issuer_keys WHERE space_id=$1 AND status='active' FOR UPDATE",
+      [spaceId],
+    )).rows[0];
+    if (!active) throw new SkillPassportError("Issuer key not found");
+    const retiredAt = new Date().toISOString();
+    await client.query(
+      "UPDATE open_badge_issuer_keys SET status='retired',retired_at=$2 WHERE id=$1",
+      [active.id, retiredAt],
+    );
+    const replacement = await activeIssuerKey(client, spaceId);
+    return { retiredKeyId: active.id, keyId: replacement.id, algorithm: "RS256" as const, publicJwk: replacement.public_jwk, rotatedAt: retiredAt };
+  });
+}
+
+export async function verifySignedOpenBadge(compactJws: string, at = new Date()) {
+  if (compactJws.length > 100_000) return null;
+  const parsed = parseCompactJws(compactJws);
+  if (!parsed || parsed.header.alg !== "RS256" || parsed.header.typ !== "JWT"
+      || typeof parsed.header.kid !== "string" || Object.keys(parsed.header).some((key) => !["alg", "kid", "typ"].includes(key))) return null;
+  const keyId = parsed.header.kid.split("/").at(-1);
+  const jti = parsed.payload.jti;
+  const badgeId = typeof jti === "string" ? jti.split("/").at(-1) : null;
+  if (!keyId || !badgeId) return null;
+  return tx(async (client) => {
+    const row = (await client.query<{
+      id: string; compact_jws: string; status: string; public_jwk: JsonWebKey;
+      credential_status: string; credential_expires_at: string | null; completion_decision: string;
+      account_status: string; is_current: boolean;
+    }>(
+      `SELECT badge.id,badge.compact_jws,badge.status,key.public_jwk,
+            credential.status AS credential_status,credential.expires_at AS credential_expires_at,
+            completion.decision AS completion_decision,learner.account_status,
+            NOT EXISTS (SELECT 1 FROM competency_claim_versions newer
+              WHERE newer.claim_id=claim.id AND newer.version>version.version) AS is_current
+     FROM open_badge_credentials badge
+     JOIN open_badge_issuer_keys key ON key.id=badge.issuer_key_id
+     JOIN competency_claim_versions version ON version.id=badge.claim_version_id
+     JOIN competency_claims claim ON claim.id=version.claim_id
+     JOIN credential_records credential ON credential.id=version.credential_id
+     JOIN assignment_completion_events completion ON completion.id=version.completion_event_id
+     JOIN users learner ON learner.id=badge.learner_user_id
+     WHERE badge.id=$1 AND key.id=$2
+     FOR SHARE OF badge,key,version,claim,credential,completion,learner`,
+      [badgeId, keyId],
+    )).rows[0];
+    if (!row || row.compact_jws !== compactJws) return null;
+    const publicKey = crypto.createPublicKey({ key: row.public_jwk, format: "jwk" });
+    if (!crypto.verify("RSA-SHA256", Buffer.from(parsed.signingInput), publicKey, parsed.signature)) return null;
+    const credential = parsed.payload.vc as unknown;
+    const validation = validateOpenBadgeDocument(credential);
+    if (!validation.valid || !credential || typeof credential !== "object") return null;
+    const vc = credential as OpenBadgeDocument;
+    const nbf = Number(parsed.payload.nbf);
+    const exp = parsed.payload.exp === undefined ? null : Number(parsed.payload.exp);
+    const validUntil = vc.validUntil
+      ? Math.floor(Date.parse(vc.validUntil) / 1000)
+      : null;
+    if (parsed.payload.iss !== vc.issuer.id || parsed.payload.sub !== vc.credentialSubject.id
+        || parsed.payload.jti !== vc.id || nbf !== Math.floor(Date.parse(vc.validFrom) / 1000)
+        || exp !== validUntil) return null;
+    const live = row.status === "active" && row.credential_status === "active"
+      && row.completion_decision === "completed" && row.account_status === "active" && row.is_current
+      && nbf <= Math.floor(at.getTime() / 1000)
+      && (!exp || exp > Math.floor(at.getTime() / 1000))
+      && (!row.credential_expires_at || Date.parse(row.credential_expires_at) > at.getTime());
+    return { valid: live, status: live ? "active" as const : "revoked_or_expired" as const, credential: vc, keyId };
+  });
+}
+
+export async function openBadgeStatus(statusToken: string, at = new Date()) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(statusToken)) return null;
+  const row = await one<{ compact_jws: string }>(
+    "SELECT compact_jws FROM open_badge_credentials WHERE status_token_hash=$1",
+    [digest(statusToken)],
+  );
+  if (!row) return null;
+  const verified = await verifySignedOpenBadge(row.compact_jws, at);
+  return verified ? { active: verified.valid, status: verified.status } : { active: false, status: "invalid" as const };
+}
+
+export async function revokeSignedOpenBadge(userId: number, badgeId: string) {
+  return tx(async (client) => {
+    const row = (await client.query<{ id: string }>(
+      `SELECT id FROM open_badge_credentials
+       WHERE id=$1 AND learner_user_id=$2 AND status='active' FOR UPDATE`,
+      [badgeId, userId],
+    )).rows[0];
+    if (!row) throw new SkillPassportError("Signed credential not found");
+    const at = new Date().toISOString();
+    await client.query("UPDATE open_badge_credentials SET status='revoked',revoked_at=$2 WHERE id=$1", [badgeId, at]);
+    await client.query(
+      `INSERT INTO open_badge_credential_events (open_badge_credential_id,event_type,actor_user_id,occurred_at)
+       VALUES ($1,'revoked',$2,$3)`,
+      [badgeId, userId, at],
+    );
+    return { id: badgeId, status: "revoked" as const, revokedAt: at };
   });
 }

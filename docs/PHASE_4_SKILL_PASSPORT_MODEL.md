@@ -37,6 +37,12 @@
 - Open Badges document export — an authenticated, on-demand representation of one
   current claim. It adds no public profile or mutable export row; the server
   rebuilds and revalidates the exact evidence at download time.
+- `open_badge_issuer_keys` — one active encrypted RS256 key per issuing Space,
+  with immutable retired keys retained for historical verification.
+- `open_badge_credentials` — one learner-owned Compact JWS per immutable claim
+  version. It carries an opaque status URL and has a terminal active-to-revoked
+  lifecycle.
+- `open_badge_credential_events` — append-only issuance and revocation evidence.
 
 ## Eligibility invariant
 
@@ -89,6 +95,6 @@ after 90 days and deleted early by effective account erasure.
 
 This slice does not implement ranking, mastery/confidence scores, employability
 scores, hiring recommendations, public learner profiles, searchable handles,
-unsupported competency inference, QTI, signed Open Badges issuance, LTI, OAuth
-or webhooks. The first Open Badges export is an explicitly unsigned,
-profile-validated JSON-LD document and is not described as a verifiable issued badge.
+unsupported competency inference, QTI, LTI, OAuth or webhooks. A readable JSON-LD
+export remains explicitly unsigned; the separate `.jwt` workflow is an RS256
+VC-JWT with managed keys and live status.

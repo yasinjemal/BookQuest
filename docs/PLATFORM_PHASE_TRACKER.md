@@ -5,8 +5,8 @@ document-to-course app into an open, trusted and configurable learning platform.
 **Status:** active living roadmap  
 **Last updated:** 14 July 2026
 **Current phase:** Phase 3 closure and Phase 4 early implementation (parallel)
-**Next product slice:** private, evidence-backed Skill Passport sharing while
-the mandatory Blacksteel and independent-assessment gates remain open
+**Next product slice:** standards interoperability and stable competency versions
+while the mandatory Blacksteel and independent-assessment gates remain open
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -839,10 +839,16 @@ the language “implementation evidence,” not “production-ready.”
   download exactly one current claim through the versioned
   `bookquest-open-badges-3.0-jsonld-document-v1` profile. Identity is excluded by
   default, the complete evidence chain is frozen into the document and stale or
-  cross-user claims fail uniformly. The UI and response explicitly label the
-  document unsigned; cryptographic Open Badges issuance remains open.
+  cross-user claims fail uniformly. The UI and response explicitly distinguish
+  this unsigned readable document from the separately signed VC-JWT workflow.
 - [ ] Import/export compatible assessments using QTI 3.
-- [ ] Issue verifiable achievements using Open Badges 3.0.
+- [x] Issue verifiable achievements using Open Badges 3.0. Migration 15 stores
+  encrypted, rotatable Space-scoped RS256 keys, immutable learner-owned VC-JWTs,
+  digest-only opaque status identifiers and append-only lifecycle evidence.
+  Public verification enforces signature/profile/JWT-claim consistency and live
+  evidence status; learner revocation, source credential revocation, supersession
+  or erasure blocks future valid status. This is implementation evidence, not a
+  claim of 1EdTech product certification.
 - [ ] Add pilot-driven LTI 1.3/LTI Advantage integration.
 - [ ] Publish versioned APIs, scoped OAuth and signed idempotent webhooks.
 - [x] Add a verification API for opaque IDs, expiry, revocation and only
@@ -918,6 +924,20 @@ the language “implementation evidence,” not “production-ready.”
   TypeScript, the production build and dependency audit pass with zero reported
   vulnerabilities. Dated evidence is stored in
   `docs/evidence/phase4-portable-export-local-2026-07-14T130823Z.json`.
+- The signed-issuance contract uses the Open Badges 3.0 VC-JWT Compact JWS format,
+  the minimum interoperable RS256 algorithm, dereferenceable public-only JWKs,
+  Space-authorized key rotation and opaque live status. Negative tests cover
+  forgery, cross-user issuance/revocation, cross-role rotation, key/credential
+  mutation, underlying evidence revocation and terminal lifecycle transitions.
+  The exact contract is documented in `docs/PHASE_4_OPEN_BADGE_ISSUANCE.md`.
+- The signed-issuance regression passes 29/29 PostgreSQL 16 test files and
+  163/163 tests. It includes active-credential account-erasure revocation,
+  terminal signed-credential lifecycle enforcement and encrypted issuer-key
+  handling. TypeScript, the production build and dependency audit pass with zero
+  reported vulnerabilities. Authenticated Passport browser QA confirmed the
+  issuance and revocation controls at 390x844 and 1440x900 with no horizontal
+  overflow or console errors. Exact dated evidence is stored in
+  `docs/evidence/phase4-open-badge-issuance-local-2026-07-14T135204Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 

@@ -45,6 +45,10 @@ type PassportData = {
     createdAt: string; resolvedAt: string | null; resolutionCode: string | null;
     resultingClaimVersionId: string | null;
   }>;
+  signedCredentials: Array<{
+    id: string; claimVersionId: string; title: string; status: "active" | "revoked";
+    issuedAt: string; revokedAt: string | null;
+  }>;
 };
 
 export default function PassportPage() {
@@ -159,6 +163,39 @@ export default function PassportPage() {
     setBusy(null);
   }
 
+  async function issueSignedBadge(claimVersionId: string) {
+    setBusy(`badge:${claimVersionId}`); setNotice(null);
+    const response = await fetch("/api/passport/open-badges", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimVersionId }),
+    });
+    const result = await response.json();
+    if (!response.ok) setNotice(result.error ?? "The signed credential could not be issued.");
+    else {
+      const blob = new Blob([result.credential.compactJws], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `bookquest-open-badge-${result.credential.id}.jwt`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice("Your RS256-signed Open Badge was issued and downloaded. Its public status remains live and revocable.");
+      await load();
+    }
+    setBusy(null);
+  }
+
+  async function revokeSignedBadge(id: string) {
+    if (!window.confirm("Revoke this signed credential? Its signature remains auditable, but live verification will permanently report it unavailable.")) return;
+    setBusy(`revoke-badge:${id}`); setNotice(null);
+    const response = await fetch(`/api/passport/open-badges/${id}`, { method: "DELETE" });
+    const result = await response.json();
+    setNotice(response.ok ? "The signed credential is revoked." : result.error ?? "The signed credential could not be revoked.");
+    if (response.ok) await load();
+    setBusy(null);
+  }
+
   if (!data) return <Loading />;
   return <div className="page-wrap"><div className="content-measure max-w-6xl">
     <header className="relative overflow-hidden rounded-[1.8rem] bg-pine px-7 py-10 text-white shadow-pop sm:px-10 sm:py-14 lg:px-14">
@@ -178,12 +215,13 @@ export default function PassportPage() {
     </section>
 
     {currentClaims.some((claim) => claim.shareable) && <section className="mt-8 rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8" aria-labelledby="portable-export-heading">
-      <p className="section-label">Portable document</p>
-      <h2 id="portable-export-heading" className="display mt-2 text-3xl">Take a standards-shaped copy.</h2>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">Download an Open Badges 3.0 JSON-LD document for one current claim. Your name follows the identity choice in the sharing panel and remains excluded by default. This first export is profile-validated but unsigned, so it is not yet a cryptographically issued badge.</p>
+      <p className="section-label">Portable credentials</p>
+      <h2 id="portable-export-heading" className="display mt-2 text-3xl">Take proof that travels.</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">Issue an RS256-signed Open Badges 3.0 VC-JWT with a dereferenceable public key and live revocation status. The signed credential uses an opaque subject and never contains your name or email. You can also download a readable JSON-LD copy below.</p>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        {currentClaims.filter((claim) => claim.shareable).map((claim) => <a key={claim.claimVersionId} className="quiet-button justify-between text-sm" href={`/api/passport/exports/open-badges/${claim.claimVersionId}?includeLearnerName=${includeName ? "1" : "0"}`}><span className="truncate">{claim.title}</span><span>Download JSON</span></a>)}
+        {currentClaims.filter((claim) => claim.shareable).map((claim) => <div key={claim.claimVersionId} className="rounded-xl border border-line bg-paper p-4"><strong className="block truncate text-sm">{claim.title}</strong><div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" disabled={busy === `badge:${claim.claimVersionId}`} onClick={() => void issueSignedBadge(claim.claimVersionId)} className="btn-primary text-xs">{busy === `badge:${claim.claimVersionId}` ? "Signing…" : "Issue signed badge"}</button><a className="quiet-button justify-center text-xs" href={`/api/passport/exports/open-badges/${claim.claimVersionId}?includeLearnerName=${includeName ? "1" : "0"}`}>Download JSON</a></div></div>)}
       </div>
+      {data.signedCredentials.length > 0 && <div className="mt-6 border-t border-line pt-5"><h3 className="text-sm font-bold">Issued credentials</h3><div className="mt-3 grid gap-2">{data.signedCredentials.map((credential) => <div key={credential.id} className="flex flex-col gap-3 rounded-xl border border-line bg-card p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><strong className="block truncate text-sm">{credential.title}</strong><span className="mt-1 block text-xs text-ink-soft">Issued {new Date(credential.issuedAt).toLocaleString()} · {credential.status}</span></div>{credential.status === "active" && <button type="button" disabled={busy === `revoke-badge:${credential.id}`} onClick={() => void revokeSignedBadge(credential.id)} className="quiet-button text-xs">{busy === `revoke-badge:${credential.id}` ? "Revoking…" : "Revoke credential"}</button>}</div>)}</div></div>}
     </section>}
 
     {currentClaims.length > 0 && <section className="mt-10 grid gap-5 lg:grid-cols-[.9fr_1.1fr]" aria-labelledby="corrections-heading">

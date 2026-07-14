@@ -22,6 +22,8 @@ let learnerCredentialId: string;
 let otherCredentialId: string;
 let learnerClaimVersionId: string;
 let otherClaimVersionId: string;
+let learnerSignedBadge: Awaited<ReturnType<typeof import("../lib/open-badges").issueSignedOpenBadge>>;
+let learnerSignedStatusToken: string;
 let verifyRoute: typeof import("../app/api/passport/verify/route").GET;
 
 function verificationRequest(token: string) {
@@ -33,6 +35,7 @@ function verificationRequest(token: string) {
 describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DB;
+    process.env.OPEN_BADGES_KEY_ENCRYPTION_KEY = "passport-open-badges-test-key";
     pg = await import("../lib/pg");
     db = await import("../lib/db");
     spaces = await import("../lib/spaces");
@@ -122,6 +125,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
   afterAll(async () => {
     await pg?.pool.end();
     delete process.env.DATABASE_URL;
+    delete process.env.OPEN_BADGES_KEY_ENCRYPTION_KEY;
   });
 
   it("denies credential attachment by another learner, manager or outsider", async () => {
@@ -215,6 +219,88 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(openBadges.validateOpenBadgeDocument({})).toMatchObject({ valid: false, errors: expect.any(Array) });
   });
 
+  it("issues an RS256 VC-JWT with a public-only key and live status", async () => {
+    const [issued, duplicate] = await Promise.all([
+      openBadges.issueSignedOpenBadge(learnerId, learnerClaimVersionId, "https://bookquest.test"),
+      openBadges.issueSignedOpenBadge(learnerId, learnerClaimVersionId, "https://bookquest.test"),
+    ]);
+    learnerSignedBadge = issued;
+    expect(duplicate).toEqual(learnerSignedBadge);
+    expect(learnerSignedBadge).toMatchObject({
+      id: expect.any(String), proof: "VC-JWT RS256", compactJws: expect.stringMatching(/^[^.]+\.[^.]+\.[^.]+$/),
+    });
+    expect(await openBadges.issueSignedOpenBadge(learnerId, learnerClaimVersionId, "https://bookquest.test"))
+      .toEqual(learnerSignedBadge);
+    await expect(openBadges.issueSignedOpenBadge(otherLearnerId, learnerClaimVersionId, "https://bookquest.test"))
+      .rejects.toThrow(/claim export not found/i);
+    const [encodedHeader, encodedPayload] = learnerSignedBadge.compactJws.split(".");
+    const header = JSON.parse(Buffer.from(encodedHeader, "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+    expect(header).toEqual({
+      alg: "RS256", typ: "JWT", kid: expect.stringMatching(/^https:\/\/bookquest\.test\/api\/open-badges\/keys\//),
+    });
+    expect(JSON.stringify(header)).not.toContain('"d"');
+    expect(payload).toMatchObject({
+      iss: payload.vc.issuer.id, sub: payload.vc.credentialSubject.id,
+      jti: payload.vc.id, nbf: expect.any(Number), vc: { credentialStatus: { type: "BookQuestCredentialStatus2026" } },
+    });
+    expect(payload.vc.credentialSubject).not.toHaveProperty("name");
+    learnerSignedStatusToken = payload.vc.credentialStatus.id.split("/").at(-1)!;
+    expect(await openBadges.verifySignedOpenBadge(learnerSignedBadge.compactJws))
+      .toMatchObject({ valid: true, status: "active", credential: { id: payload.vc.id } });
+    expect(await openBadges.openBadgeStatus(learnerSignedStatusToken)).toEqual({ active: true, status: "active" });
+    const publicJwk = await openBadges.publicOpenBadgeKey(header.kid.split("/").at(-1));
+    expect(publicJwk).toMatchObject({ kty: "RSA", n: expect.any(String), e: expect.any(String) });
+    expect(publicJwk).not.toHaveProperty("d");
+    const storedKey = await pg.one<{ private_key_ciphertext: string }>(
+      "SELECT private_key_ciphertext FROM open_badge_issuer_keys WHERE id=$1",
+      [header.kid.split("/").at(-1)],
+    );
+    expect(storedKey?.private_key_ciphertext).not.toContain("PRIVATE KEY");
+    const accountExport = await privacy.createAccountExport(learnerId);
+    expect(accountExport).toMatchObject({
+      schemaVersion: 5,
+      skillPassport: { signedCredentials: [expect.objectContaining({ id: learnerSignedBadge.id, status: "active" })] },
+    });
+    expect(JSON.stringify(accountExport)).not.toContain("private_key_ciphertext");
+    const last = learnerSignedBadge.compactJws.at(-1) === "A" ? "B" : "A";
+    expect(await openBadges.verifySignedOpenBadge(`${learnerSignedBadge.compactJws.slice(0, -1)}${last}`)).toBeNull();
+    await expect(pg.q("UPDATE open_badge_issuer_keys SET public_jwk='{}'::jsonb"))
+      .rejects.toThrow(/immutable/i);
+    await expect(pg.q("UPDATE open_badge_credentials SET compact_jws='tampered' WHERE id=$1", [learnerSignedBadge.id]))
+      .rejects.toThrow(/terminal/i);
+  });
+
+  it("rotates issuer keys only for the exact Space while old credentials remain verifiable", async () => {
+    await expect(openBadges.rotateOpenBadgeIssuerKey(outsiderId, spaceId))
+      .rejects.toThrow(/space access denied/i);
+    await expect(openBadges.rotateOpenBadgeIssuerKey(learnerId, spaceId))
+      .rejects.toThrow(/space access denied/i);
+    const rotated = await openBadges.rotateOpenBadgeIssuerKey(ownerId, spaceId);
+    expect(rotated).toMatchObject({
+      retiredKeyId: expect.any(String), keyId: expect.any(String), algorithm: "RS256",
+      publicJwk: { kty: "RSA", n: expect.any(String), e: expect.any(String) },
+    });
+    expect(rotated.keyId).not.toBe(rotated.retiredKeyId);
+    expect(rotated.publicJwk).not.toHaveProperty("d");
+    expect(await openBadges.publicOpenBadgeKey(rotated.retiredKeyId)).toMatchObject({ kty: "RSA" });
+    expect(await openBadges.verifySignedOpenBadge(learnerSignedBadge.compactJws)).toMatchObject({ valid: true });
+  });
+
+  it("allows only the learner to revoke a signed credential and makes status terminal", async () => {
+    const badge = await openBadges.issueSignedOpenBadge(otherLearnerId, otherClaimVersionId, "https://bookquest.test");
+    const payload = JSON.parse(Buffer.from(badge.compactJws.split(".")[1], "base64url").toString("utf8"));
+    const statusToken = payload.vc.credentialStatus.id.split("/").at(-1);
+    await expect(openBadges.revokeSignedOpenBadge(learnerId, badge.id)).rejects.toThrow(/not found/i);
+    await expect(openBadges.revokeSignedOpenBadge(ownerId, badge.id)).rejects.toThrow(/not found/i);
+    expect(await openBadges.revokeSignedOpenBadge(otherLearnerId, badge.id)).toMatchObject({ status: "revoked" });
+    expect(await openBadges.openBadgeStatus(statusToken)).toEqual({ active: false, status: "revoked_or_expired" });
+    expect(await openBadges.verifySignedOpenBadge(badge.compactJws)).toMatchObject({ valid: false });
+    await expect(openBadges.revokeSignedOpenBadge(otherLearnerId, badge.id)).rejects.toThrow(/not found/i);
+    await expect(pg.q("UPDATE open_badge_credentials SET status='active',revoked_at=NULL WHERE id=$1", [badge.id]))
+      .rejects.toThrow(/terminal/i);
+  });
+
   it("denies sharing another learner's claim without revealing whether it exists", async () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
     await expect(passport.createPassportShare(learnerId, {
@@ -265,7 +351,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(await unknownResponse.json()).toEqual({ error: "Shared passport not found" });
     const exported = await privacy.createAccountExport(learnerId);
     expect(exported).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       skillPassport: { claims: [{ claim_version_id: learnerClaimVersionId }] },
     });
     expect(JSON.stringify(exported)).not.toContain("token_hash");
@@ -307,7 +393,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       learnerNameDisclosed: false,
     });
     const exportAfterAccess = await privacy.createAccountExport(learnerId);
-    expect(exportAfterAccess.schemaVersion).toBe(4);
+    expect(exportAfterAccess.schemaVersion).toBe(5);
     expect(exportAfterAccess.skillPassport?.verificationHistory).toEqual(expect.arrayContaining([
       expect.objectContaining({ share_id: share.id, claim_count: 1, learner_name_disclosed: 0 }),
     ]));
@@ -429,6 +515,8 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     ))!.count;
     await institutional.revokeCredential(ownerId, learnerCredentialId, "Underlying completion withdrawn");
     expect(await passport.verifyPassportShare(share.token)).toBeNull();
+    expect(await openBadges.verifySignedOpenBadge(learnerSignedBadge.compactJws)).toMatchObject({ valid: false });
+    expect(await openBadges.openBadgeStatus(learnerSignedStatusToken)).toEqual({ active: false, status: "revoked_or_expired" });
     expect((await pg.one<{ count: number }>(
       "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
       [share.id],
@@ -457,7 +545,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     ]));
     const privateExport = await privacy.createAccountExport(learnerId);
     expect(privateExport).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       skillPassport: {
         disputes: expect.arrayContaining([
           expect.objectContaining({ id: dispute.id, statement: expect.stringContaining("assignment record") }),
@@ -591,11 +679,24 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       claimVersionIds: [otherClaimVersionId],
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
+    const signedBadge = await openBadges.issueSignedOpenBadge(
+      otherLearnerId,
+      otherClaimVersionId,
+      "https://bookquest.test",
+    );
+    expect(await openBadges.verifySignedOpenBadge(signedBadge.compactJws))
+      .toMatchObject({ valid: true });
     expect(await passport.verifyPassportShare(share.token)).not.toBeNull();
     await privacy.scheduleAccountDeletion(otherLearnerId, new Date("2026-01-01T00:00:00.000Z"));
     expect(await privacy.processDueAccountErasures(new Date("2026-02-01T00:00:00.000Z")))
       .toContain(otherLearnerId);
     expect(await passport.verifyPassportShare(share.token)).toBeNull();
+    expect(await openBadges.verifySignedOpenBadge(signedBadge.compactJws))
+      .toMatchObject({ valid: false });
+    expect(await pg.one<{ status: string }>(
+      "SELECT status FROM open_badge_credentials WHERE id=$1",
+      [signedBadge.id],
+    )).toEqual({ status: "revoked" });
     expect(await pg.one<{ status: string }>(
       "SELECT status FROM passport_share_grants WHERE id=$1",
       [share.id],

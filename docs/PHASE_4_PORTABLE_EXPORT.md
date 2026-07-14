@@ -1,7 +1,7 @@
 # Phase 4 portable achievement export
 
 **Profile:** `bookquest-open-badges-3.0-jsonld-document-v1`  
-**Status:** early implementation; profile-validated document, deliberately unsigned
+**Status:** readable export remains unsigned; signed VC-JWT is a separate workflow
 
 ## Standards decision
 
@@ -33,8 +33,7 @@ or implementation of the Open Badges OAuth API.
 
 ## Important limitation
 
-The document currently has `proof=unsigned`. It is portable standards-shaped
-metadata, not yet a cryptographically issued Open Badge. A future signing slice
-must add managed issuer keys, external signature verification, key rotation and
-credential status/revocation before the roadmap item “Issue verifiable
-achievements using Open Badges 3.0” can close.
+The readable JSON-LD document has `proof=unsigned` and must not be presented as a
+signed credential. Learners can separately issue a Compact JWS using the managed
+RS256, public-key, status and revocation contract in
+`docs/PHASE_4_OPEN_BADGE_ISSUANCE.md`.
