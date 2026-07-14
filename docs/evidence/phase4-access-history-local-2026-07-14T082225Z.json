@@ -1,0 +1,72 @@
+{
+  "recordedAt": "2026-07-14T08:22:26.003Z",
+  "phase": 4,
+  "slice": "privacy-bounded Passport verification history",
+  "status": "early implementation evidence",
+  "productionReady": false,
+  "migration": {
+    "id": 13,
+    "name": "passport_access_history",
+    "direction": "forward-only"
+  },
+  "privacyContract": {
+    "recordsOnlySuccessfulVerification": true,
+    "fields": [
+      "internal share ID",
+      "disclosed claim count",
+      "learner-controlled name-disclosure flag",
+      "verification time",
+      "retention deadline"
+    ],
+    "prohibited": [
+      "recipient identity",
+      "IP address or digest",
+      "user agent",
+      "referrer",
+      "device",
+      "location",
+      "cookie"
+    ],
+    "retentionDays": 90,
+    "effectiveAccountErasureDeletesImmediately": true
+  },
+  "verification": {
+    "postgresVersion": 16,
+    "testFiles": { "passed": 29, "total": 29 },
+    "tests": { "passed": 155, "total": 155 },
+    "focusedPassportTests": { "passed": 13, "total": 13 },
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "productionDependencyAudit": {
+      "passed": true,
+      "vulnerabilities": 0
+    },
+    "browser": {
+      "authenticatedLearnerHistoryVisible": true,
+      "privacyCopyVisible": true,
+      "mobileViewport": "390x844",
+      "desktopViewport": "1440x900",
+      "horizontalOverflow": false,
+      "consoleErrors": 0
+    }
+  },
+  "negativeCoverage": [
+    "cross-learner history read denied",
+    "guessed token writes no event",
+    "expired token writes no event",
+    "revoked share writes no event",
+    "consent-withdrawn share writes no event",
+    "evidence-invalid share writes no event",
+    "retained event update rejected",
+    "expired event purged",
+    "effective account erasure deletes retained events"
+  ],
+  "phase3ClosureGatesStillOpen": [
+    "Blacksteel pilot",
+    "independent penetration test",
+    "full-journey WCAG 2.2 AA assessment",
+    "production evidence",
+    "restore exercise",
+    "stakeholder acceptance"
+  ]
+}

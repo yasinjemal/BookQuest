@@ -214,11 +214,111 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(await unknownResponse.json()).toEqual({ error: "Shared passport not found" });
     const exported = await privacy.createAccountExport(learnerId);
     expect(exported).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       skillPassport: { claims: [{ claim_version_id: learnerClaimVersionId }] },
     });
     expect(JSON.stringify(exported)).not.toContain("token_hash");
     expect(JSON.stringify(exported)).not.toContain(share.token);
+  });
+
+  it("records only privacy-minimal successful access in the learner's private history", async () => {
+    const share = await passport.createPassportShare(learnerId, {
+      claimVersionIds: [learnerClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    const before = await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
+      [share.id],
+    );
+    expect(before).toEqual({ count: 0 });
+    expect(await passport.verifyPassportShare(share.token)).not.toBeNull();
+    const event = await pg.one<{
+      id: string; claim_count: number; learner_name_disclosed: number;
+      occurred_at: string; retain_until: string;
+    }>(
+      `SELECT id,claim_count,learner_name_disclosed,occurred_at,retain_until
+       FROM passport_verification_events WHERE share_id=$1`,
+      [share.id],
+    );
+    expect(event).toMatchObject({
+      id: expect.any(String),
+      claim_count: 1,
+      learner_name_disclosed: 0,
+      occurred_at: expect.any(String),
+      retain_until: expect.any(String),
+    });
+    expect(Date.parse(event!.retain_until) - Date.parse(event!.occurred_at))
+      .toBe(90 * 86_400_000);
+    const privateView = await passport.getSkillPassport(learnerId);
+    expect(privateView.accessHistory[0]).toMatchObject({
+      shareId: share.id,
+      claimCount: 1,
+      learnerNameDisclosed: false,
+    });
+    const exportAfterAccess = await privacy.createAccountExport(learnerId);
+    expect(exportAfterAccess.schemaVersion).toBe(3);
+    expect(exportAfterAccess.skillPassport?.verificationHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({ share_id: share.id, claim_count: 1, learner_name_disclosed: 0 }),
+    ]));
+    await expect(passport.getSkillPassport(otherLearnerId, learnerId))
+      .rejects.toThrow(/passport not found/i);
+    const identifyingColumns = (await pg.q<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name='passport_verification_events'
+         AND column_name IN ('ip','ip_address','ip_hash','user_agent','referrer',
+                             'device','location','recipient_user_id','recipient_email')`,
+    )).rows;
+    expect(identifyingColumns).toEqual([]);
+    await expect(pg.q(
+      "UPDATE passport_verification_events SET claim_count=99 WHERE id=$1",
+      [event!.id],
+    )).rejects.toThrow(/append-only/i);
+  });
+
+  it("does not log guessed, expired, revoked, withdrawn or evidence-invalid access", async () => {
+    const baseline = (await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events",
+    ))!.count;
+    expect(await passport.verifyPassportShare("Z".repeat(43))).toBeNull();
+    const expired = await passport.createPassportShare(learnerId, {
+      claimVersionIds: [learnerClaimVersionId],
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect(await passport.verifyPassportShare(expired.token, new Date(Date.now() + 60_001))).toBeNull();
+    const revoked = await passport.createPassportShare(learnerId, {
+      claimVersionIds: [learnerClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await passport.revokePassportShare(learnerId, revoked.id);
+    expect(await passport.verifyPassportShare(revoked.token)).toBeNull();
+    const withdrawn = await passport.createPassportShare(learnerId, {
+      claimVersionIds: [learnerClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await passport.withdrawPassportShareConsent(learnerId, withdrawn.id);
+    expect(await passport.verifyPassportShare(withdrawn.token)).toBeNull();
+    expect((await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events",
+    ))!.count).toBe(baseline);
+  });
+
+  it("purges access history only after its 90-day retention deadline", async () => {
+    const share = await passport.createPassportShare(learnerId, {
+      claimVersionIds: [learnerClaimVersionId],
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    await pg.q(
+      `INSERT INTO passport_verification_events
+        (share_id,claim_count,learner_name_disclosed,occurred_at,retain_until)
+       VALUES ($1,1,0,'2026-01-01T00:00:00.000Z','2026-04-01T00:00:00.000Z')`,
+      [share.id],
+    );
+    const purged = await privacy.purgeExpiredOperationalData(new Date("2026-04-01T00:00:00.000Z"));
+    expect(purged.passport_access).toBe(1);
+    expect(await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
+      [share.id],
+    )).toEqual({ count: 0 });
   });
 
   it("blocks verification at expiry without requiring a maintenance write", async () => {
@@ -272,8 +372,16 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
     expect(await passport.verifyPassportShare(share.token)).not.toBeNull();
+    const loggedBeforeRevocation = (await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
+      [share.id],
+    ))!.count;
     await institutional.revokeCredential(ownerId, learnerCredentialId, "Underlying completion withdrawn");
     expect(await passport.verifyPassportShare(share.token)).toBeNull();
+    expect((await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
+      [share.id],
+    ))!.count).toBe(loggedBeforeRevocation);
   });
 
   it("withdraws every active share when account erasure becomes effective", async () => {
@@ -290,5 +398,9 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       "SELECT status FROM passport_share_grants WHERE id=$1",
       [share.id],
     )).toEqual({ status: "consent_withdrawn" });
+    expect(await pg.one<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_verification_events WHERE share_id=$1",
+      [share.id],
+    )).toEqual({ count: 0 });
   });
 });

@@ -2286,6 +2286,25 @@ CREATE TRIGGER passport_share_grants_lifecycle
   FOR EACH ROW EXECUTE FUNCTION phase4_passport_share_guard();
 `;
 
+const PASSPORT_ACCESS_HISTORY_SQL = `
+CREATE TABLE passport_verification_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  share_id TEXT NOT NULL REFERENCES passport_share_grants(id) ON DELETE RESTRICT,
+  claim_count INTEGER NOT NULL CHECK (claim_count BETWEEN 1 AND 20),
+  learner_name_disclosed SMALLINT NOT NULL CHECK (learner_name_disclosed IN (0,1)),
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  retain_until TEXT NOT NULL
+);
+CREATE INDEX idx_passport_verification_share_time
+  ON passport_verification_events(share_id, occurred_at DESC);
+CREATE INDEX idx_passport_verification_retention
+  ON passport_verification_events(retain_until);
+
+CREATE TRIGGER passport_verification_events_no_update
+  BEFORE UPDATE ON passport_verification_events
+  FOR EACH ROW EXECUTE FUNCTION phase4_passport_append_only_guard();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2303,6 +2322,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 10, name: "versioned_course_appearance", sql: COURSE_APPEARANCE_SQL },
   { id: 11, name: "studio_reversible_authoring", sql: STUDIO_REVERSIBLE_AUTHORING_SQL },
   { id: 12, name: "skill_passport_foundation", sql: SKILL_PASSPORT_FOUNDATION_SQL },
+  { id: 13, name: "passport_access_history", sql: PASSPORT_ACCESS_HISTORY_SQL },
 ];
 
 /**

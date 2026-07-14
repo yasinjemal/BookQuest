@@ -22,6 +22,10 @@
   decisions for the exact share.
 - `passport_share_status_events` — append-only `issued`, `revoked` and
   `consent_withdrawn` lifecycle evidence.
+- `passport_verification_events` — private, short-lived proof that a valid
+  selective link was opened. It stores only the share ID, disclosed claim count,
+  learner-controlled name-disclosure flag, verification time and 90-day
+  retention deadline. It never identifies or fingerprints the recipient.
 
 ## Eligibility invariant
 
@@ -54,6 +58,13 @@ selected claim is revalidated against live credential status and completion stat
 Revocation and consent withdrawal are separate learner actions with the same
 external effect: future verification is blocked. Shares cannot be renewed or
 reactivated; a learner creates a new grant and makes a new consent decision.
+
+Successful verification and event insertion run in one transaction under shared
+share and credential locks. Revocation and consent withdrawal take an exclusive
+share lock, so future access is blocked once the lifecycle change commits.
+Unknown or unavailable tokens never create an event. Retained events are visible
+only to their learner, included in that learner's private account export, purged
+after 90 days and deleted early by effective account erasure.
 
 ## Explicit non-goals
 

@@ -31,7 +31,8 @@ try {
   console.log(`Erased ${erased.length} due account(s).`);
   console.log(
     `Purged ${purged.sessions} sessions, ${purged.tokens} tokens, ` +
-      `${purged.rate_limits} rate-limit buckets.`
+      `${purged.rate_limits} rate-limit buckets and ` +
+      `${purged.passport_access} expired Passport access events.`
   );
 } finally {
   await pool.end();

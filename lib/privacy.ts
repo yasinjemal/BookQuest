@@ -6,7 +6,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 2;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 3;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -184,6 +184,12 @@ export async function createAccountExport(userId: number) {
           FROM passport_share_status_events event
           JOIN passport_share_grants share ON share.id=event.share_id
           WHERE share.user_id=$1 ORDER BY event.occurred_at,event.id`, [userId]),
+        verificationHistory: await rows(client, `SELECT event.share_id,event.claim_count,
+          event.learner_name_disclosed,event.occurred_at,event.retain_until
+          FROM passport_verification_events event
+          JOIN passport_share_grants share ON share.id=event.share_id
+          WHERE share.user_id=$1 AND event.retain_until::timestamptz > now()
+          ORDER BY event.occurred_at,event.id`, [userId]),
       } : null,
       billing: await rows(client, "SELECT tx_ref, product, amount_cents, currency, provider, provider_ref, status, created_at FROM transactions WHERE user_id = $1 ORDER BY created_at", [userId]),
     };
@@ -285,6 +291,12 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
       [share.id, userId, erasedAt]
     );
   }
+  await client.query(
+    `DELETE FROM passport_verification_events event
+     USING passport_share_grants share
+     WHERE event.share_id=share.id AND share.user_id=$1`,
+    [userId]
+  );
   // Published content is withdrawn and retained only as an archived evidentiary
   // version. Private content is destroyed. Original source text is always erased.
   await client.query(
@@ -349,7 +361,7 @@ export async function processDueAccountErasures(now = new Date()): Promise<numbe
   });
 }
 
-export async function purgeExpiredOperationalData() {
+export async function purgeExpiredOperationalData(now = new Date()) {
   const { rows } = await q(
     `WITH deleted_sessions AS (
        DELETE FROM sessions WHERE expires_at::timestamptz < now() RETURNING 1
@@ -358,11 +370,16 @@ export async function purgeExpiredOperationalData() {
         WHERE expires_at::timestamptz < now() - interval '1 day' RETURNING 1
      ), deleted_limits AS (
        DELETE FROM rate_limit_buckets WHERE expires_at::timestamptz < now() RETURNING 1
+     ), deleted_passport_access AS (
+       DELETE FROM passport_verification_events
+        WHERE retain_until::timestamptz <= $1::timestamptz RETURNING 1
      )
      SELECT
        (SELECT count(*)::int FROM deleted_sessions) AS sessions,
        (SELECT count(*)::int FROM deleted_tokens) AS tokens,
-       (SELECT count(*)::int FROM deleted_limits) AS rate_limits`
+       (SELECT count(*)::int FROM deleted_limits) AS rate_limits,
+       (SELECT count(*)::int FROM deleted_passport_access) AS passport_access`,
+    [now.toISOString()]
   );
-  return rows[0] as { sessions: number; tokens: number; rate_limits: number };
+  return rows[0] as { sessions: number; tokens: number; rate_limits: number; passport_access: number };
 }

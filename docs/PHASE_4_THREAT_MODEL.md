@@ -17,6 +17,10 @@
 | Leak identity by default | `include_learner_name` defaults false; never return email, user ID, learner key or membership | Response-shape tests |
 | Re-enable a withdrawn/revoked share | Terminal database transition guard; no renew/reactivate API | Direct SQL lifecycle test |
 | Cache disclosed claims | Verification API and page use `Cache-Control: no-store` and no indexing | Route/header test and page metadata |
+| Turn access history into recipient surveillance | Store only successful timestamp, claim count and learner-controlled name-disclosure flag; prohibit IP, user-agent, referrer, device and recipient identity fields | Schema and private-read tests |
+| Spam a learner's history through a closed or guessed link | Record only after full live verification; unknown, expired, revoked, withdrawn and evidence-invalid tokens append nothing; apply per-IP and per-share limits | Negative logging tests |
+| Race verification against revocation | Verify and append under a shared row lock while lifecycle transitions take an exclusive lock | Transactional concurrency contract and revocation tests |
+| Retain operational access records indefinitely | Set a 90-day deadline at write time and purge only expired rows through privacy maintenance | Retention test |
 
 ## Residual risks and production boundary
 

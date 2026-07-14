@@ -121,6 +121,11 @@ export const RATE_LIMITS = {
     limit: 120,
     windowSeconds: 60 * 60,
   },
+  passportVerifyShare: {
+    scope: "passport.verify.share",
+    limit: 60,
+    windowSeconds: 60 * 60,
+  },
   mfaUser: {
     scope: "auth.mfa.user",
     limit: 20,

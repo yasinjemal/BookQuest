@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import type { PoolClient } from "pg";
-import { pool, ready, tx } from "./pg";
+import { tx } from "./pg";
 
 const MAX_SHARE_DAYS = 30;
 const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -257,11 +257,32 @@ export async function getSkillPassport(actorUserId: number, passportOwnerUserId 
       createdAt: row.created_at,
       claimCount: Number(row.claim_count),
     }));
+    const accessHistory = (await client.query<{
+      id: string; share_id: string; claim_count: number;
+      learner_name_disclosed: number; occurred_at: string; retain_until: string;
+    }>(
+      `SELECT event.id,event.share_id,event.claim_count,event.learner_name_disclosed,
+              event.occurred_at,event.retain_until
+       FROM passport_verification_events event
+       JOIN passport_share_grants share ON share.id=event.share_id
+       WHERE share.user_id=$1 AND share.passport_id=$2
+         AND event.retain_until::timestamptz > now()
+       ORDER BY event.occurred_at DESC,event.id DESC LIMIT 50`,
+      [actorUserId, passport.id],
+    )).rows.map((row) => ({
+      id: row.id,
+      shareId: row.share_id,
+      claimCount: Number(row.claim_count),
+      learnerNameDisclosed: row.learner_name_disclosed === 1,
+      occurredAt: row.occurred_at,
+      retainUntil: row.retain_until,
+    }));
     return {
       passport: { id: passport.id, visibility: passport.visibility, createdAt: passport.created_at },
       claims,
       eligibleCredentials,
       shares,
+      accessHistory,
     };
   });
 }
@@ -345,77 +366,88 @@ export async function createPassportShare(userId: number, input: {
 
 export async function verifyPassportShare(token: string, at = new Date()) {
   if (!SHARE_TOKEN_PATTERN.test(token)) return null;
-  await ready();
-  const share = (await pool.query<{
-    id: string; passport_id: string; user_id: number; status: string;
-    include_learner_name: number; expires_at: string; learner_name: string; consent_decision: string | null;
-  }>(
-    `SELECT share.id,share.passport_id,share.user_id,share.status,
-            share.include_learner_name,share.expires_at,users.name AS learner_name,
-            consent.decision AS consent_decision
-     FROM passport_share_grants share
-     JOIN users ON users.id=share.user_id
-     LEFT JOIN LATERAL (
-       SELECT decision FROM passport_share_consent_events
-       WHERE share_id=share.id ORDER BY occurred_at DESC,id DESC LIMIT 1
-     ) consent ON true
-     WHERE share.token_hash=$1`,
-    [secretDigest(token)],
-  )).rows[0];
-  if (!share || share.status !== "active" || share.consent_decision !== "granted"
-      || Date.parse(share.expires_at) <= at.getTime()) return null;
+  return tx(async (client) => {
+    const share = (await client.query<{
+      id: string; passport_id: string; user_id: number; status: string;
+      include_learner_name: number; expires_at: string; learner_name: string;
+      consent_decision: string | null;
+    }>(
+      `SELECT share.id,share.passport_id,share.user_id,share.status,
+              share.include_learner_name,share.expires_at,users.name AS learner_name,
+              consent.decision AS consent_decision
+       FROM passport_share_grants share
+       JOIN users ON users.id=share.user_id
+       LEFT JOIN LATERAL (
+         SELECT decision FROM passport_share_consent_events
+         WHERE share_id=share.id ORDER BY occurred_at DESC,id DESC LIMIT 1
+       ) consent ON true
+       WHERE share.token_hash=$1
+       FOR SHARE OF share`,
+      [secretDigest(token)],
+    )).rows[0];
+    if (!share || share.status !== "active" || share.consent_decision !== "granted"
+        || Date.parse(share.expires_at) <= at.getTime()) return null;
 
-  const rows = (await pool.query<(ClaimRow & {
-    credential_status: string;
-    credential_expires_at: string | null;
-    completion_decision: string;
-    completion_participation_id: string;
-    completion_assignment_version_id: string;
-    completion_rule_version_id_live: string;
-    completion_evidence_hash: string;
-  })>(
-    `SELECT claim.id AS claim_id,version.id AS claim_version_id,version.version,
-            version.claim_type,version.title,version.statement,version.course_id,
-            version.course_version,version.assignment_version_id,
-            version.completion_rule_version_id,version.completion_event_id,
-            version.participation_id,version.credential_id,version.evidence_hash,
-            version.issued_at,version.created_at,credential.status AS credential_status,
-            credential.expires_at AS credential_expires_at,
-            completion.decision AS completion_decision,
-            completion.participation_id AS completion_participation_id,
-            completion.assignment_version_id AS completion_assignment_version_id,
-            completion.completion_rule_version_id AS completion_rule_version_id_live,
-            completion.evidence_hash AS completion_evidence_hash
-     FROM passport_share_claims selected
-     JOIN competency_claim_versions version ON version.id=selected.claim_version_id
-     JOIN competency_claims claim
-       ON claim.id=version.claim_id AND claim.passport_id=$2 AND claim.user_id=$3
-     JOIN credential_records credential ON credential.id=version.credential_id
-     JOIN assignment_completion_events completion ON completion.id=version.completion_event_id
-     WHERE selected.share_id=$1
-     ORDER BY selected.position`,
-    [share.id, share.passport_id, share.user_id],
-  )).rows;
-  const expected = (await pool.query<{ count: number }>(
-    "SELECT COUNT(*)::int AS count FROM passport_share_claims WHERE share_id=$1",
-    [share.id],
-  )).rows[0]?.count ?? 0;
-  if (!rows.length || rows.length !== Number(expected)) return null;
-  for (const row of rows) {
-    if (row.credential_status !== "active"
-      || (row.credential_expires_at && Date.parse(row.credential_expires_at) <= at.getTime())
-      || row.completion_decision !== "completed"
-      || row.completion_participation_id !== row.participation_id
-      || row.completion_assignment_version_id !== row.assignment_version_id
-      || row.completion_rule_version_id_live !== row.completion_rule_version_id
-      || row.completion_evidence_hash !== row.evidence_hash) return null;
-  }
-  return {
-    learnerName: share.include_learner_name === 1 ? share.learner_name : null,
-    expiresAt: share.expires_at,
-    verifiedAt: at.toISOString(),
-    claims: rows.map(mapClaim),
-  };
+    const rows = (await client.query<(ClaimRow & {
+      credential_status: string;
+      credential_expires_at: string | null;
+      completion_decision: string;
+      completion_participation_id: string;
+      completion_assignment_version_id: string;
+      completion_rule_version_id_live: string;
+      completion_evidence_hash: string;
+    })>(
+      `SELECT claim.id AS claim_id,version.id AS claim_version_id,version.version,
+              version.claim_type,version.title,version.statement,version.course_id,
+              version.course_version,version.assignment_version_id,
+              version.completion_rule_version_id,version.completion_event_id,
+              version.participation_id,version.credential_id,version.evidence_hash,
+              version.issued_at,version.created_at,credential.status AS credential_status,
+              credential.expires_at AS credential_expires_at,
+              completion.decision AS completion_decision,
+              completion.participation_id AS completion_participation_id,
+              completion.assignment_version_id AS completion_assignment_version_id,
+              completion.completion_rule_version_id AS completion_rule_version_id_live,
+              completion.evidence_hash AS completion_evidence_hash
+       FROM passport_share_claims selected
+       JOIN competency_claim_versions version ON version.id=selected.claim_version_id
+       JOIN competency_claims claim
+         ON claim.id=version.claim_id AND claim.passport_id=$2 AND claim.user_id=$3
+       JOIN credential_records credential ON credential.id=version.credential_id
+       JOIN assignment_completion_events completion ON completion.id=version.completion_event_id
+       WHERE selected.share_id=$1
+       ORDER BY selected.position
+       FOR SHARE OF credential`,
+      [share.id, share.passport_id, share.user_id],
+    )).rows;
+    const expected = (await client.query<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM passport_share_claims WHERE share_id=$1",
+      [share.id],
+    )).rows[0]?.count ?? 0;
+    if (!rows.length || rows.length !== Number(expected)) return null;
+    for (const row of rows) {
+      if (row.credential_status !== "active"
+        || (row.credential_expires_at && Date.parse(row.credential_expires_at) <= at.getTime())
+        || row.completion_decision !== "completed"
+        || row.completion_participation_id !== row.participation_id
+        || row.completion_assignment_version_id !== row.assignment_version_id
+        || row.completion_rule_version_id_live !== row.completion_rule_version_id
+        || row.completion_evidence_hash !== row.evidence_hash) return null;
+    }
+    const retainUntil = new Date(at.getTime() + 90 * 86_400_000).toISOString();
+    await client.query(
+      `INSERT INTO passport_verification_events
+        (share_id,claim_count,learner_name_disclosed,occurred_at,retain_until)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [share.id, rows.length, share.include_learner_name, at.toISOString(), retainUntil],
+    );
+    return {
+      learnerName: share.include_learner_name === 1 ? share.learner_name : null,
+      expiresAt: share.expires_at,
+      verifiedAt: at.toISOString(),
+      claims: rows.map(mapClaim),
+    };
+  });
 }
 
 async function transitionShare(

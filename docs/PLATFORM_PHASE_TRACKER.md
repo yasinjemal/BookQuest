@@ -825,9 +825,11 @@ the language “implementation evidence,” not “production-ready.”
   tokens are stored only as digests; terminal database transitions and live
   verification checks block future access after expiry, learner revocation,
   consent withdrawal, credential revocation or effective account erasure.
-- [ ] Add privacy-bounded recipient access history. Share consent/status history
-  is append-only in this slice, but recipient verification events are not yet
-  retained pending a minimisation and retention decision.
+- [x] Add privacy-bounded recipient access history. Migration 13 records only a
+  successful verification time, disclosed claim count and learner-controlled
+  name-disclosure flag. It stores no recipient identity or fingerprint, is
+  private to the learner, append-only until its 90-day purge deadline, removed
+  by effective account erasure and never written for unavailable tokens.
 - [ ] Add correction, dispute and portable export workflows.
 - [ ] Import/export compatible assessments using QTI 3.
 - [ ] Issue verifiable achievements using Open Badges 3.0.
@@ -866,6 +868,20 @@ the language “implementation evidence,” not “production-ready.”
   1440×900 found no horizontal overflow.
 - Exact dated evidence is stored in
   `docs/evidence/phase4-skill-passport-local-2026-07-14T075827Z.json`.
+- Forward-only migration 13 and the privacy-bounded verification-history
+  contract are implemented in `lib/migrations.ts`, `lib/skill-passport.ts`,
+  `lib/privacy.ts` and `docs/PHASE_4_ACCESS_HISTORY.md`. Verification and event
+  insertion share one transaction and row-lock boundary with terminal share
+  lifecycle changes; the public route adds a digest-derived per-share limiter
+  without storing the bearer token.
+- The local PostgreSQL 16 regression suite passes 29/29 files and 155/155 tests.
+  It proves successful minimal logging, learner-only reads, uniform no-write
+  behavior for guessed/expired/revoked/consent-withdrawn tokens, append-only
+  enforcement, 90-day purge, export inclusion without secrets and immediate
+  erasure deletion. TypeScript, the production build and dependency audit pass;
+  browser checks at 390×844 and 1440×900 found no horizontal overflow or errors.
+- Exact dated evidence for this slice is stored in
+  `docs/evidence/phase4-access-history-local-2026-07-14T082225Z.json`.
 - This is implementation evidence, not a production-readiness declaration. Phase
   3 remains **PILOT/CLOSURE IN PROGRESS** and retains every named closure gate.
 
