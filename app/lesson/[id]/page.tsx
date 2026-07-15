@@ -13,7 +13,7 @@ import type { Card } from "@/lib/schemas";
 import type { QuizAnswerResult } from "@/lib/learning-types";
 import { flushAnswerOutbox, setAnswerOutboxAccount, startAnswerOutboxSync, submitAnswer, submitLessonCompletion } from "@/lib/answer-outbox";
 import { COURSE_ACCENT_HEX, DEFAULT_COURSE_APPEARANCE, courseWorldLockCopy, type CourseAppearance } from "@/lib/course-appearance";
-import { buildLessonMoments, isLessonQuiz, lessonBlockMeta } from "@/lib/lesson-layout";
+import { buildLessonMoments, isLessonQuiz, lessonBlockMeta, lessonBlockMinutes, lessonBlockPurpose, lessonMomentGuidance } from "@/lib/lesson-layout";
 import styles from "./LessonPage.module.css";
 
 interface LessonData {
@@ -55,6 +55,9 @@ export default function LessonPage() {
   const [finished, setFinished] = useState<{ xp: number; streak: number; certificateId?: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [focusMode, setFocusMode] = useState(false);
+  const [routeRailOpen, setRouteRailOpen] = useState(true);
+  const [detailsRailOpen, setDetailsRailOpen] = useState(true);
 
   useEffect(() => {
     setLoadError(false);
@@ -121,18 +124,20 @@ export default function LessonPage() {
   const appearance = lesson.course.appearance ?? DEFAULT_COURSE_APPEARANCE;
   const currentMoment = moments[momentIndex];
   const nextMoment = moments[momentIndex + 1];
-  const lastVisibleCard = currentMoment.entries[currentMoment.entries.length - 1].cardIndex + 1;
-  const progress = Math.round((lastVisibleCard / lesson.cards.length) * 100);
+  const progress = Math.round(((momentIndex + 1) / moments.length) * 100);
+  const estimatedMinutes = currentMoment.entries.reduce((total, entry) => total + lessonBlockMinutes(lessonBlockMeta(entry.card, entry.cardIndex)), 0);
+  const showRouteRail = routeRailOpen && !focusMode;
+  const showDetailsRail = detailsRailOpen && !focusMode;
   const unansweredQuizIndexes = currentMoment.entries.filter((entry) => isLessonQuiz(entry.card) && results[entry.cardIndex] === undefined).map((entry) => entry.cardIndex);
   const lockCopy = courseWorldLockCopy(appearance.worldTheme);
 
   return (
-    <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
+    <CourseAppearanceFrame appearance={appearance} className={`course-page-bg min-h-dvh ${focusMode ? styles.focusMode : ""}`}>
       <header className={styles.progressHeader} aria-label="Lesson progress">
         <div className={styles.progressInner}>
           <Link href={`/course/${lesson.course.id}`} className={styles.exitButton} aria-label={`Exit lesson and return to ${lesson.course.title}`}><span aria-hidden="true">×</span></Link>
           <div className={styles.progressTitle}><span>{lesson.moduleTitle}</span><strong>{lesson.title}</strong></div>
-          <div className={styles.progressMeta}><span>Moment {momentIndex + 1} / {moments.length}</span><span>{progress}%</span></div>
+          <div className={styles.progressMeta}><span>Moment {momentIndex + 1} of {moments.length}</span><span>{progress}% of lesson</span></div>
           <div className={styles.progressTrack} role="progressbar" aria-label={`Progress through ${lesson.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
         </div>
       </header>
@@ -147,19 +152,25 @@ export default function LessonPage() {
         </div>
       </section>
 
-      <div className={styles.lessonShell}>
-        <aside className={styles.momentRail} aria-label="Lesson moments">
+      <div className={styles.lessonShell} data-route-open={showRouteRail} data-details-open={showDetailsRail}>
+        {showRouteRail && <aside className={styles.momentRail} aria-label="Lesson moments">
           <p className={styles.railLabel}>Lesson route</p>
           <ol>{moments.map((moment, index) => {
             const state = index < momentIndex ? "complete" : index === momentIndex ? "current" : "future";
-            return <li key={moment.id} data-state={state} aria-current={state === "current" ? "step" : undefined}><span>{state === "complete" ? <AppIcon name="check" className="h-3.5 w-3.5" /> : String(index + 1).padStart(2, "0")}</span><div><strong>{index === momentIndex ? "Now" : index < momentIndex ? "Read" : "Ahead"}</strong><p>{moment.title}</p></div></li>;
+            return <li key={moment.id} data-state={state} aria-current={state === "current" ? "step" : undefined}><span>{state === "complete" ? <AppIcon name="check" className="h-3.5 w-3.5" /> : String(index + 1).padStart(2, "0")}</span><div><strong>{index === momentIndex ? "Now" : index < momentIndex ? "Complete" : "Ahead"}</strong><p>{moment.title}</p></div></li>;
           })}</ol>
-        </aside>
+        </aside>}
 
         <main id="lesson-moment" className={styles.reader}>
+          <div className={styles.readerToolbar} aria-label="Reading view controls">
+            <button type="button" aria-pressed={focusMode} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "Exit focus" : "Focus mode"}</button>
+            <button type="button" aria-expanded={showRouteRail} onClick={() => setRouteRailOpen((value) => !value)} disabled={focusMode}>{showRouteRail ? "Hide route" : "Show route"}</button>
+            <button type="button" aria-expanded={showDetailsRail} onClick={() => setDetailsRailOpen((value) => !value)} disabled={focusMode}>{showDetailsRail ? "Hide details" : "Show details"}</button>
+          </div>
+
           <header className={styles.momentHeading}>
-            <div><p>Learning moment {String(momentIndex + 1).padStart(2, "0")}</p><h2 className="display">Read, connect, then test the idea.</h2></div>
-            <span>{currentMoment.entries.length} block{currentMoment.entries.length === 1 ? "" : "s"}</span>
+            <div><p>Learning moment {String(momentIndex + 1).padStart(2, "0")}</p><h2 className="display">{lessonMomentGuidance(currentMoment)}</h2></div>
+            <span>About {estimatedMinutes} min</span>
           </header>
 
           <div key={currentMoment.id} className="lesson-moment-grid slide-up">
@@ -171,7 +182,7 @@ export default function LessonPage() {
 
           {(nextMoment || lesson.nextLessonId) && <aside className={styles.nextPreview} aria-label={`${nextMoment?.title ?? "Next lesson"}, locked preview`}>
             <div className={styles.nextLock}><AppIcon name="lock" className="h-4 w-4" /></div>
-            <div><p>{lockCopy.eyebrow} · {nextMoment ? `Moment ${momentIndex + 2}` : "Next lesson"}</p><h2 aria-hidden="true">{nextMoment?.title ?? "A new region waits"}</h2><span className="screen-reader-text">{nextMoment?.title ?? "A new region waits"}</span><small>{nextMoment ? "Complete this moment to reveal what comes next." : lockCopy.hint}</small></div>
+            <div><p>{lockCopy.eyebrow} · {nextMoment ? `Moment ${momentIndex + 2}` : "Next lesson"}</p><h2 aria-hidden="true">{nextMoment?.title ?? "A new region waits"}</h2><span className="screen-reader-text">{nextMoment?.title ?? "A new region waits"}</span><small>{nextMoment ? `Finish Moment ${momentIndex + 1} to unlock this next step.` : lockCopy.hint}</small></div>
           </aside>}
 
           <nav className={styles.lessonNav} aria-label="Lesson navigation">
@@ -182,11 +193,11 @@ export default function LessonPage() {
           {finishError && <p role="alert" className={styles.finishError}>{finishError}</p>}
         </main>
 
-        <aside className={styles.utilityRail} aria-label="Moment details">
+        {showDetailsRail && <aside className={styles.utilityRail} aria-label="Moment details">
           <p className={styles.railLabel}>In this moment</p>
-          <ul>{currentMoment.entries.map((entry) => { const meta = lessonBlockMeta(entry.card, entry.cardIndex); return <li key={entry.cardIndex}><span data-kind={meta.kind}><AppIcon name={meta.kind === "quiz" ? "compass" : meta.kind === "challenge" ? "trail" : "bookmark"} className="h-3.5 w-3.5" /></span><div><strong>{meta.label}</strong><p>{meta.size} block</p></div></li>; })}</ul>
-          <div className={styles.utilityNote}><AppIcon name="spark" className="h-4 w-4" /><p><strong>Reading rhythm</strong><span>Short blocks are grouped by idea, not forced into identical cards.</span></p></div>
-        </aside>
+          <ul>{currentMoment.entries.map((entry) => { const meta = lessonBlockMeta(entry.card, entry.cardIndex); return <li key={entry.cardIndex}><span data-kind={meta.kind}><AppIcon name={meta.kind === "quiz" ? "compass" : meta.kind === "challenge" ? "trail" : "bookmark"} className="h-3.5 w-3.5" /></span><div><strong>{meta.label}</strong><p>{lessonBlockPurpose(meta.kind)}</p></div></li>; })}</ul>
+          <div className={styles.utilityNote}><AppIcon name="spark" className="h-4 w-4" /><p><strong>Moment pace</strong><span>{currentMoment.entries.length} connected idea{currentMoment.entries.length === 1 ? "" : "s"} · about {estimatedMinutes} min</span></p></div>
+        </aside>}
       </div>
     </CourseAppearanceFrame>
   );

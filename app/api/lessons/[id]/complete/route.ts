@@ -55,7 +55,7 @@ export async function POST(
         { status: 409 }
       );
     }
-    const { score, total, wrongCardIndexes } = evidence;
+    const { score, total, correctCardIndexes, wrongCardIndexes } = evidence;
     const possibleXp = 10 + score * 5;
 
     let completion: {
@@ -68,7 +68,10 @@ export async function POST(
       completion = { xp: 0, certificate: null, duplicate: true };
     } else {
       const xp = await completeLesson(user.id, lessonId, score, total, possibleXp);
-      for (const idx of wrongCardIndexes) await addReviewItem(user.id, lessonId, idx);
+      await Promise.all([
+        ...wrongCardIndexes.map((idx) => addReviewItem(user.id, lessonId, idx, { intervalDays: 1, lapse: true })),
+        ...correctCardIndexes.map((idx) => addReviewItem(user.id, lessonId, idx, { intervalDays: 3, lapse: false })),
+      ]);
 
       let certificate: { id: string } | null = null;
       const completed = await getCompletedLessonIds(user.id);

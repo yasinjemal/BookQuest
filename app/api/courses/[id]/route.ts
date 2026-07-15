@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   deleteCourse,
   canAccessCourse,
+  countDueReviewsForCourse,
   getCompletedLessonIds,
   getCourse,
   getCourseAppearanceJson,
+  getCourseMastery,
   listLessons,
   listModules,
 } from "@/lib/db";
@@ -31,8 +33,12 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const completed = await getCompletedLessonIds(user.id);
-  const moduleRows = await listModules(course.id);
+  const [completed, moduleRows, mastery, dueReviews] = await Promise.all([
+    getCompletedLessonIds(user.id),
+    listModules(course.id),
+    getCourseMastery(user.id, course.id),
+    countDueReviewsForCourse(user.id, course.id),
+  ]);
   const modules = await Promise.all(
     moduleRows.map(async (m) => ({
       ...m,
@@ -52,6 +58,12 @@ export async function GET(
       appearance: parseCourseAppearance(await getCourseAppearanceJson(course.id, isOwner)),
     },
     modules,
+    learning: {
+      conceptCount: mastery.length,
+      avgMastery: mastery.length > 0 ? mastery.reduce((sum, row) => sum + row.mastery, 0) / mastery.length : null,
+      weakest: mastery.slice(0, 3).map(({ concept, mastery: score }) => ({ concept, mastery: score })),
+      dueReviews,
+    },
   });
 }
 

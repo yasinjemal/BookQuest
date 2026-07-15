@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
+import CourseLearningPulse from "@/components/CourseLearningPulse";
 import CourseOverviewHero from "@/components/CourseOverviewHero";
 import JourneyMap, { type JourneyModule } from "@/components/JourneyMap";
 import LessonBlock from "@/components/LessonBlock";
@@ -25,10 +26,10 @@ const modules: JourneyModule[] = [
 ];
 
 const cards: Card[] = [
-  { type: "concept", title: "Influence hides in shrinking options", body: "Healthy persuasion leaves room for questions, time, and a genuine no. Pressure quietly removes those choices until one outcome feels inevitable." },
-  { type: "example", title: "Listen for the rush", body: "A request becomes pressure when delay is framed as disloyalty or a normal question is treated as mistrust." },
-  { type: "recap", title: "Three signals to keep", points: ["Time suddenly contracts", "Questions become disloyal", "One option dominates"] },
-  { type: "quiz_truefalse", statement: "Healthy persuasion leaves room for a genuine no.", answer: true, explanation: "Space to decline is one of the clearest differences between persuasion and coercive pressure." },
+  { type: "concept", intent: "idea", importance: "critical", density: "balanced", title: "Influence hides in shrinking options", body: "Healthy persuasion leaves room for questions, time, and a genuine no. Pressure quietly removes those choices until one outcome feels inevitable." },
+  { type: "example", intent: "example", importance: "supporting", density: "compact", title: "Listen for the rush", body: "A request becomes pressure when delay is framed as disloyalty or a normal question is treated as mistrust." },
+  { type: "recap", intent: "summary", importance: "core", density: "compact", title: "Three signals to keep", points: ["Time suddenly contracts", "Questions become disloyal", "One option dominates"] },
+  { type: "quiz_truefalse", intent: "quiz", importance: "core", density: "balanced", statement: "Healthy persuasion leaves room for a genuine no.", answer: true, explanation: "Space to decline is one of the clearest differences between persuasion and coercive pressure." },
 ];
 
 export default function LivingWorldDemoPage() {
@@ -41,16 +42,17 @@ export default function LivingWorldDemoPage() {
           {COURSE_THEME_PRESETS.map((preset, index) => <button key={preset.id} type="button" onClick={() => setPresetIndex(index)} aria-pressed={index === presetIndex} className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold ${index === presetIndex ? "border-[var(--course-accent)] bg-[var(--course-primary)] text-[var(--course-on-primary)]" : "border-line bg-card text-ink-soft"}`}>{preset.name}</button>)}
         </nav>
         <CourseOverviewHero courseId={`preview:${theme.id}`} title="The Architecture of Influence" description="Recognise manipulative pressure, protect your thinking time, and respond without surrendering your agency." appearance={theme.appearance} progress={32} completedLessons={3} totalLessons={9} moduleCount={3} sourceHref={null} />
+        <CourseLearningPulse courseId="living-world-preview" learning={{ conceptCount: 6, avgMastery: 0.68, dueReviews: 3, weakest: [{ concept: "manufactured urgency", mastery: 0.42 }, { concept: "hidden debt", mastery: 0.57 }] }} />
 
         <section id="course-journey" className="pt-16">
           <p className="section-label">Course atlas</p>
-          <h2 className="display mt-2 text-5xl">One product, six distinct worlds.</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">The navigation stays stable while palette, pattern, cards, icons, controls, and locked states adapt to the subject.</p>
+          <h2 className="display mt-2 text-5xl">Choose where to continue.</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-ink-soft">Revisit a completed lesson, continue your current region, or see which ideas are waiting ahead.</p>
           <div className="mt-7"><JourneyMap modules={modules} courseId="living-world-preview" courseTitle="The Architecture of Influence" appearance={theme.appearance} /></div>
         </section>
 
         <section className="pt-16">
-          <div className="mb-5 flex items-end justify-between gap-4"><div><p className="section-label">Lesson moment</p><h2 className="display mt-2 text-4xl">Editorial blocks, not a card conveyor belt.</h2></div><span className="hidden rounded-full border border-line bg-card px-3 py-2 text-xs text-ink-soft sm:block">4 semantic treatments</span></div>
+          <div className="mb-5 flex items-end justify-between gap-4"><div><p className="section-label">Lesson moment</p><h2 className="display mt-2 text-4xl">Notice the pattern, then test it.</h2></div><span className="hidden rounded-full border border-line bg-card px-3 py-2 text-xs text-ink-soft sm:block">About 5 min</span></div>
           <div className="lesson-moment-grid">{cards.map((card, index) => <LessonBlock key={index} card={card} cardIndex={index} onAnswered={() => undefined} />)}</div>
         </section>
       </main>

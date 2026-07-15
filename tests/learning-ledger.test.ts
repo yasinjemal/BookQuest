@@ -157,7 +157,7 @@ describe.skipIf(!TEST_DB)("learning evidence ledger", () => {
 
     expect(
       await data.getLessonEvidenceSummary(userId, lessonId, answerSessionId)
-    ).toEqual({ score: 1, total: 1, wrongCardIndexes: [] });
+    ).toEqual({ score: 1, total: 1, correctCardIndexes: [0], wrongCardIndexes: [] });
   });
 
   it("rejects mutation and deletion of historical events", async () => {

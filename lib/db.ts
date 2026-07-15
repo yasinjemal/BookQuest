@@ -929,17 +929,20 @@ export async function weeklyLeaderboard(limit = 20): Promise<
 export async function addReviewItem(
   userId: number,
   lessonId: number,
-  cardIndex: number
+  cardIndex: number,
+  options: { intervalDays?: number; lapse?: boolean } = {}
 ) {
-  const nextDue = new Date(Date.now() + 86_400_000).toISOString();
+  const intervalDays = Math.max(0.17, Math.min(60, options.intervalDays ?? 1));
+  const lapse = options.lapse === false ? 0 : 1;
+  const nextDue = new Date(Date.now() + intervalDays * 86_400_000).toISOString();
   await q(
     `INSERT INTO review_items (user_id, lesson_id, card_index, next_due, interval_days, lapses)
-     VALUES ($1, $2, $3, $4, 1, 0)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id, lesson_id, card_index) DO UPDATE SET
        next_due = $4,
-       interval_days = 1,
-       lapses = review_items.lapses + 1`,
-    [userId, lessonId, cardIndex, nextDue]
+       interval_days = $5,
+       lapses = review_items.lapses + $6`,
+    [userId, lessonId, cardIndex, nextDue, intervalDays, lapse]
   );
 }
 
@@ -1002,6 +1005,20 @@ export async function countDueReviews(userId: number): Promise<number> {
   const r = (await one(
     "SELECT COUNT(*)::int AS n FROM review_items WHERE user_id = $1 AND next_due::timestamptz <= now()",
     [userId]
+  )) as { n: number };
+  return r.n;
+}
+
+export async function countDueReviewsForCourse(userId: number, courseId: number): Promise<number> {
+  const r = (await one(
+    `SELECT COUNT(*)::int AS n
+     FROM review_items r
+     JOIN lessons l ON l.id = r.lesson_id
+     JOIN modules m ON m.id = l.module_id
+     WHERE r.user_id = $1
+       AND m.course_id = $2
+       AND r.next_due::timestamptz <= now()`,
+    [userId, courseId]
   )) as { n: number };
   return r.n;
 }
@@ -1727,7 +1744,7 @@ export async function getLessonEvidenceSummary(
   userId: number,
   lessonId: number,
   answerSessionId: string
-): Promise<{ score: number; total: number; wrongCardIndexes: number[] } | undefined> {
+): Promise<{ score: number; total: number; correctCardIndexes: number[]; wrongCardIndexes: number[] } | undefined> {
   const session = await getAnswerSession(userId, answerSessionId, "lesson");
   if (!session) return undefined;
   const expected = session.items.filter((item) => item.lessonId === lessonId);
@@ -1763,6 +1780,9 @@ export async function getLessonEvidenceSummary(
   return {
     score: rows.filter((row) => row.is_correct).length,
     total: rows.length,
+    correctCardIndexes: rows
+      .filter((row) => row.is_correct)
+      .map((row) => row.card_index),
     wrongCardIndexes: rows
       .filter((row) => !row.is_correct)
       .map((row) => row.card_index),

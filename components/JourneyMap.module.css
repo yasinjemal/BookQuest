@@ -45,8 +45,8 @@
 }
 
 .regionCopy > p {
-  color: var(--course-ambient);
-  font-size: 0.52rem;
+  color: var(--course-highlight-on-primary);
+  font-size: var(--course-type-label);
   font-weight: 850;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -63,7 +63,7 @@
   overflow: hidden;
   margin-top: 0.5rem;
   color: color-mix(in srgb, var(--course-on-primary) 68%, transparent);
-  font-size: 0.65rem;
+  font-size: var(--course-type-meta);
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -75,7 +75,7 @@
   gap: 0.35rem;
   margin-top: 0.55rem;
   color: color-mix(in srgb, var(--course-on-primary) 66%, transparent);
-  font-size: 0.56rem;
+  font-size: var(--course-type-label);
   font-weight: 700;
 }
 
@@ -141,7 +141,7 @@ a.lessonLink:hover {
 .current .landmark {
   border-color: var(--course-accent);
   background: var(--course-accent);
-  color: var(--course-accent-contrast);
+  color: var(--course-on-accent);
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--course-accent) 8%, transparent), 0 8px 22px color-mix(in srgb, var(--course-primary) 18%, transparent);
 }
 
@@ -159,14 +159,14 @@ a.lessonLink:hover {
 
 .stateLabel {
   color: var(--course-ink-soft);
-  font-size: 0.48rem;
+  font-size: var(--course-type-label);
   font-weight: 850;
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
 .current .stateLabel,
-.future .stateLabel { color: var(--course-accent); }
+.future .stateLabel { color: var(--course-accent-ink); }
 
 .lessonTitle {
   margin-top: 0.14rem;
@@ -180,7 +180,7 @@ a.lessonLink:hover {
 .lockHint {
   margin-top: 0.18rem;
   color: var(--course-ink-soft);
-  font-size: 0.56rem;
+  font-size: var(--course-type-label);
   line-height: 1.35;
 }
 
@@ -196,7 +196,7 @@ a.lessonLink:hover {
 
 .future .landmark {
   border-color: color-mix(in srgb, var(--course-accent) 38%, var(--course-line));
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
 }
 
 .future .lessonCard::after {
@@ -207,7 +207,7 @@ a.lessonLink:hover {
   background: color-mix(in srgb, var(--course-accent) 9%, transparent);
   color: color-mix(in srgb, var(--course-accent) 78%, var(--course-ink));
   content: "SEALED";
-  font-size: 0.39rem;
+  font-size: var(--course-type-label);
   font-weight: 850;
   letter-spacing: 0.16em;
   text-align: center;

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { BlockPresentationSchema } from "./block-presentation";
 
 const nonEmpty = z.string().trim().min(1);
 const legacyConcept = z.object({ type: z.literal("concept"), title: nonEmpty, body: nonEmpty });
@@ -176,6 +177,10 @@ export function validateBlockContent(
   }
   const value = result.data as Record<string, unknown>;
   const issues: string[] = [];
+  const presentation = BlockPresentationSchema.safeParse(content);
+  if (!presentation.success) {
+    issues.push(...presentation.error.issues.map((issue) => `${issue.path.join(".") || "presentation"}: ${issue.message}`));
+  }
   if (blockType === "image" && !value.decorative && !String(value.altText ?? "").trim()) {
     issues.push("Image requires alt text unless marked decorative");
   }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import AppIcon from "@/components/AppIcon";
 import CourseAppearanceEditor from "@/components/CourseAppearanceEditor";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
+import CourseLearningPulse, { type CourseLearningPulseData } from "@/components/CourseLearningPulse";
 import CourseOverviewHero from "@/components/CourseOverviewHero";
 import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
@@ -43,6 +44,7 @@ interface CourseData {
     public_slug: string;
   };
   modules: ModuleData[];
+  learning: CourseLearningPulseData;
 }
 
 export default function CoursePathPage() {
@@ -149,9 +151,11 @@ export default function CoursePathPage() {
           <CourseAppearanceEditor courseId={data.course.id} courseTitle={data.course.title} value={appearance} onSaved={(nextAppearance) => setData((current) => current ? { ...current, course: { ...current.course, appearance: nextAppearance } } : current)} />
         )}
 
+        {data.course.status === "ready" && <CourseLearningPulse courseId={data.course.id} learning={data.learning} />}
+
         <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
           <header className={styles.journeyHeading}>
-            <div><p>Course atlas</p><h2 id="journey-heading" className="display">Choose your next region.</h2><span>The active region opens wide. Completed and future regions stay compact so the whole journey remains visible.</span></div>
+            <div><p>Course atlas</p><h2 id="journey-heading" className="display">Choose your next region.</h2><span>Continue where you left off, revisit a completed lesson, or see what unlocks next.</span></div>
             <div><span>{data.modules.length} regions</span><span>{allLessons.length} lessons</span><Link href={`/course/${id}/read`}>Source document <AppIcon name="source" className="h-4 w-4" /></Link></div>
           </header>
           <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />

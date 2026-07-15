@@ -1,6 +1,7 @@
 "use client";
 
 import type { BlockType } from "@/lib/block-registry";
+import { BLOCK_DENSITIES, BLOCK_IMPORTANCE, BLOCK_INTENTS } from "@/lib/block-presentation";
 
 const HELP: Record<string, string> = {
   heading: "A short heading learners can scan.",
@@ -55,7 +56,16 @@ function SurveyQuestions({ values, onChange }: { values: Array<{ id: string; lab
 export default function StudioBlockFields({ blockType, content, onChange }: { blockType: BlockType; content: Record<string, unknown>; onChange: (next: Record<string, unknown>) => void }) {
   const update = (key: string, value: unknown) => onChange({ ...content, [key]: value });
   return <div className="space-y-4">
-    {Object.entries(content).filter(([key]) => key !== "type").map(([key, value]) => {
+    <fieldset className="rounded-xl border border-line bg-paper/45 p-3">
+      <legend className="px-1 text-xs font-semibold">Editorial treatment</legend>
+      <p className="mb-3 text-xs leading-5 text-ink-soft">Describe the learning purpose. BookQuest uses these choices to compose the moment without relying on card order.</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-xs font-semibold">Intent<select value={String(content.intent ?? "")} onChange={(event) => update("intent", event.target.value || undefined)} className="field mt-2"><option value="">Automatic</option>{BLOCK_INTENTS.map((value) => <option key={value} value={value}>{labelFor(value)}</option>)}</select></label>
+        <label className="text-xs font-semibold">Importance<select value={String(content.importance ?? "")} onChange={(event) => update("importance", event.target.value || undefined)} className="field mt-2"><option value="">Automatic</option>{BLOCK_IMPORTANCE.map((value) => <option key={value} value={value}>{labelFor(value)}</option>)}</select></label>
+        <label className="text-xs font-semibold">Density<select value={String(content.density ?? "")} onChange={(event) => update("density", event.target.value || undefined)} className="field mt-2"><option value="">Automatic</option>{BLOCK_DENSITIES.map((value) => <option key={value} value={value}>{labelFor(value)}</option>)}</select></label>
+      </div>
+    </fieldset>
+    {Object.entries(content).filter(([key]) => !["type", "intent", "importance", "density"].includes(key)).map(([key, value]) => {
       if (key === "questions" && blockType === "survey" && Array.isArray(value)) {
         return <SurveyQuestions key={key} values={value as Array<{ id: string; label: string; responseType: "text" | "scale" | "choice" }>} onChange={(next) => update(key, next)} />;
       }

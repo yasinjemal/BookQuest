@@ -34,5 +34,5 @@ export default function LessonBlock({
     content = <RichBlockCard card={card as RichCard} />;
   }
 
-  return <div className="lesson-block" data-block-kind={meta.kind} data-block-size={meta.size}>{content}</div>;
+  return <div className="lesson-block" data-block-kind={meta.kind} data-block-size={meta.size} data-block-importance={meta.importance}>{content}</div>;
 }

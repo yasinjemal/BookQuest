@@ -27,7 +27,7 @@ function LessonStop({ lesson, current, lockCopy }: { lesson: JourneyLesson; curr
     <div className={styles.lessonCard}>
       <p className={styles.stateLabel}>{lesson.completed ? "Discovered" : current ? "Current lesson" : lockCopy.eyebrow}</p>
       <h3 className={styles.lessonTitle}>{lesson.title}</h3>
-      {future ? <p className={styles.lockHint}>{lockCopy.hint}</p> : <p className={styles.cardCount}>{lesson.cardCount} learning block{lesson.cardCount === 1 ? "" : "s"}</p>}
+      {future ? <p className={styles.lockHint}>{lockCopy.hint}</p> : <p className={styles.cardCount}>{lesson.cardCount} lesson part{lesson.cardCount === 1 ? "" : "s"}</p>}
     </div>
   </>;
 

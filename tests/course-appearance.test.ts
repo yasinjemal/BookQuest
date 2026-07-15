@@ -31,6 +31,10 @@ describe("course appearance", () => {
         "--course-primary": theme.colors.primary,
         "--course-ambient": theme.colors.ambient,
       });
+      const tokens = courseThemeVariables(theme.appearance) as Record<string, string>;
+      for (const token of ["--course-on-page", "--course-on-canvas", "--course-on-raised", "--course-on-primary", "--course-on-secondary", "--course-on-ambient", "--course-highlight-on-primary", "--course-accent-ink", "--course-on-accent", "--course-success-surface", "--course-on-success-surface", "--course-error-surface", "--course-on-error-surface", "--course-locked-surface", "--course-on-locked", "--course-focus-ring"]) {
+        expect(tokens[token], `${theme.name} is missing ${token}`).toBeTruthy();
+      }
     }
   });
 

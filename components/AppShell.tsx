@@ -60,12 +60,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="pointer-events-none absolute -right-24 top-[-5rem] h-64 w-64 rounded-full bg-dusk/20 blur-3xl" />
       <Link href="/" className="relative mb-8 flex items-center gap-3 rounded-xl px-2 py-1.5 text-[15px] font-semibold tracking-[-0.02em] text-white">
         <span className="brand-mark text-white" aria-hidden="true" />
-          <span><span className="block">BookQuest</span><span className="mt-0.5 block text-[9px] font-medium uppercase tracking-[0.15em] text-white/65">Living story worlds</span></span>
+          <span><span className="block">BookQuest</span><span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.15em] text-white/65">Living story worlds</span></span>
       </Link>
       <Link href="/create" aria-current={activePath(pathname, "/create") ? "page" : undefined} className={`relative mb-7 flex min-h-12 items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-all ${activePath(pathname, "/create") ? "bg-signal text-ink shadow-[0_12px_28px_rgba(216,255,99,0.16)]" : "border border-white/12 bg-white/[0.06] text-white hover:bg-white/10"}`}>
         <span>New course</span><span className={`grid h-7 w-7 place-items-center rounded-full ${activePath(pathname, "/create") ? "bg-ink text-white" : "bg-white/10 text-signal"}`}><AppIcon name="create" className="h-3.5 w-3.5" /></span>
       </Link>
-        <p className="mb-2 px-3 text-[9px] font-bold uppercase tracking-[0.2em] text-white/65">Your library</p>
+        <p className="mb-2 px-3 text-xs font-bold uppercase tracking-[0.2em] text-white/65">Your library</p>
       <nav aria-label="Primary" className="space-y-1">
         {items.map((item) => {
           const active = activePath(pathname, item.href);
@@ -79,9 +79,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="relative mt-auto border-t border-white/10 pt-4">
         <Link href="/profile" className={`nav-item ${pathname.startsWith("/profile") ? "nav-item-active" : ""}`}>
           <span className="grid h-8 w-8 place-items-center rounded-full bg-white/10"><AppIcon name="account" className="h-4 w-4" /></span>
-          <span><span className="block text-sm">Account</span><span className="block text-[10px] font-normal text-white/65">Settings & privacy</span></span>
+          <span><span className="block text-sm">Account</span><span className="block text-xs font-normal text-white/65">Settings & privacy</span></span>
         </Link>
-        <div className="mt-3 flex gap-3 px-3 text-[10px] text-white/65">
+        <div className="mt-3 flex gap-3 px-3 text-xs text-white/65">
           <Link href="/pricing" className="hover:text-white">Pricing</Link>
           <Link href="/security" className="hover:text-white">Security</Link>
           <Link href="/accessibility" className="hover:text-white">Accessibility</Link>
@@ -103,7 +103,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {mobileItems.map((item) => {
         const active = activePath(pathname, item.href);
         const create = item.href === "/create";
-        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex min-h-16 min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold ${active ? "text-white" : "text-white/55"}`}>
+        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`relative flex min-h-16 min-w-0 flex-col items-center justify-center gap-0.5 text-xs font-semibold ${active ? "text-white" : "text-white/55"}`}>
           <span className={create ? `grid h-9 w-9 place-items-center rounded-full ${active ? "bg-signal text-ink" : "border border-signal/35 bg-signal/10 text-signal"}` : `grid h-8 w-10 place-items-center rounded-xl ${active ? "bg-white/10" : ""}`}><AppIcon name={item.icon} className="h-[18px] w-[18px]" /></span>
           <span className="max-w-full truncate px-0.5">{item.label}</span>
           {active && !create && <span className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-signal" aria-hidden="true" />}

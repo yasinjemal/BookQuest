@@ -1,9 +1,11 @@
 import { z } from "zod/v4";
 import { BLOCK_SCHEMAS } from "./block-registry";
+import { blockPresentationFields } from "./block-presentation";
 
 // ---------- Card types (what the lesson player renders) ----------
 
 export const ConceptCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("concept"),
   title: z.string().describe("Short heading for the idea, max 8 words"),
   body: z
@@ -14,6 +16,7 @@ export const ConceptCard = z.object({
 });
 
 export const ExampleCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("example"),
   title: z.string().describe("Short heading, max 8 words"),
   body: z
@@ -30,6 +33,7 @@ const conceptField = z
   );
 
 export const QuizMcqCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("quiz_mcq"),
   concept: conceptField,
   question: z.string().describe("A single clear question"),
@@ -44,6 +48,7 @@ export const QuizMcqCard = z.object({
 });
 
 export const QuizTrueFalseCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("quiz_truefalse"),
   concept: conceptField,
   statement: z.string().describe("A statement that is clearly true or false"),
@@ -52,6 +57,7 @@ export const QuizTrueFalseCard = z.object({
 });
 
 export const QuizFillBlankCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("quiz_fillblank"),
   concept: conceptField,
   sentence: z
@@ -67,6 +73,7 @@ export const QuizFillBlankCard = z.object({
 });
 
 export const RecapCard = z.object({
+  ...blockPresentationFields,
   type: z.literal("recap"),
   title: z.string().describe("Short heading, max 8 words"),
   points: z
@@ -81,15 +88,15 @@ export const Card = z.union([
   QuizTrueFalseCard,
   QuizFillBlankCard,
   RecapCard,
-  BLOCK_SCHEMAS.image,
-  BLOCK_SCHEMAS.audio_video,
-  BLOCK_SCHEMAS.story,
-  BLOCK_SCHEMAS.flashcard,
-  BLOCK_SCHEMAS.scenario,
-  BLOCK_SCHEMAS.practical_task,
-  BLOCK_SCHEMAS.discussion,
-  BLOCK_SCHEMAS.survey,
-  BLOCK_SCHEMAS.attestation,
+  BLOCK_SCHEMAS.image.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.audio_video.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.story.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.flashcard.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.scenario.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.practical_task.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.discussion.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.survey.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.attestation.extend(blockPresentationFields),
 ]);
 export type Card = z.infer<typeof Card>;
 

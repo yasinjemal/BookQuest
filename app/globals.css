@@ -160,7 +160,7 @@ h3 {
 
   /* Small status pills (PUBLISHED, %, Quiz, Learn…). */
   .chip {
-    @apply inline-flex items-center gap-1 text-[11px] font-bold uppercase
+    @apply inline-flex items-center gap-1 text-xs font-bold uppercase
       tracking-wide rounded-full px-2.5 py-1;
   }
 
@@ -192,7 +192,7 @@ h3 {
     @apply font-normal;
   }
   .section-label {
-    @apply text-[10px] font-bold uppercase tracking-[0.18em] text-ink-soft;
+    @apply text-xs font-bold uppercase tracking-[0.18em] text-ink-soft;
   }
   .panel {
     @apply rounded-[1.35rem] border border-line bg-card p-5 shadow-card sm:p-6;
@@ -230,7 +230,7 @@ h3 {
     transform: rotate(5deg);
   }
   .eyebrow {
-    @apply inline-flex items-center gap-2 rounded-full border border-current/15 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em];
+    @apply inline-flex items-center gap-2 rounded-full border border-current/15 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em];
   }
   .eyebrow::before {
     content: "";
@@ -301,11 +301,41 @@ h3 {
   --course-line-deep: #c8bead;
   --course-ink: #183029;
   --course-ink-soft: #6e776f;
+  --course-on-page: #183029;
+  --course-on-canvas: #183029;
+  --course-on-raised: #183029;
+  --course-on-muted: #6e776f;
   --course-raised: #fffdf8;
   --course-primary: #183029;
   --course-secondary: #526a8c;
   --course-ambient: #d8ff63;
   --course-on-primary: #ffffff;
+  --course-on-secondary: #ffffff;
+  --course-on-ambient: #183029;
+  --course-highlight-on-primary: #d8ff63;
+  --course-accent-ink: #183029;
+  --course-on-accent: #183029;
+  --course-success: #47795f;
+  --course-success-surface: #e5eee6;
+  --course-on-success: #ffffff;
+  --course-on-success-surface: #315c46;
+  --course-error: #b45346;
+  --course-error-surface: #f7e9e5;
+  --course-on-error: #ffffff;
+  --course-on-error-surface: #7b3028;
+  --course-locked-surface: #183029;
+  --course-on-locked: #ffffff;
+  --course-focus-ring: #248c8d;
+  --course-type-label: 0.75rem;
+  --course-type-meta: 0.8125rem;
+  --course-type-body-sm: 0.875rem;
+  --course-type-body: 1rem;
+  --course-type-reading: 1.0625rem;
+  --course-type-title-sm: clamp(1.65rem, 3vw, 2.25rem);
+  --course-type-title-md: clamp(1.9rem, 4vw, 2.8rem);
+  --course-type-display: clamp(3rem, 7vw, 5.4rem);
+  --course-leading-body: 1.6;
+  --course-leading-reading: 1.72;
   --course-card-radius: 1rem;
   --course-card-shadow: var(--shadow-card);
   --color-paper: var(--course-page);
@@ -323,6 +353,12 @@ h3 {
   --color-teal-deep: color-mix(in srgb, var(--course-accent) 76%, black);
   --color-signal: var(--course-ambient);
   --color-sky: color-mix(in srgb, var(--course-accent) 12%, var(--course-canvas));
+  --color-go: var(--course-success);
+  --color-go-deep: var(--course-on-success-surface);
+  --color-go-soft: var(--course-success-surface);
+  --color-no: var(--course-error);
+  --color-no-deep: var(--course-on-error-surface);
+  --color-no-soft: var(--course-error-surface);
   color: var(--course-ink);
   background-color: var(--course-page);
 }
@@ -463,7 +499,7 @@ h3 {
   color: color-mix(in srgb, var(--course-accent) 68%, transparent);
   content: "OBSERVATION FILE";
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.52rem;
+  font-size: var(--course-type-label);
   font-weight: 700;
   letter-spacing: 0.16em;
 }
@@ -485,14 +521,31 @@ h3 {
 }
 
 .course-appearance .course-accent-text {
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
 }
 
 .course-appearance .course-accent-button {
   background-color: var(--course-accent);
-  color: var(--course-accent-contrast);
+  color: var(--course-on-accent);
   box-shadow: 0 10px 28px color-mix(in srgb, var(--course-accent) 24%, transparent);
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.course-feedback-success {
+  border-color: color-mix(in srgb, var(--course-success) 30%, transparent);
+  background: var(--course-success-surface);
+  color: var(--course-on-success-surface);
+}
+
+.course-feedback-error {
+  border-color: color-mix(in srgb, var(--course-error) 30%, transparent);
+  background: var(--course-error-surface);
+  color: var(--course-on-error-surface);
+}
+
+.course-locked-surface {
+  background: var(--course-locked-surface);
+  color: var(--course-on-locked);
 }
 
 .course-appearance .course-accent-button:hover {
@@ -671,9 +724,9 @@ h3 {
 }
 
 .lesson-summary-list li > span {
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.66rem;
+  font-size: var(--course-type-label);
   font-weight: 800;
 }
 
@@ -694,14 +747,14 @@ h3 {
 }
 
 .rich-block-label {
-  color: var(--course-accent);
-  font-size: 0.56rem;
+  color: var(--course-accent-ink);
+  font-size: var(--course-type-label);
   font-weight: 800;
   letter-spacing: 0.17em;
   text-transform: uppercase;
 }
 
-.rich-block-label[data-tone="light"] { color: color-mix(in srgb, var(--course-ambient) 82%, white); }
+.rich-block-label[data-tone="light"] { color: var(--course-highlight-on-primary); }
 .rich-block-label[data-tone="muted"] { color: var(--course-ink-soft); }
 
 .rich-block {

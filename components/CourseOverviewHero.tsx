@@ -48,9 +48,9 @@ export default function CourseOverviewHero({
           </div>
         </div>
         <aside className={styles.progressCard} aria-label="Course progress">
-          <div className={styles.progressTop}><span>World discovered</span><strong>{progress}<small>%</small></strong></div>
+          <div className={styles.progressTop}><span>Course progress</span><strong>{progress}<small>%</small></strong></div>
           <div className={styles.track} role="progressbar" aria-label={`Progress through ${title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
-          <div className={styles.metrics}><span><strong>{completedLessons}</strong> complete</span><span><strong>{Math.max(0, totalLessons - completedLessons)}</strong> ahead</span><span><strong>{totalLessons}</strong> total</span></div>
+          <div className={styles.metrics}><span><strong>{completedLessons}</strong> lessons complete</span><span><strong>{Math.max(0, totalLessons - completedLessons)}</strong> remaining</span><span><strong>{totalLessons}</strong> total lessons</span></div>
         </aside>
       </div>
     </header>

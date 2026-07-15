@@ -38,7 +38,7 @@
 .progressTitle span {
   overflow: hidden;
   color: var(--course-ink-soft);
-  font-size: 0.56rem;
+  font-size: var(--course-type-label);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-overflow: ellipsis;
@@ -60,7 +60,7 @@
   gap: 1rem;
   color: var(--course-ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.56rem;
+  font-size: var(--course-type-label);
   font-weight: 750;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -121,8 +121,8 @@
 }
 
 .heroContent > p {
-  color: var(--course-ambient);
-  font-size: 0.58rem;
+  color: var(--course-highlight-on-primary);
+  font-size: var(--course-type-label);
   font-weight: 800;
   letter-spacing: 0.17em;
   text-transform: uppercase;
@@ -148,7 +148,7 @@
   background: rgb(0 0 0 / 0.12);
   padding: 0.35rem 0.62rem;
   color: color-mix(in srgb, var(--course-on-primary) 72%, transparent);
-  font-size: 0.61rem;
+  font-size: var(--course-type-label);
   font-weight: 650;
   backdrop-filter: blur(8px);
 }
@@ -163,6 +163,19 @@
   padding: clamp(2.5rem, 6vw, 5.5rem) 1.25rem 7rem;
 }
 
+.lessonShell[data-route-open="false"][data-details-open="true"] {
+  grid-template-columns: minmax(0, 1fr) 13rem;
+}
+
+.lessonShell[data-route-open="true"][data-details-open="false"] {
+  grid-template-columns: 12rem minmax(0, 1fr);
+}
+
+.lessonShell[data-route-open="false"][data-details-open="false"] {
+  width: min(100%, 56rem);
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .momentRail,
 .utilityRail {
   position: sticky;
@@ -172,8 +185,8 @@
 .railLabel,
 .momentHeading p,
 .nextPreview > div:nth-child(2) > p {
-  color: var(--course-accent);
-  font-size: 0.55rem;
+  color: var(--course-accent-ink);
+  font-size: var(--course-type-label);
   font-weight: 800;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -217,13 +230,13 @@
   background: var(--course-canvas);
   color: var(--course-ink-soft);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.5rem;
+  font-size: var(--course-type-label);
 }
 
 .momentRail li[data-state="current"] > span {
   border-color: var(--course-accent);
   background: var(--course-accent);
-  color: var(--course-accent-contrast);
+  color: var(--course-on-accent);
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--course-accent) 9%, transparent);
 }
 
@@ -231,7 +244,7 @@
 .utilityRail strong {
   display: block;
   color: var(--course-ink);
-  font-size: 0.64rem;
+  font-size: var(--course-type-meta);
 }
 
 .momentRail li p,
@@ -240,7 +253,7 @@
   overflow: hidden;
   margin-top: 0.18rem;
   color: var(--course-ink-soft);
-  font-size: 0.58rem;
+  font-size: var(--course-type-label);
   line-height: 1.35;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -249,6 +262,45 @@
 .reader {
   min-width: 0;
   scroll-margin-top: 6rem;
+}
+
+.readerToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.readerToolbar button {
+  min-height: 2.25rem;
+  border: 1px solid var(--course-line-deep);
+  border-radius: 999px;
+  background: var(--course-canvas);
+  padding: 0.45rem 0.72rem;
+  color: var(--course-ink-soft);
+  font-size: var(--course-type-label);
+  font-weight: 750;
+}
+
+.readerToolbar button:first-child,
+.readerToolbar button[aria-expanded="false"] {
+  color: var(--course-ink);
+}
+
+.readerToolbar button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--course-accent) 45%, var(--course-line));
+  background: color-mix(in srgb, var(--course-accent) 11%, var(--course-canvas));
+  color: var(--course-accent-ink);
+}
+
+.readerToolbar button:focus-visible {
+  outline: 3px solid var(--course-focus-ring);
+  outline-offset: 2px;
+}
+
+.readerToolbar button:disabled {
+  opacity: 0.38;
 }
 
 .momentHeading {
@@ -262,7 +314,7 @@
 .momentHeading h2 {
   max-width: 38rem;
   margin-top: 0.35rem;
-  font-size: clamp(1.85rem, 4vw, 2.7rem);
+  font-size: var(--course-type-title-md);
   line-height: 0.98;
 }
 
@@ -272,7 +324,7 @@
   border-radius: 999px;
   padding: 0.35rem 0.6rem;
   color: var(--course-ink-soft);
-  font-size: 0.58rem;
+  font-size: var(--course-type-label);
 }
 
 .nextPreview {
@@ -295,9 +347,9 @@
   right: -1.8rem;
   width: 6.5rem;
   background: color-mix(in srgb, var(--course-accent) 10%, transparent);
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
   content: "LOCKED";
-  font-size: 0.44rem;
+  font-size: var(--course-type-label);
   font-weight: 850;
   letter-spacing: 0.18em;
   text-align: center;
@@ -311,7 +363,7 @@
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--course-accent) 42%, var(--course-line));
   border-radius: 45% 55% 50% 50%;
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--course-accent) 6%, transparent);
 }
 
@@ -329,7 +381,7 @@
   display: block;
   margin-top: 0.35rem;
   color: var(--course-ink-soft);
-  font-size: 0.63rem;
+  font-size: var(--course-type-meta);
   line-height: 1.45;
 }
 
@@ -370,7 +422,7 @@
 .answerHint {
   margin-top: 0.65rem;
   color: var(--course-ink-soft);
-  font-size: 0.66rem;
+  font-size: var(--course-type-label);
   text-align: center;
 }
 
@@ -380,7 +432,7 @@
   background: var(--color-no-soft);
   padding: 0.8rem 1rem;
   color: var(--color-no);
-  font-size: 0.7rem;
+  font-size: var(--course-type-label);
   font-weight: 700;
   text-align: center;
 }
@@ -391,7 +443,7 @@
 
 .utilityRail li > span {
   border-color: color-mix(in srgb, var(--course-accent) 24%, var(--course-line));
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
 }
 
 .utilityNote {
@@ -402,7 +454,7 @@
   border-radius: 0.8rem;
   background: color-mix(in srgb, var(--course-accent) 5%, var(--course-canvas));
   padding: 0.8rem;
-  color: var(--course-accent);
+  color: var(--course-accent-ink);
 }
 
 .utilityNote strong,
@@ -412,19 +464,56 @@
 
 .utilityNote strong {
   color: var(--course-ink);
-  font-size: 0.62rem;
+  font-size: var(--course-type-meta);
 }
 
 .utilityNote span {
   margin-top: 0.25rem;
   color: var(--course-ink-soft);
-  font-size: 0.56rem;
+  font-size: var(--course-type-label);
   line-height: 1.5;
+}
+
+.focusMode .hero,
+.focusMode .heroContent {
+  min-height: 10rem;
+}
+
+.focusMode .heroWorld {
+  filter: saturate(0.45);
+  opacity: 0.16;
+}
+
+.focusMode .heroShade {
+  background: linear-gradient(90deg, var(--course-primary), color-mix(in srgb, var(--course-primary) 84%, transparent));
+}
+
+.focusMode .heroContent {
+  padding-block: 1.4rem;
+}
+
+.focusMode .heroContent h1 {
+  font-size: clamp(2.1rem, 5vw, 3.5rem);
+}
+
+.focusMode .heroContent > div {
+  display: none;
+}
+
+.focusMode .lessonShell {
+  padding-top: 2.5rem;
+}
+
+.focusMode .reader {
+  width: min(100%, 48rem);
+  margin-inline: auto;
 }
 
 @media (max-width: 64rem) {
   .lessonShell { grid-template-columns: 10rem minmax(0, 1fr); }
+  .lessonShell[data-route-open="false"] { grid-template-columns: minmax(0, 1fr); }
   .utilityRail { display: none; }
+  .readerToolbar button:last-child { display: none; }
 }
 
 @media (max-width: 44rem) {
@@ -440,6 +529,7 @@
   .momentRail li > span { margin-inline: auto; }
   .momentRail li > div { display: none; }
   .reader { margin-top: 0.65rem; }
+  .readerToolbar { justify-content: flex-start; }
   .momentHeading { align-items: start; }
   .momentHeading > span { display: none; }
   .lessonNav { position: fixed; z-index: 35; right: 0.7rem; bottom: max(0.7rem, env(safe-area-inset-bottom)); left: 0.7rem; border: 1px solid rgb(255 255 255 / 0.08); border-radius: 1rem; background: color-mix(in srgb, var(--course-primary) 94%, transparent); padding: 0.45rem; box-shadow: 0 18px 55px rgb(0 0 0 / 0.28); backdrop-filter: blur(16px); }

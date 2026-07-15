@@ -64,7 +64,24 @@ function template(type: BlockType): Record<string, unknown> {
     attestation: { type, statement: "I have read and understood this procedure.", consentLabel: "I confirm", required: true },
     recap: { type, heading: "Remember", points: ["First key point", "Second key point"] },
   };
-  return values[type];
+  const presentation: Record<BlockType, { intent: string; importance: string; density: string }> = {
+    explanation: { intent: "idea", importance: "core", density: "balanced" },
+    image: { intent: "media", importance: "supporting", density: "immersive" },
+    audio_video: { intent: "media", importance: "core", density: "immersive" },
+    story: { intent: "quote", importance: "supporting", density: "immersive" },
+    worked_example: { intent: "example", importance: "core", density: "balanced" },
+    flashcard: { intent: "glossary", importance: "supporting", density: "compact" },
+    multiple_choice: { intent: "quiz", importance: "critical", density: "immersive" },
+    true_false: { intent: "quiz", importance: "critical", density: "immersive" },
+    fill_in: { intent: "quiz", importance: "critical", density: "immersive" },
+    scenario: { intent: "case-study", importance: "critical", density: "immersive" },
+    practical_task: { intent: "challenge", importance: "critical", density: "immersive" },
+    discussion: { intent: "reflection", importance: "core", density: "balanced" },
+    survey: { intent: "reflection", importance: "core", density: "immersive" },
+    attestation: { intent: "creator-note", importance: "critical", density: "compact" },
+    recap: { intent: "summary", importance: "core", density: "immersive" },
+  };
+  return { ...values[type], ...presentation[type] };
 }
 
 function SaveState({ state }: { state: "saved" | "saving" | "unsaved" | "error" }) {

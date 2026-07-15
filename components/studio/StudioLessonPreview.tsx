@@ -3,6 +3,7 @@
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import LessonBlock from "@/components/LessonBlock";
 import { BLOCK_CHANNELS, type BlockType } from "@/lib/block-registry";
+import { BlockPresentationSchema } from "@/lib/block-presentation";
 import type { CourseAppearance } from "@/lib/course-appearance";
 import type { Card } from "@/lib/schemas";
 
@@ -10,12 +11,14 @@ interface PreviewBlock { id: string; blockType: BlockType; content: Record<strin
 
 function learnerCard(block: PreviewBlock): Card {
   const content = block.content;
-  if (block.blockType === "explanation") return { type: "concept", title: String(content.heading ?? content.title ?? "Key idea"), body: String(content.body ?? "") };
-  if (block.blockType === "worked_example") return { type: "example", title: String(content.title ?? "Worked example"), body: [content.problem, ...(Array.isArray(content.steps) ? content.steps : []), content.result].filter(Boolean).join("\n\n") };
-  if (block.blockType === "recap") return { type: "recap", title: String(content.heading ?? content.title ?? "Recap"), points: (content.points as string[]) ?? [] };
-  if (block.blockType === "multiple_choice") return { type: "quiz_mcq", question: String(content.question ?? ""), options: (content.options as string[]) ?? [], correct_index: Number(content.correctIndex ?? content.correct_index ?? 0), explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
-  if (block.blockType === "true_false") return { type: "quiz_truefalse", statement: String(content.statement ?? ""), answer: Boolean(content.answer), explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
-  if (block.blockType === "fill_in") return { type: "quiz_fillblank", sentence: String(content.prompt ?? content.sentence ?? ""), answer: String(content.answer ?? ""), accepted_answers: (content.acceptedAnswers as string[]) ?? (content.accepted_answers as string[]) ?? [], explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
+  const parsedPresentation = BlockPresentationSchema.safeParse(content);
+  const presentation = parsedPresentation.success ? parsedPresentation.data : {};
+  if (block.blockType === "explanation") return { ...presentation, type: "concept", title: String(content.heading ?? content.title ?? "Key idea"), body: String(content.body ?? "") };
+  if (block.blockType === "worked_example") return { ...presentation, type: "example", title: String(content.title ?? "Worked example"), body: [content.problem, ...(Array.isArray(content.steps) ? content.steps : []), content.result].filter(Boolean).join("\n\n") };
+  if (block.blockType === "recap") return { ...presentation, type: "recap", title: String(content.heading ?? content.title ?? "Recap"), points: (content.points as string[]) ?? [] };
+  if (block.blockType === "multiple_choice") return { ...presentation, type: "quiz_mcq", question: String(content.question ?? ""), options: (content.options as string[]) ?? [], correct_index: Number(content.correctIndex ?? content.correct_index ?? 0), explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
+  if (block.blockType === "true_false") return { ...presentation, type: "quiz_truefalse", statement: String(content.statement ?? ""), answer: Boolean(content.answer), explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
+  if (block.blockType === "fill_in") return { ...presentation, type: "quiz_fillblank", sentence: String(content.prompt ?? content.sentence ?? ""), answer: String(content.answer ?? ""), accepted_answers: (content.acceptedAnswers as string[]) ?? (content.accepted_answers as string[]) ?? [], explanation: String(content.explanation ?? ""), concept: String(content.concept ?? "") };
   return content as Card;
 }
 

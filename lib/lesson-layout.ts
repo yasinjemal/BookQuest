@@ -1,24 +1,15 @@
 import type { Card } from "./schemas";
+import type { BlockDensity, BlockImportance, BlockIntent } from "./block-presentation";
 
 export type LessonBlockSize = "compact" | "medium" | "wide";
-export type LessonBlockKind =
-  | "idea"
-  | "insight"
-  | "example"
-  | "summary"
-  | "quiz"
-  | "quote"
-  | "glossary"
-  | "case-study"
-  | "challenge"
-  | "reflection"
-  | "media"
-  | "creator-note";
+export type LessonBlockKind = BlockIntent;
 
 export type LessonBlockMeta = {
   kind: LessonBlockKind;
   label: string;
   size: LessonBlockSize;
+  importance: BlockImportance;
+  density: BlockDensity;
 };
 
 export type LessonMomentEntry = {
@@ -36,20 +27,81 @@ export function isLessonQuiz(card: Card) {
   return card.type === "quiz_mcq" || card.type === "quiz_truefalse" || card.type === "quiz_fillblank";
 }
 
-export function lessonBlockMeta(card: Card, cardIndex = 0): LessonBlockMeta {
+const intentLabels: Record<LessonBlockKind, string> = {
+  idea: "Key idea",
+  insight: "Insight",
+  example: "Example",
+  summary: "Summary",
+  quiz: "Knowledge check",
+  quote: "Story / quote",
+  glossary: "Glossary",
+  "case-study": "Case study",
+  challenge: "Challenge",
+  reflection: "Reflection",
+  media: "Source detail",
+  "creator-note": "Creator note",
+};
+
+const densitySizes: Record<BlockDensity, LessonBlockSize> = {
+  compact: "compact",
+  balanced: "medium",
+  immersive: "wide",
+};
+
+function fallbackBlockMeta(card: Card, cardIndex: number): Pick<LessonBlockMeta, "kind" | "size" | "importance" | "density"> {
   if (card.type === "concept") return cardIndex % 3 === 0
-    ? { kind: "idea", label: "Key idea", size: "medium" }
-    : { kind: "insight", label: "Insight", size: "medium" };
-  if (card.type === "example") return { kind: "example", label: "Example", size: "compact" };
-  if (card.type === "recap") return { kind: "summary", label: "Summary", size: "wide" };
-  if (isLessonQuiz(card)) return { kind: "quiz", label: "Knowledge check", size: "wide" };
-  if (card.type === "story") return { kind: "quote", label: "Story / quote", size: "wide" };
-  if (card.type === "flashcard") return { kind: "glossary", label: "Glossary", size: "compact" };
-  if (card.type === "scenario") return { kind: "case-study", label: "Case study", size: "wide" };
-  if (card.type === "practical_task") return { kind: "challenge", label: "Challenge", size: "wide" };
-  if (card.type === "discussion" || card.type === "survey") return { kind: "reflection", label: "Reflection", size: card.type === "discussion" ? "medium" : "wide" };
-  if (card.type === "image" || card.type === "audio_video") return { kind: "media", label: "Source detail", size: "wide" };
-  return { kind: "creator-note", label: "Creator note", size: "compact" };
+    ? { kind: "idea", size: "medium", importance: "core", density: "balanced" }
+    : { kind: "insight", size: "medium", importance: "core", density: "balanced" };
+  if (card.type === "example") return { kind: "example", size: "compact", importance: "supporting", density: "compact" };
+  if (card.type === "recap") return { kind: "summary", size: "wide", importance: "core", density: "immersive" };
+  if (isLessonQuiz(card)) return { kind: "quiz", size: "wide", importance: "critical", density: "immersive" };
+  if (card.type === "story") return { kind: "quote", size: "wide", importance: "supporting", density: "immersive" };
+  if (card.type === "flashcard") return { kind: "glossary", size: "compact", importance: "supporting", density: "compact" };
+  if (card.type === "scenario") return { kind: "case-study", size: "wide", importance: "critical", density: "immersive" };
+  if (card.type === "practical_task") return { kind: "challenge", size: "wide", importance: "critical", density: "immersive" };
+  if (card.type === "discussion" || card.type === "survey") return { kind: "reflection", size: card.type === "discussion" ? "medium" : "wide", importance: "core", density: card.type === "discussion" ? "balanced" : "immersive" };
+  if (card.type === "image" || card.type === "audio_video") return { kind: "media", size: "wide", importance: "supporting", density: "immersive" };
+  return { kind: "creator-note", size: "compact", importance: "supporting", density: "compact" };
+}
+
+export function lessonBlockMeta(card: Card, cardIndex = 0): LessonBlockMeta {
+  const fallback = fallbackBlockMeta(card, cardIndex);
+  const kind = card.intent ?? fallback.kind;
+  const density = card.density ?? fallback.density;
+  const importance = card.importance ?? fallback.importance;
+  const size = card.density ? densitySizes[density] : importance === "critical" ? "wide" : fallback.size;
+  return { kind, label: intentLabels[kind], size, importance, density };
+}
+
+export function lessonBlockPurpose(kind: LessonBlockKind) {
+  const purposes: Record<LessonBlockKind, string> = {
+    idea: "Core concept",
+    insight: "Worth remembering",
+    example: "Applied context",
+    summary: "Quick recap",
+    quiz: "Retrieval practice",
+    quote: "Story lens",
+    glossary: "Term to learn",
+    "case-study": "Applied decision",
+    challenge: "Try it yourself",
+    reflection: "Pause and reflect",
+    media: "Visual source",
+    "creator-note": "From the creator",
+  };
+  return purposes[kind];
+}
+
+export function lessonBlockMinutes(meta: LessonBlockMeta) {
+  return meta.density === "compact" ? 1 : meta.density === "balanced" ? 2 : 3;
+}
+
+export function lessonMomentGuidance(moment: LessonMoment) {
+  const kinds = moment.entries.map((entry) => lessonBlockMeta(entry.card, entry.cardIndex).kind);
+  if (kinds.includes("quiz")) return "Retrieve the idea before moving on.";
+  if (kinds.includes("challenge") || kinds.includes("case-study")) return "Apply the idea in a realistic decision.";
+  if (kinds.includes("reflection")) return "Pause, connect, and make the idea your own.";
+  if (kinds.includes("summary")) return "Collect the signals worth carrying forward.";
+  return "Read, connect, and build the next idea.";
 }
 
 export function lessonCardTitle(card: Card) {
@@ -89,7 +141,8 @@ export function buildLessonMoments(cards: Card[]): LessonMoment[] {
   };
 
   cards.forEach((card, cardIndex) => {
-    if (standaloneTypes.has(card.type)) {
+    const meta = lessonBlockMeta(card, cardIndex);
+    if (standaloneTypes.has(card.type) || (meta.size === "wide" && (card.importance === "critical" || card.density === "immersive"))) {
       flush();
       entries = [{ card, cardIndex }];
       flush();

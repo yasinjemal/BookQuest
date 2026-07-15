@@ -52,7 +52,7 @@ export default function RichBlockCard({ card }: { card: RichCard }) {
   if (card.type === "scenario") return (
     <article className="rich-block rich-block-case overflow-hidden border border-dusk/25 bg-card">
       <div className="bg-dusk px-5 py-4 text-white sm:px-6"><BlockLabel tone="light">Case study</BlockLabel><p className="mt-3 text-sm leading-6 text-white/82">{card.context}</p></div>
-      <div className="p-5 sm:p-6"><h2 className="display text-[clamp(1.9rem,5vw,2.8rem)] leading-none">{card.decisionPrompt}</h2>{card.options && <ol className="mt-5 grid gap-2 sm:grid-cols-2">{card.options.map((option, index) => <li key={option} className="flex gap-3 rounded-xl border border-line bg-paper/55 p-3 text-sm leading-5"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-dusk text-[10px] font-bold text-white">{index + 1}</span>{option}</li>)}</ol>}{card.guidance && <details className="mt-5 rounded-xl bg-sky/45 p-4"><summary className="text-sm font-semibold">Consider the guidance</summary><p className="mt-3 text-sm leading-6 text-ink-soft">{card.guidance}</p></details>}</div>
+      <div className="p-5 sm:p-6"><h2 className="display text-[clamp(1.9rem,5vw,2.8rem)] leading-none">{card.decisionPrompt}</h2>{card.options && <ol className="mt-5 grid gap-2 sm:grid-cols-2">{card.options.map((option, index) => <li key={option} className="flex gap-3 rounded-xl border border-line bg-paper/55 p-3 text-sm leading-5"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-dusk text-xs font-bold text-white">{index + 1}</span>{option}</li>)}</ol>}{card.guidance && <details className="mt-5 rounded-xl bg-sky/45 p-4"><summary className="text-sm font-semibold">Consider the guidance</summary><p className="mt-3 text-sm leading-6 text-ink-soft">{card.guidance}</p></details>}</div>
     </article>
   );
 
@@ -60,7 +60,7 @@ export default function RichBlockCard({ card }: { card: RichCard }) {
     <article className="rich-block rich-block-challenge border border-amber/40 bg-[color-mix(in_srgb,var(--course-accent)_7%,var(--course-canvas))] p-5 sm:p-6">
       <div className="flex items-start gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber text-ink"><AppIcon name="trail" className="h-4 w-4" /></span><div><BlockLabel tone="muted">Challenge</BlockLabel><h2 className="display mt-1 text-3xl leading-none">{card.title}</h2></div></div>
       <ol className="mt-5 grid gap-3 sm:grid-cols-2">{card.instructions.map((step, index) => <li key={step} className="flex gap-3 border-t border-amber/25 pt-3 text-sm leading-5"><span className="font-mono text-xs text-rose">{String(index + 1).padStart(2, "0")}</span><span>{step}</span></li>)}</ol>
-      <div className="mt-5 border-t border-amber/25 pt-4 text-sm leading-6"><strong className="block text-[9px] uppercase tracking-[0.15em] text-ink-soft">Accessible alternative</strong><span className="mt-1 block">{card.submissionAlternative}</span></div>
+      <div className="mt-5 border-t border-amber/25 pt-4 text-sm leading-6"><strong className="block text-xs uppercase tracking-[0.13em] text-ink-soft">Accessible alternative</strong><span className="mt-1 block">{card.submissionAlternative}</span></div>
     </article>
   );
 

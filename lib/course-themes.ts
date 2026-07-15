@@ -163,10 +163,32 @@ const cardShadow: Record<CourseCardTreatment, string> = {
   soft: "0 18px 50px color-mix(in srgb, var(--course-primary) 8%, transparent)",
 };
 
+function luminance(hex: string) {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+    .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrastRatio(first: string, second: string) {
+  const [light, dark] = [luminance(first), luminance(second)].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function bestForeground(background: string, candidates: string[]) {
+  return [...candidates].sort((first, second) => contrastRatio(background, second) - contrastRatio(background, first))[0];
+}
+
+function preferredForeground(backgrounds: string[], preferred: string, fallback: string) {
+  return backgrounds.every((background) => contrastRatio(background, preferred) >= 4.5) ? preferred : fallback;
+}
+
 export function courseThemeVariables(value?: CourseAppearance | null): CSSProperties {
   const appearance = parseCourseAppearance(value ?? DEFAULT_COURSE_APPEARANCE);
   const theme = resolveCourseThemeDefinition(appearance);
   const surface = COURSE_SURFACE_TOKENS[appearance.surface];
+  const accent = COURSE_ACCENT_HEX[appearance.accent];
+  const accentInk = preferredForeground([surface.page, surface.canvas, surface.raised], accent, surface.ink);
+  const highlightOnPrimary = preferredForeground([theme.colors.primary], theme.colors.ambient, theme.colors.onPrimary);
   return {
     "--course-page": surface.page,
     "--course-canvas": surface.canvas,
@@ -175,12 +197,32 @@ export function courseThemeVariables(value?: CourseAppearance | null): CSSProper
     "--course-line-deep": surface.lineDeep,
     "--course-ink": surface.ink,
     "--course-ink-soft": surface.inkSoft,
+    "--course-on-page": surface.ink,
+    "--course-on-canvas": surface.ink,
+    "--course-on-raised": surface.ink,
+    "--course-on-muted": surface.inkSoft,
     "--course-primary": theme.colors.primary,
     "--course-secondary": theme.colors.secondary,
     "--course-ambient": theme.colors.ambient,
     "--course-on-primary": theme.colors.onPrimary,
-    "--course-accent": COURSE_ACCENT_HEX[appearance.accent],
+    "--course-on-secondary": bestForeground(theme.colors.secondary, [surface.ink, theme.colors.onPrimary, "#FFFFFF", "#111111"]),
+    "--course-on-ambient": bestForeground(theme.colors.ambient, [surface.ink, theme.colors.onPrimary, "#FFFFFF", "#111111"]),
+    "--course-highlight-on-primary": highlightOnPrimary,
+    "--course-accent": accent,
+    "--course-accent-ink": accentInk,
     "--course-accent-contrast": COURSE_ACCENT_CONTRAST[appearance.accent],
+    "--course-on-accent": COURSE_ACCENT_CONTRAST[appearance.accent],
+    "--course-success": "#47795F",
+    "--course-success-surface": "#E5EEE6",
+    "--course-on-success": "#FFFFFF",
+    "--course-on-success-surface": "#315C46",
+    "--course-error": "#B45346",
+    "--course-error-surface": "#F7E9E5",
+    "--course-on-error": "#FFFFFF",
+    "--course-on-error-surface": "#7B3028",
+    "--course-locked-surface": `color-mix(in srgb, ${theme.colors.primary} 88%, ${surface.canvas})`,
+    "--course-on-locked": theme.colors.onPrimary,
+    "--course-focus-ring": accent,
     "--course-card-radius": cardRadius[theme.cardStyle],
     "--course-card-shadow": cardShadow[theme.cardStyle],
   } as CSSProperties;

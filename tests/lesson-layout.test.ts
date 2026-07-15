@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "../lib/schemas";
-import { buildLessonMoments, lessonBlockMeta } from "../lib/lesson-layout";
+import { buildLessonMoments, lessonBlockMeta, lessonBlockPurpose, lessonMomentGuidance } from "../lib/lesson-layout";
 
 const cards: Card[] = [
   { type: "concept", title: "The core signal", body: "A concise explanation." },
@@ -27,9 +27,16 @@ describe("lesson editorial layout", () => {
   });
 
   it("assigns semantic labels and varied widths without changing card data", () => {
-    expect(lessonBlockMeta(cards[0], 0)).toEqual({ kind: "idea", label: "Key idea", size: "medium" });
-    expect(lessonBlockMeta(cards[1], 1)).toEqual({ kind: "example", label: "Example", size: "compact" });
-    expect(lessonBlockMeta(cards[2], 2)).toEqual({ kind: "quiz", label: "Knowledge check", size: "wide" });
-    expect(lessonBlockMeta(cards[5], 5)).toEqual({ kind: "quote", label: "Story / quote", size: "wide" });
+    expect(lessonBlockMeta(cards[0], 0)).toEqual({ kind: "idea", label: "Key idea", size: "medium", importance: "core", density: "balanced" });
+    expect(lessonBlockMeta(cards[1], 1)).toEqual({ kind: "example", label: "Example", size: "compact", importance: "supporting", density: "compact" });
+    expect(lessonBlockMeta(cards[2], 2)).toEqual({ kind: "quiz", label: "Knowledge check", size: "wide", importance: "critical", density: "immersive" });
+    expect(lessonBlockMeta(cards[5], 5)).toEqual({ kind: "quote", label: "Story / quote", size: "wide", importance: "supporting", density: "immersive" });
+  });
+
+  it("uses explicit editorial intent instead of deriving treatment from position", () => {
+    const explicit: Card = { type: "concept", title: "A creator aside", body: "Useful context.", intent: "creator-note", importance: "supporting", density: "compact" };
+    expect(lessonBlockMeta(explicit, 99)).toEqual({ kind: "creator-note", label: "Creator note", size: "compact", importance: "supporting", density: "compact" });
+    expect(lessonBlockPurpose("creator-note")).toBe("From the creator");
+    expect(lessonMomentGuidance(buildLessonMoments([cards[0], cards[2]])[0])).toBe("Retrieve the idea before moving on.");
   });
 });
