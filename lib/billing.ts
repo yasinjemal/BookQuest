@@ -51,7 +51,12 @@ export async function startCheckout(
 
   if (!isLiveBilling()) {
     // Test mode: no Flutterwave keys configured — fulfill immediately so the
-    // whole flow can be exercised locally.
+    // whole flow can be exercised locally. NEVER on the live site: without
+    // this guard, production without payment keys hands out free purchases.
+    if (process.env.NODE_ENV === "production" && process.env.BILLING_TEST_MODE !== "1") {
+      await markTransaction(txRef, "failed");
+      throw new Error("Payments are not available yet — coming soon.");
+    }
     await fulfill(txRef, "simulated");
     return { simulated: true, txRef };
   }
