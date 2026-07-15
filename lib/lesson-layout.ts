@@ -1,5 +1,6 @@
 import type { Card } from "./schemas";
 import type { BlockDensity, BlockImportance, BlockIntent } from "./block-presentation";
+import type { QuizCard } from "./learning-types";
 
 export type LessonBlockSize = "compact" | "medium" | "wide";
 export type LessonBlockKind = BlockIntent;
@@ -23,7 +24,7 @@ export type LessonMoment = {
   title: string;
 };
 
-export function isLessonQuiz(card: Card) {
+export function isLessonQuiz(card: Card): card is QuizCard {
   return card.type === "quiz_mcq" || card.type === "quiz_truefalse" || card.type === "quiz_fillblank";
 }
 
@@ -141,6 +142,15 @@ export function buildLessonMoments(cards: Card[]): LessonMoment[] {
   };
 
   cards.forEach((card, cardIndex) => {
+    // Retrieval checks become their own focused interludes. Keeping the source
+    // cards out of the same moment asks learners to recall, not simply copy.
+    if (isLessonQuiz(card)) {
+      flush();
+      entries = [{ card, cardIndex }];
+      flush();
+      return;
+    }
+
     const meta = lessonBlockMeta(card, cardIndex);
     if (standaloneTypes.has(card.type) || (meta.size === "wide" && (card.importance === "critical" || card.density === "immersive"))) {
       flush();
@@ -151,7 +161,7 @@ export function buildLessonMoments(cards: Card[]): LessonMoment[] {
 
     if (entries.length >= 3) flush();
     entries.push({ card, cardIndex });
-    if (isLessonQuiz(card) || card.type === "recap") flush();
+    if (card.type === "recap") flush();
   });
 
   flush();

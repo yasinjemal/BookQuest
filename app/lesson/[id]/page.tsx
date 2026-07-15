@@ -9,6 +9,7 @@ import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import LessonBlock from "@/components/LessonBlock";
 import Loading from "@/components/Loading";
+import QuizInterlude from "@/components/QuizInterlude";
 import type { Card } from "@/lib/schemas";
 import type { QuizAnswerResult } from "@/lib/learning-types";
 import { flushAnswerOutbox, setAnswerOutboxAccount, startAnswerOutboxSync, submitAnswer, submitLessonCompletion } from "@/lib/answer-outbox";
@@ -111,6 +112,23 @@ export default function LessonPage() {
     scrollToMoment();
   }
 
+  function recordQuizAnswer(cardIndex: number, result: QuizAnswerResult) {
+    if (!lesson) return;
+    setResults((current) => ({ ...current, [cardIndex]: result }));
+    void submitAnswer({
+      source: "lesson",
+      sessionId: lesson.answerSessionId,
+      lessonId: lesson.id,
+      cardIndex,
+      eventId: result.eventId,
+      answer: result.answer,
+      responseTimeMs: result.responseTimeMs,
+      occurredAt: result.occurredAt,
+      attemptNumber: result.attemptNumber,
+      hintCount: result.hintCount,
+    });
+  }
+
   if (loadError) return <div className="min-h-dvh bg-paper px-6 py-20 text-center"><span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-no-soft text-no"><AppIcon name="compass" className="h-5 w-5" /></span><h1 className="display mt-5 text-4xl">This lesson could not be opened.</h1><Link href="/" className="btn-primary mt-6">Return home</Link></div>;
   if (!lesson) return <Loading label="Opening this lesson…" />;
 
@@ -130,6 +148,41 @@ export default function LessonPage() {
   const showDetailsRail = detailsRailOpen && !focusMode;
   const unansweredQuizIndexes = currentMoment.entries.filter((entry) => isLessonQuiz(entry.card) && results[entry.cardIndex] === undefined).map((entry) => entry.cardIndex);
   const lockCopy = courseWorldLockCopy(appearance.worldTheme);
+  const singleEntry = currentMoment.entries.length === 1 ? currentMoment.entries[0] : undefined;
+  const quizEntry = singleEntry && isLessonQuiz(singleEntry.card) ? { ...singleEntry, card: singleEntry.card } : undefined;
+  const quizOrdinal = quizEntry ? quizIndexes.indexOf(quizEntry.cardIndex) + 1 : 0;
+
+  if (quizEntry) {
+    return <CourseAppearanceFrame appearance={appearance} className="course-page-bg min-h-dvh">
+      <header className={styles.progressHeader} aria-label="Lesson progress">
+        <div className={styles.progressInner}>
+          <Link href={`/course/${lesson.course.id}`} className={styles.exitButton} aria-label={`Exit lesson and return to ${lesson.course.title}`}><span aria-hidden="true">×</span></Link>
+          <div className={styles.progressTitle}><span>{lesson.moduleTitle}</span><strong>{lesson.title}</strong></div>
+          <div className={styles.progressMeta}><span>Checkpoint {quizOrdinal} of {quizIndexes.length}</span><span>{progress}% of lesson</span></div>
+          <div className={styles.progressTrack} role="progressbar" aria-label={`Progress through ${lesson.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
+        </div>
+      </header>
+      <QuizInterlude
+        card={quizEntry.card}
+        result={results[quizEntry.cardIndex]}
+        appearance={appearance}
+        seed={`${lesson.course.id}:${lesson.id}`}
+        lessonTitle={lesson.title}
+        questionNumber={quizOrdinal}
+        totalQuestions={quizIndexes.length}
+        momentNumber={momentIndex + 1}
+        totalMoments={moments.length}
+        progress={progress}
+        backHref={`/course/${lesson.course.id}`}
+        onBack={momentIndex > 0 ? goBack : undefined}
+        onAnswered={(result) => recordQuizAnswer(quizEntry.cardIndex, result)}
+        onContinue={advance}
+        isLastMoment={momentIndex + 1 >= moments.length}
+        saving={saving}
+        error={finishError}
+      />
+    </CourseAppearanceFrame>;
+  }
 
   return (
     <CourseAppearanceFrame appearance={appearance} className={`course-page-bg min-h-dvh ${focusMode ? styles.focusMode : ""}`}>
@@ -174,10 +227,7 @@ export default function LessonPage() {
           </header>
 
           <div key={currentMoment.id} className="lesson-moment-grid slide-up">
-            {currentMoment.entries.map((entry) => <LessonBlock key={entry.cardIndex} card={entry.card} cardIndex={entry.cardIndex} onAnswered={(result) => {
-              setResults((current) => ({ ...current, [entry.cardIndex]: result }));
-              void submitAnswer({ source: "lesson", sessionId: lesson.answerSessionId, lessonId: lesson.id, cardIndex: entry.cardIndex, eventId: result.eventId, answer: result.answer, responseTimeMs: result.responseTimeMs, occurredAt: result.occurredAt, attemptNumber: result.attemptNumber, hintCount: result.hintCount });
-            }} />)}
+            {currentMoment.entries.map((entry) => <LessonBlock key={entry.cardIndex} card={entry.card} cardIndex={entry.cardIndex} onAnswered={(result) => recordQuizAnswer(entry.cardIndex, result)} />)}
           </div>
 
           {(nextMoment || lesson.nextLessonId) && <aside className={styles.nextPreview} aria-label={`${nextMoment?.title ?? "Next lesson"}, locked preview`}>

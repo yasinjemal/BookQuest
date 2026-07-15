@@ -12,15 +12,17 @@ const cards: Card[] = [
 ];
 
 describe("lesson editorial layout", () => {
-  it("groups related reading blocks into moments that end at checks or summaries", () => {
+  it("keeps retrieval checks in their own moments, away from the source cards", () => {
     const moments = buildLessonMoments(cards);
     expect(moments.map((moment) => moment.entries.map((entry) => entry.cardIndex))).toEqual([
-      [0, 1, 2],
+      [0, 1],
+      [2],
       [3, 4],
       [5],
     ]);
     expect(moments.map((moment) => moment.title)).toEqual([
       "The core signal",
+      "The signal is visible.",
       "A second idea",
       "A field story",
     ]);
@@ -37,6 +39,6 @@ describe("lesson editorial layout", () => {
     const explicit: Card = { type: "concept", title: "A creator aside", body: "Useful context.", intent: "creator-note", importance: "supporting", density: "compact" };
     expect(lessonBlockMeta(explicit, 99)).toEqual({ kind: "creator-note", label: "Creator note", size: "compact", importance: "supporting", density: "compact" });
     expect(lessonBlockPurpose("creator-note")).toBe("From the creator");
-    expect(lessonMomentGuidance(buildLessonMoments([cards[0], cards[2]])[0])).toBe("Retrieve the idea before moving on.");
+    expect(lessonMomentGuidance(buildLessonMoments([cards[0], cards[2]])[1])).toBe("Retrieve the idea before moving on.");
   });
 });
