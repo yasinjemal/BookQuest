@@ -39,9 +39,12 @@ design baseline.
    RESEND_API_KEY=re_...             # production verification/reset email
    EMAIL_FROM=BookQuest <account@your-verified-domain.example>
    APP_URL=https://your-domain.example
+   GOOGLE_SITE_VERIFICATION=...     # optional Search Console HTML-tag token
    ```
 3. `npm run dev` → http://localhost:3000
 4. Register — your first account is the admin.
+
+For production search setup, follow [`docs/SEO_LAUNCH_CHECKLIST.md`](docs/SEO_LAUNCH_CHECKLIST.md). `APP_URL` must be the canonical public origin because it is used in metadata, structured data, `robots.txt`, and `sitemap.xml`.
 
 ## Products & pricing (edit in `lib/billing.ts`)
 

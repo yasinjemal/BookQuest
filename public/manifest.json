@@ -1,11 +1,11 @@
 {
   "name": "BookQuest",
   "short_name": "BookQuest",
-  "description": "Turn your books into bite-size, game-like courses.",
+  "description": "Turn trusted PDFs and documents into editable, source-backed interactive courses.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#faf7f0",
-  "theme_color": "#f59e0b",
+  "theme_color": "#102f26",
   "icons": [
     {
       "src": "/icon.svg",

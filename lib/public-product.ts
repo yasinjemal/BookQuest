@@ -95,6 +95,27 @@ export async function getPublicCreator(slug: string) {
   return { ...creator, id: undefined, courses: courses.map((course) => ({ ...course, appearance: parseCourseAppearance(String(course.appearance_json ?? "{}")), appearance_json: undefined })) };
 }
 
+export async function listPublicSeoEntries() {
+  const [courses, creators] = await Promise.all([
+    many<{ slug: string; created_at: string }>(
+      `SELECT c.public_slug AS slug, c.created_at
+       FROM courses c JOIN users u ON u.id = c.owner_id
+       WHERE c.published = 1 AND c.status = 'ready' AND u.account_status = 'active'
+       ORDER BY c.created_at DESC`
+    ),
+    many<{ slug: string; created_at: string }>(
+      `SELECT u.creator_slug AS slug, u.created_at
+       FROM users u
+       WHERE u.creator_public = TRUE AND u.account_status = 'active'
+       ORDER BY u.created_at DESC`
+    ),
+  ]);
+  return {
+    courses: courses.map((course) => ({ slug: course.slug, createdAt: course.created_at })),
+    creators: creators.map((creator) => ({ slug: creator.slug, createdAt: creator.created_at })),
+  };
+}
+
 export async function getCreatorAnalytics(userId: number) {
   const courses = await many<AnalyticsCourseRow>(
     `SELECT c.id, c.title, c.public_slug, c.published,

@@ -25,7 +25,8 @@ const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
 const barePaths = [
   "/login", "/register", "/forgot-password", "/reset-password",
   "/verify-email", "/verify-credential", "/passport/verify", "/accessibility", "/security",
-  "/c/", "/creator/", "/pricing", "/demo",
+  "/c/", "/creator/", "/pricing", "/demo", "/explore", "/solutions",
+  "/how-it-works", "/resources", "/about",
 ];
 
 function activePath(pathname: string, href: string) {

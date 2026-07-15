@@ -11,11 +11,31 @@ describe("public-launch productization contract", () => {
     const verification = source("components/VerifyEmailClient.tsx");
 
     expect(home).toContain(
-      "Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.",
+      "Upload a PDF, manual, policy, book, notes, or presentation. Create an editable course with lessons, quizzes, source references, progress tracking, credentials, and supported offline access.",
     );
+    expect(home).toContain("Turn trusted documents into");
+    expect(home).toContain('(!loaded && me === null)');
     expect(home).toContain("Create your first course");
     expect(verification).toContain('href={nextPath}');
     expect(verification).toContain("bookquest.after-verification");
+  });
+
+  it("ships crawlable SEO discovery routes and structured public entities", () => {
+    const layout = source("app/layout.tsx");
+    const sitemap = source("app/sitemap.ts");
+    const robots = source("app/robots.ts");
+    const publicCourse = source("app/c/[slug]/page.tsx");
+    const creator = source("app/creator/[slug]/page.tsx");
+    const explore = source("app/explore/layout.tsx");
+
+    expect(layout).toContain("metadataBase: SITE_URL");
+    expect(layout).toContain('"@type": "SoftwareApplication"');
+    expect(sitemap).toContain("listPublicSeoEntries");
+    expect(sitemap).toContain("/solutions/pdf-to-course");
+    expect(robots).toContain('disallow: ["/api/", "/admin/", "/studio/", "/lti/"]');
+    expect(publicCourse).toContain('"@type": "Course"');
+    expect(creator).toContain('"@type": "ProfilePage"');
+    expect(explore).toContain("Preview course →");
   });
 
   it("keeps document upload primary while preserving optional creation paths", () => {

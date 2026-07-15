@@ -7,6 +7,8 @@ import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseGalleryCard from "@/components/CourseGalleryCard";
 import CourseWorld from "@/components/CourseWorld";
 import Loading from "@/components/Loading";
+import PublicFooter from "@/components/PublicFooter";
+import PublicHeader from "@/components/PublicHeader";
 import {
   COURSE_ACCENT_HEX,
   DEFAULT_COURSE_APPEARANCE,
@@ -56,18 +58,15 @@ function greeting() {
 
 function PublicHome() {
   return (
-    <div className="min-h-dvh bg-paper pb-20">
-      <header className="mx-auto flex min-h-20 max-w-[92rem] items-center justify-between gap-4 px-4 py-4 sm:px-8">
-        <Link href="/" className="flex min-w-0 items-center gap-3 font-semibold tracking-[-0.02em]"><span className="brand-mark text-ink" aria-hidden="true" /><span>BookQuest</span></Link>
-        <div className="flex shrink-0 items-center gap-2 sm:gap-3"><Link href="/verify-credential" className="hidden text-sm font-semibold text-ink-soft transition-colors hover:text-ink sm:block">Verify credential</Link><Link href="/login" className="quiet-button">Sign in</Link></div>
-      </header>
+    <div className="min-h-dvh bg-paper">
+      <PublicHeader />
 
       <div className="px-3 sm:px-6">
         <section className="relative mx-auto grid max-w-[92rem] overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:min-h-[44rem] lg:grid-cols-[1.04fr_.96fr]">
           <div className="relative z-10 flex flex-col justify-center px-6 py-14 sm:px-10 sm:py-20 lg:px-16">
-            <span className="eyebrow w-fit text-signal">Document to interactive course</span>
-            <h1 className="display mt-7 max-w-[12ch] text-[clamp(3.2rem,15vw,6.9rem)] leading-[0.87] text-white">Your material, made <em className="text-signal">teachable.</em></h1>
-            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.</p>
+            <span className="eyebrow w-fit text-signal">Source-backed course creation</span>
+            <h1 className="display mt-7 max-w-[12ch] text-[clamp(3.2rem,15vw,6.9rem)] leading-[0.87] text-white">Turn trusted documents into <em className="text-signal">interactive courses.</em></h1>
+            <p className="mt-7 max-w-xl text-base leading-7 text-white/70 sm:text-lg sm:leading-8">Upload a PDF, manual, policy, book, notes, or presentation. Create an editable course with lessons, quizzes, source references, progress tracking, credentials, and supported offline access.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link href="/register" className="inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink transition-transform hover:-translate-y-0.5">Create your first course <AppIcon name="arrow" className="h-4 w-4" /></Link>
               <Link href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">See the demo</Link>
@@ -96,7 +95,28 @@ function PublicHome() {
             ].map((item, index) => <article key={item.title} className={`min-h-64 p-7 sm:p-8 ${index === 0 ? "bg-signal" : index === 1 ? "bg-sky" : "bg-card"}`}><AppIcon name={item.icon} className="h-6 w-6" /><h3 className="display mt-14 text-3xl">{item.title}</h3><p className="mt-3 max-w-xs text-sm leading-6 text-ink-soft">{item.body}</p></article>)}
           </div>
         </section>
+
+        <section className="mx-auto max-w-[92rem] px-3 pb-20 sm:px-6 lg:pb-28" aria-labelledby="solve-heading">
+          <p className="section-label">Built around the problem</p>
+          <h2 id="solve-heading" className="display mt-4 max-w-4xl text-[clamp(2.8rem,8vw,5.2rem)] leading-[.92]">Different documents. One responsible path to learning.</h2>
+          <div className="mt-9 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+            {[
+              { title: "PDF to course", body: "Transform a long document into editable lessons and activities without losing the source behind it.", href: "/solutions/pdf-to-course" },
+              { title: "AI-assisted drafting", body: "Use AI to accelerate the first draft while keeping human review and authorship explicit.", href: "/solutions/ai-course-generator" },
+              { title: "Employee training", body: "Turn SOPs, manuals, and onboarding material into assigned learning with progress evidence.", href: "/solutions/employee-training" },
+              { title: "Policy training", body: "Connect reviewed policies to versioned courses, completion rules, and scoped audit records.", href: "/solutions/compliance-training" },
+              { title: "Creator libraries", body: "Publish courses under a public creator profile and understand how learners use them.", href: "/solutions/course-creators" },
+              { title: "Offline learning", body: "Prepare supported courses before disconnecting and synchronize queued learning when access returns.", href: "/solutions/offline-learning" },
+            ].map((item) => <Link key={item.href} href={item.href} className="group rounded-[1.4rem] border border-line bg-card p-6 shadow-card transition-transform hover:-translate-y-1"><h3 className="display text-3xl">{item.title}</h3><p className="mt-3 text-sm leading-6 text-ink-soft">{item.body}</p><span className="mt-6 inline-flex text-sm font-bold text-teal-deep">Explore this solution →</span></Link>)}
+          </div>
+        </section>
+
+        <section className="mx-auto mb-20 grid max-w-[92rem] overflow-hidden rounded-[1.75rem] bg-signal lg:grid-cols-[1.2fr_.8fr]">
+          <div className="p-7 sm:p-10 lg:p-14"><p className="section-label text-ink">A clearer first step</p><h2 className="display mt-4 text-[clamp(3rem,8vw,5rem)] leading-[.9]">Bring one document. Leave with a course you can improve.</h2><p className="mt-6 max-w-2xl text-sm leading-7 text-ink-soft">Start free, review the workflow in a live demo, or explore published courses from BookQuest creators.</p></div>
+          <div className="flex flex-col justify-center gap-3 border-t border-ink/10 p-7 sm:p-10 lg:border-l lg:border-t-0"><Link href="/register" className="inline-flex min-h-12 items-center justify-center rounded-full bg-ink px-6 py-3 text-sm font-bold text-white">Create your first course</Link><Link href="/demo" className="inline-flex min-h-12 items-center justify-center rounded-full border border-ink/20 px-6 py-3 text-sm font-bold">See the demo</Link><Link href="/explore" className="inline-flex min-h-12 items-center justify-center rounded-full border border-ink/20 px-6 py-3 text-sm font-bold">Browse public courses</Link></div>
+        </section>
       </div>
+      <PublicFooter />
     </div>
   );
 }
@@ -208,7 +228,7 @@ export default function HomePage() {
     }
   }
 
-  if (me === "anon") return <PublicHome />;
+  if (me === "anon" || (!loaded && me === null)) return <PublicHome />;
   if (failed) return <div className="page-wrap mx-auto max-w-xl pt-20 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-no-soft text-no"><AppIcon name="compass" className="h-6 w-6" /></span><h1 className="display mt-5 text-4xl">We lost the trail for a moment.</h1><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest could not reach the server. Your saved progress has not moved.</p><button onClick={() => void load()} className="btn-primary mt-6">Try again</button></div>;
   if (!loaded || me === null) return <Loading />;
 
