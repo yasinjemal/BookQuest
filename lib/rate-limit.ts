@@ -60,6 +60,11 @@ export const RATE_LIMITS = {
     limit: 20,
     windowSeconds: 60 * 60,
   },
+  summaryRetryUser: {
+    scope: "summary.retry.user",
+    limit: 20,
+    windowSeconds: 60 * 60,
+  },
   freshPracticeUser: {
     scope: "practice.fresh.user",
     limit: 10,
@@ -149,6 +154,11 @@ export const RATE_LIMITS = {
   internalGenerationCourse: {
     scope: "generation.internal.course",
     limit: 60,
+    windowSeconds: 60 * 60,
+  },
+  internalGenerationSummary: {
+    scope: "generation.internal.summary",
+    limit: 80,
     windowSeconds: 60 * 60,
   },
   oauthTokenIp: {

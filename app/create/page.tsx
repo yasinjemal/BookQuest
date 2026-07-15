@@ -6,6 +6,7 @@ import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import CourseWorld from "@/components/CourseWorld";
 
 type CreationMode = "ai" | "manual" | "sources" | "recipe";
+type OutputMode = "course" | "summary" | "both";
 interface SpaceOption { space: { id: string; name: string; type: string }; membership: { role: string } }
 interface SourceOption { id: string; title: string; kind: string; source_version_id: string }
 interface RecipeOption { id: string; title: string; recipe_version_id: string; status: string }
@@ -37,10 +38,45 @@ const creationMethods: Array<{ id: CreationMode; title: string; description: str
   { id: "recipe", title: "Start from a recipe", description: "Apply a trusted teaching structure to a new draft.", icon: "layers" },
 ];
 
+const outputChoices: Array<{
+  id: OutputMode;
+  eyebrow: string;
+  title: string;
+  description: string;
+  detail: string;
+  icon: AppIconName;
+}> = [
+  {
+    id: "summary",
+    eyebrow: "Best for long books",
+    title: "Deep summary",
+    description: "Understand the whole thread in a source-linked guided read.",
+    detail: "Ideas, examples, nuance, chapter coverage · 1 credit",
+    icon: "library",
+  },
+  {
+    id: "course",
+    eyebrow: "Learn by doing",
+    title: "Interactive course",
+    description: "Turn the source into lessons, recall checks, and progress.",
+    detail: "Editable lessons and quizzes · 1 credit with AI",
+    icon: "practice",
+  },
+  {
+    id: "both",
+    eyebrow: "Two separate experiences",
+    title: "Summary + course",
+    description: "Create both from one upload without mixing their content.",
+    detail: "One source, two independent drafts · 2 credits",
+    icon: "layers",
+  },
+];
+
 export default function CreatePage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [creationMode, setCreationMode] = useState<CreationMode>("ai");
+  const [outputMode, setOutputMode] = useState<OutputMode>("course");
   const [spaces, setSpaces] = useState<SpaceOption[]>([]);
   const [spaceId, setSpaceId] = useState("");
   const [sources, setSources] = useState<SourceOption[]>([]);
@@ -145,11 +181,13 @@ export default function CreatePage() {
     const form = new FormData();
     form.append("file", file);
     form.append("generate", String(generateWithAi));
+    form.append("output", outputMode);
     try {
       const response = await fetch("/api/upload", { method: "POST", body: form });
       const data = await response.json();
       if (!response.ok) return setError(data.error ?? "The source could not be opened.");
-      if (data.studioUrl) router.push(data.studioUrl);
+      if (data.destinationUrl) router.push(data.destinationUrl);
+      else if (data.studioUrl) router.push(data.studioUrl);
       else if (data.courseId) router.push(`/studio/${data.courseId}`);
     } catch {
       setError("The upload did not finish. Check your connection and try again.");
@@ -299,21 +337,45 @@ export default function CreatePage() {
   const showSources = creationMode === "sources" || creationMode === "recipe";
   const selectedSpace = spaces.find(({ space }) => space.id === spaceId)?.space;
   const selectedRecipe = recipes.find((recipe) => recipe.recipe_version_id === recipeVersionId);
+  const selectedOutput = outputChoices.find((choice) => choice.id === outputMode)!;
+  const outputRequiresAi = outputMode !== "course";
+  const busyLabel = outputMode === "summary"
+    ? "Beginning your Deep Summary…"
+    : outputMode === "both"
+      ? "Creating two separate experiences…"
+      : "Opening your course draft…";
 
   return (
     <div className="page-wrap">
       <div className="content-measure">
-        {welcome && <section className="mb-5 rounded-[1.35rem] border border-teal/20 bg-teal/8 p-5" aria-label="First course onboarding"><p className="text-sm font-bold text-teal-deep">Welcome to BookQuest. Let’s make your first course.</p><ol className="mt-3 grid gap-2 text-xs text-ink-soft sm:grid-cols-3"><li><strong className="text-ink">1. Upload</strong> your material</li><li><strong className="text-ink">2. Edit</strong> the generated draft</li><li><strong className="text-ink">3. Share</strong> when it is ready</li></ol></section>}
+        {welcome && <section className="mb-5 rounded-[1.35rem] border border-teal/20 bg-teal/8 p-5" aria-label="First creation onboarding"><p className="text-sm font-bold text-teal-deep">Welcome to BookQuest. Let’s make your first reading experience.</p><ol className="mt-3 grid gap-2 text-xs text-ink-soft sm:grid-cols-3"><li><strong className="text-ink">1. Choose</strong> summary, course, or both</li><li><strong className="text-ink">2. Upload</strong> one trusted source</li><li><strong className="text-ink">3. Review</strong> the private result</li></ol></section>}
 
         <header className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.06fr_.94fr]">
-          <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Create your first course</p><h1 className="display mt-3 text-[clamp(3rem,10vw,5.7rem)] leading-[0.9]">Turn your document into a course.</h1><p className="mt-5 max-w-xl text-base leading-7 text-white/75">Upload a book, PDF, notes, or training document. Turn it into an interactive course you can edit, study, and share.</p><div className="mt-7 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/55"><span>Private by default</span><span>Fully editable</span><span>You choose when to share</span></div></div>
+          <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">One trusted source · your choice</p><h1 className="display mt-3 text-[clamp(3rem,10vw,5.7rem)] leading-[0.9]">Choose how this document becomes useful.</h1><p className="mt-5 max-w-xl text-base leading-7 text-white/75">Upload a book, PDF, notes, or training document. Create a deep guided summary, an interactive course, or both as separate experiences.</p><div className="mt-7 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/55"><span>Private by default</span><span>Source grounded</span><span>Nothing publishes automatically</span></div></div>
           <CourseWorld seed="creator-workshop" theme="workshop" progress={12} className="min-h-64 lg:min-h-[28rem]" />
         </header>
 
         <section className="relative z-10 mx-auto -mt-5 max-w-3xl rounded-[1.6rem] border border-line bg-card p-5 shadow-pop sm:-mt-8 sm:p-8" aria-labelledby="quick-create-heading">
-          <div className="max-w-2xl"><p className="section-label">The fastest way to begin</p><h2 id="quick-create-heading" className="display mt-2 text-4xl">Choose one document</h2><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest opens it as an editable draft. Nothing is published automatically.</p></div>
-          <label onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) void uploadFile(file); }} className={`relative mt-6 flex min-h-60 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed p-6 text-center transition-colors focus-within:ring-4 focus-within:ring-teal/15 ${dragging ? "border-teal bg-teal/5" : "border-line-deep bg-paper/45 hover:border-teal"}`}><input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} aria-label="Choose a book, PDF, notes, or training document" className="absolute inset-0 cursor-pointer opacity-0" /><span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-6 w-6" /></span><strong className="display mt-5 text-3xl font-normal">{busy ? "Opening your document…" : "Drop your document here"}</strong><span className="mt-2 text-xs text-ink-soft">or tap to choose PDF, DOCX, PPTX, Markdown, or text</span></label>
-          <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">AI-assisted editable draft</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message} Source-only upload remains available.` : generateWithAi ? "On · uses one creation credit" : "Off · source-only draft, no credit used"}</span></div><label className={`inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold ${aiCapability && !aiCapability.enabled ? "opacity-60" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label></div>
+          <div className="max-w-2xl"><p className="section-label">Start with the destination</p><h2 id="quick-create-heading" className="display mt-2 text-4xl">What should this document become?</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Choose before uploading. A summary and a course remain separate, even when you create both.</p></div>
+          <fieldset className="mt-6">
+            <legend className="screen-reader-text">Choose what to create from this document</legend>
+            <div className="grid gap-3 md:grid-cols-3">
+              {outputChoices.map((choice) => {
+                const active = outputMode === choice.id;
+                return <label key={choice.id} className={`relative flex min-h-56 cursor-pointer flex-col rounded-[1.25rem] border p-5 transition-all hover:-translate-y-0.5 ${active ? "border-ink bg-ink text-white shadow-pop" : "border-line bg-paper/55 text-ink hover:border-line-deep"}`}>
+                  <input type="radio" name="output-mode" value={choice.id} checked={active} onChange={() => setOutputMode(choice.id)} className="screen-reader-text" />
+                  <span className={`grid h-10 w-10 place-items-center rounded-full ${active ? "bg-signal text-ink" : "bg-card text-teal shadow-card"}`}><AppIcon name={choice.icon} className="h-5 w-5" /></span>
+                  <span className={`mt-5 text-[9px] font-bold uppercase tracking-[0.15em] ${active ? "text-signal" : "text-teal-deep"}`}>{choice.eyebrow}</span>
+                  <strong className="mt-2 text-base">{choice.title}</strong>
+                  <span className={`mt-2 text-xs leading-5 ${active ? "text-white/70" : "text-ink-soft"}`}>{choice.description}</span>
+                  <span className={`mt-auto pt-4 text-[10px] leading-4 ${active ? "text-white/55" : "text-ink-soft"}`}>{choice.detail}</span>
+                </label>;
+              })}
+            </div>
+          </fieldset>
+          <div className="mt-5 rounded-[1.25rem] border border-line bg-sky/25 p-4 sm:p-5"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-deep">Selected · {selectedOutput.title}</p><p className="mt-2 text-sm leading-6 text-ink-soft">{outputMode === "summary" ? "BookQuest builds a 20–35 minute guided reading edition: the central thread, connected sections, examples, nuance, and visible chapter coverage." : outputMode === "both" ? "The Deep Summary opens in its own reader. The course opens in Studio. They share the upload, not the experience." : "BookQuest creates an editable course draft with lessons and retrieval practice."}</p></div>
+          <label onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) void uploadFile(file); }} className={`relative mt-5 flex min-h-60 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed p-6 text-center transition-colors focus-within:ring-4 focus-within:ring-teal/15 ${dragging ? "border-teal bg-teal/5" : "border-line-deep bg-paper/45 hover:border-teal"}`}><input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} aria-label={`Choose a document to create ${selectedOutput.title.toLowerCase()}`} className="absolute inset-0 cursor-pointer opacity-0" /><span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-6 w-6" /></span><strong className="display mt-5 text-3xl font-normal">{busy ? busyLabel : "Drop your document here"}</strong><span className="mt-2 text-xs text-ink-soft">or tap to choose PDF, DOCX, PPTX, Markdown, or text</span></label>
+          <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">{outputRequiresAi ? "AI-assisted source-grounded generation" : "AI-assisted editable course draft"}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message}${outputRequiresAi ? " Deep summaries require AI generation." : " Source-only course upload remains available."}` : outputRequiresAi ? `${outputMode === "both" ? "Two" : "One"} creation credit${outputMode === "both" ? "s" : ""} · private draft${outputMode === "both" ? "s" : ""}` : generateWithAi ? "On · uses one creation credit" : "Off · source-only course draft, no credit used"}</span></div>{outputRequiresAi ? <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold"><AppIcon name="spark" className="h-4 w-4 text-teal" />Required</span> : <label className={`inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold ${aiCapability && !aiCapability.enabled ? "opacity-60" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label>}</div>
           {error && <p role="alert" className="mt-5 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
         </section>
 

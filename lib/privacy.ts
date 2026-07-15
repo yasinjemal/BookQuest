@@ -7,7 +7,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 9;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 10;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -122,6 +122,28 @@ export async function createAccountExport(userId: number) {
       [userId]
     );
     const courseIds = ownedCourses.map((course) => Number(course.id));
+    const summaries = await rows(
+      client,
+      `SELECT id, owning_space_id, course_id, title, description, thesis,
+              document_kind, estimated_minutes, source_filename, source_json,
+              source_chapter_count, status, error, generator_model,
+              prompt_version, created_at, updated_at
+         FROM summaries WHERE owner_id = $1 ORDER BY id`,
+      [userId]
+    );
+    const summaryIds = summaries.map((summary) => Number(summary.id));
+    const summarySections = summaryIds.length
+      ? await rows(
+          client,
+          `SELECT id, summary_id, title, hook, position, chapter_indexes,
+                  content_json, status, error, generator_model, prompt_version,
+                  created_at, updated_at
+             FROM summary_sections
+            WHERE summary_id = ANY($1::int[])
+            ORDER BY summary_id, position`,
+          [summaryIds]
+        )
+      : [];
     const personalSpaces = await rows(
       client,
       `SELECT id, name, type, status, policy_version, created_at, updated_at
@@ -272,6 +294,8 @@ export async function createAccountExport(userId: number) {
       privacyHistory: await rows(client, "SELECT action, effective_at, metadata_json, recorded_at FROM privacy_actions WHERE user_id = $1 ORDER BY id", [userId]),
       content: {
         courses: ownedCourses,
+        summaries,
+        summarySections,
         modules,
         lessons,
         authoring: {
@@ -521,6 +545,7 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
       WHERE owner_id = $2 AND published = 1`,
     [erasedAt, userId]
   );
+  await client.query("DELETE FROM summaries WHERE owner_id = $1", [userId]);
   await client.query("DELETE FROM courses WHERE owner_id = $1", [userId]);
   await client.query("DELETE FROM classrooms WHERE owner_id = $1", [userId]);
   for (const table of [

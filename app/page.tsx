@@ -162,11 +162,7 @@ export default function HomePage() {
   const [enrolled, setEnrolled] = useState<CourseSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [generateWithAi, setGenerateWithAi] = useState(true);
   const [aiCapability, setAiCapability] = useState<AiCapability | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -207,7 +203,6 @@ export default function HomePage() {
         const data = (await response.json()) as { ai?: AiCapability };
         if (cancelled || !data.ai) return;
         setAiCapability(data.ai);
-        if (!data.ai.enabled) setGenerateWithAi(false);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -218,28 +213,6 @@ export default function HomePage() {
     const timer = setInterval(load, 4000);
     return () => clearInterval(timer);
   }, [owned, load]);
-
-  async function onFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    setUploadError(null);
-    const form = new FormData();
-    form.append("file", file);
-    form.append("generate", String(generateWithAi));
-    try {
-      const response = await fetch("/api/upload", { method: "POST", body: form });
-      const data = await response.json();
-      if (!response.ok) setUploadError(data.error ?? "Upload failed");
-      else if (data.studioUrl) window.location.href = data.studioUrl;
-      await load();
-    } catch {
-      setUploadError("Upload failed — are you online?");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  }
 
   if (me === "anon" || (!loaded && me === null)) return <PublicHome />;
   if (failed) return <div className="page-wrap mx-auto max-w-xl pt-20 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-no-soft text-no"><AppIcon name="compass" className="h-6 w-6" /></span><h1 className="display mt-5 text-4xl">We lost the trail for a moment.</h1><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest could not reach the server. Your saved progress has not moved.</p><button onClick={() => void load()} className="btn-primary mt-6">Try again</button></div>;
@@ -271,16 +244,11 @@ export default function HomePage() {
 
         <section className="mt-10 grid gap-5 sm:grid-cols-2" aria-labelledby="quiet-step-heading">
           <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-go-soft text-go"><AppIcon name="practice" className="h-5 w-5" /></span><div><h2 id="quiet-step-heading" className="text-lg font-bold tracking-tight">Practice</h2><p className="mt-1.5 max-w-xl text-sm leading-6 text-ink-soft">Short reviews bring back the questions you missed, right before you would forget them.</p><Link href="/review" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep px-5 py-2.5 text-sm font-semibold hover:bg-paper">Open practice <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
-          <div className="rounded-[1.5rem] bg-sky/75 p-6"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white"><AppIcon name="create" className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Create a course</h2><p className="mt-1.5 text-sm leading-6 text-ink-soft">Start from a document, saved sources, or an AI-assisted draft you review.</p><Link href="/create" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Open Create <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
+          <div className="rounded-[1.5rem] bg-sky/75 p-6"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white"><AppIcon name="create" className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Create from a document</h2><p className="mt-1.5 text-sm leading-6 text-ink-soft">Choose a Deep Summary, an interactive course, or both from one trusted source.</p><Link href="/create" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Choose what to make <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
         </section>
 
         <section className="mt-10" aria-labelledby="creator-shelf-heading"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><h2 id="creator-shelf-heading" className="text-lg font-bold tracking-tight">Courses you are creating</h2><span className="text-xs font-semibold text-ink-soft">{me.role === "admin" ? "Creator access" : `${me.credits} creation credit${me.credits === 1 ? "" : "s"}`}</span></div>
-          <label className={`group relative flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed border-line-deep bg-card/60 p-6 text-center transition-colors hover:border-teal hover:bg-card focus-within:border-teal focus-within:ring-4 focus-within:ring-teal/15 ${uploading ? "pointer-events-none opacity-60" : ""}`}>
-            <input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" className="absolute inset-0 cursor-pointer opacity-0" aria-label="Upload a document to create a course" onChange={onFile} />
-            <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="display mt-4 text-2xl">{uploading ? "Opening your source…" : "Quick start from a document"}</span><span className="mt-1 text-xs text-ink-soft">PDF, DOCX, PPTX, Markdown, or text</span>
-          </label>
-          <label className={`mt-3 flex items-start gap-3 rounded-xl px-2 py-2 text-sm ${aiCapability && !aiCapability.enabled ? "opacity-70" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1 h-4 w-4" /><span><span className="block font-semibold">Create an AI-assisted draft</span><span className="block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message} Quick uploads open as editable source-only drafts.` : "Uses one credit. Turn this off for an editable source-only draft. You remain the author."}</span></span></label>
-          {uploadError && <p role="alert" className="mt-2 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{uploadError} {uploadError.includes("credit") && <Link href="/profile" className="underline">View plan</Link>}</p>}
+          <Link href="/create" className="group flex min-h-36 items-center gap-5 rounded-[1.4rem] border border-dashed border-line-deep bg-card/60 p-6 transition-colors hover:border-teal hover:bg-card"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong className="display block text-2xl font-normal">Start from one document</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">Choose the output before uploading so a summary never gets mixed into a course.</span></span><AppIcon name="arrow" className="h-5 w-5 shrink-0 text-teal transition-transform group-hover:translate-x-1" /></Link>
           {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing here yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={displayTitle(course)} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Open</Link>}{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit in Studio</Link>}{course.status === "error" && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>)}{course.status !== "ready" && course.status !== "error" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link>}</div>} />)}</div>}
         </section>
       </div>

@@ -13,6 +13,32 @@ export interface SolutionContent {
 
 export const SOLUTIONS: SolutionContent[] = [
   {
+    slug: "long-document-summarizer",
+    eyebrow: "Long document summarizer",
+    title: "Summarize a long PDF or book without losing the whole thread.",
+    description: "Turn a long PDF, book, report, or manual into a source-linked Deep Read with the central argument, connected sections, examples, nuance, and visible page or chapter coverage.",
+    lead: "A Deep Read is a calm guided edition of the source, built for understanding rather than a pile of bullet points. It stays separate from courses, so readers can choose to understand the document or learn through lessons and practice.",
+    problem: "Most quick summaries compress a long book until the reasoning between ideas disappears. Readers get conclusions without the examples, qualifications, sequence, or evidence that made those conclusions meaningful.",
+    benefits: [
+      { title: "Keep the complete arc", body: "Map the whole source first, then build connected reading sections that preserve argument, chronology, and long-range themes." },
+      { title: "Read more than key points", body: "Carry forward useful examples, tensions, limitations, practical implications, and what each source section contributes." },
+      { title: "Check the source trail", body: "Use short exact excerpts and page- or chapter-addressable source notes when wording, context, or evidence matters." },
+    ],
+    steps: [
+      { title: "Upload one source", body: "Add a text-based PDF, DOCX, PPTX, Markdown file, or text document to a private workspace." },
+      { title: "Choose Deep summary", body: "Select a guided summary, an interactive course, or both as separate destinations." },
+      { title: "Follow the thread", body: "Read the thesis, connected ideas, examples, nuance, chapter recaps, and whole-book map." },
+      { title: "Verify or practise", body: "Open a source trail for evidence, or continue into the separately generated course when you want active learning." },
+    ],
+    proof: ["Page-addressable extraction for text-based PDFs", "Whole-document coverage before section writing", "Exact short source excerpts checked against extracted text", "Separate Deep Reads library with reading progress"],
+    faq: [
+      { question: "Can BookQuest summarize a 300-page PDF?", answer: "Text-based PDFs within the upload limit are split into page-addressable, bounded source units and processed as durable sections. Image-only scans need readable OCR text before upload." },
+      { question: "Is a Deep Read the same as a short list of key points?", answer: "No. It is designed to preserve the source's connected reasoning, examples, tensions, practical implications, and section-by-section contribution in an easier guided reading path." },
+      { question: "Does the summary replace the original document?", answer: "No. A Deep Read is an AI-assisted draft for understanding. Source trails help with checking, but the original remains authoritative when exact wording or full context matters." },
+      { question: "Can I create a course from the same book?", answer: "Yes. Choose Summary + course to create two independent drafts from one upload. The Deep Read stays in the reading library and the course stays in the learning workspace." },
+    ],
+  },
+  {
     slug: "pdf-to-course",
     eyebrow: "PDF to course",
     title: "Turn a PDF into an interactive course you can edit.",
@@ -165,4 +191,3 @@ export const SOLUTIONS: SolutionContent[] = [
 ];
 
 export const SOLUTION_BY_SLUG = new Map(SOLUTIONS.map((solution) => [solution.slug, solution]));
-

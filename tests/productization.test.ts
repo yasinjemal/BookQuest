@@ -32,21 +32,24 @@ describe("public-launch productization contract", () => {
     expect(layout).toContain('"@type": "SoftwareApplication"');
     expect(sitemap).toContain("listPublicSeoEntries");
     expect(sitemap).toContain("/solutions/pdf-to-course");
+    expect(sitemap).toContain("/solutions/long-document-summarizer");
     expect(robots).toContain('disallow: ["/api/", "/admin/", "/studio/", "/lti/"]');
     expect(publicCourse).toContain('"@type": "Course"');
     expect(creator).toContain('"@type": "ProfilePage"');
     expect(explore).toContain("Preview course →");
   });
 
-  it("keeps document upload primary while preserving optional creation paths", () => {
+  it("keeps document upload primary while offering separate output destinations", () => {
     const create = source("app/create/page.tsx");
 
-    expect(create).toContain("Turn your document into a course.");
-    expect(create).toContain("The fastest way to begin");
+    expect(create).toContain("What should this document become?");
+    expect(create).toContain('title: "Deep summary"');
+    expect(create).toContain('title: "Interactive course"');
+    expect(create).toContain('title: "Summary + course"');
     expect(create).toContain("More ways to create");
     expect(create).toContain('creationMethods.filter((method) => method.id !== "ai")');
     expect(create).toContain("Private by default");
-    expect(create).toContain("You choose when to share");
+    expect(create).toContain("Nothing publishes automatically");
   });
 
   it("places interoperability controls behind advanced disclosure", () => {

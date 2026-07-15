@@ -17,16 +17,17 @@ describe("Phase 5 sovereign deployment surface", () => {
     expect(route).not.toContain("baseUrl:");
   });
 
-  it("blocks AI jobs before credits or retry state while preserving manual upload", () => {
+  it("blocks AI jobs before credits or retry state while preserving manual course upload", () => {
     const upload = source("app/api/upload/route.ts");
     const retry = source("app/api/courses/[id]/retry/route.ts");
     const regenerate = source("app/api/studio/courses/[id]/regenerate/route.ts");
     const practice = source("app/api/practice/session/route.ts");
     expect(upload.indexOf("const ai = getAiAvailability()")).toBeLessThan(
-      upload.indexOf("if (!isAdmin) await adjustCredits")
+      upload.indexOf("consumeCredits(user.id, creditsRequired)")
     );
     expect(upload).toContain('form.get("generate") !== "false"');
-    expect(upload).toContain('mode: "manual"');
+    expect(upload).toContain('type OutputMode = "course" | "summary" | "both"');
+    expect(upload).toContain("courseUsesAi");
     expect(retry.indexOf("const ai = getAiAvailability()")).toBeLessThan(
       retry.indexOf("const generationRunId = await prepareCourseRetry")
     );
@@ -40,9 +41,10 @@ describe("Phase 5 sovereign deployment surface", () => {
     expect(create).toContain('fetch("/api/capabilities")');
     expect(create).toContain("if (!data.ai.enabled) setGenerateWithAi(false)");
     expect(create).toContain("disabled={aiCapability?.enabled === false}");
-    expect(create).toContain("Source-only upload remains available");
+    expect(create).toContain("Source-only course upload remains available");
     expect(home).toContain('fetch("/api/capabilities")');
-    expect(home).toContain("Quick uploads open as editable source-only drafts");
+    expect(home).toContain("Choose a Deep Summary, an interactive course, or both");
+    expect(home).toContain('href="/create"');
     expect(home).toContain("Edit manually");
   });
 

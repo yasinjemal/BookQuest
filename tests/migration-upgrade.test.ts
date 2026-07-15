@@ -82,7 +82,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       const applied = await applyPendingMigrations(client);
       expect(applied).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
       ]);
     } finally {
       client.release();
@@ -121,6 +121,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       { id: 21, name: "portable_recipe_archives" },
       { id: 22, name: "learning_genome_foundation" },
       { id: 23, name: "multi_channel_offline_foundation" },
+      { id: 24, name: "deep_summaries_foundation" },
     ]);
   });
 
@@ -218,6 +219,8 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "block_types",
       "course_blocks",
       "course_block_revisions",
+      "summaries",
+      "summary_sections",
       "course_version_reviews",
       "course_version_comments",
       "course_generation_jobs",

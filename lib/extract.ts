@@ -24,8 +24,16 @@ export async function extractDocument(
   if (ext === "pdf") {
     const { extractText, getDocumentProxy } = await import("unpdf");
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
-    const { text } = await extractText(pdf, { mergePages: true });
-    markdown = text;
+    const { text: pages } = await extractText(pdf, { mergePages: false });
+    const readablePages = pages
+      .map((text, index) => ({ title: `Page ${index + 1}`, text: text.trim() }))
+      .filter((page) => page.text.length > 0);
+    if (readablePages.length === 0) {
+      throw new Error("No readable text could be extracted from this PDF.");
+    }
+    // Preserve page boundaries for citations and avoid merged PDF text becoming
+    // one whitespace-collapsed mega-paragraph that cannot be summarized safely.
+    return { chapters: enforceChapterSize(readablePages) };
   } else if (ext === "docx") {
     const mammoth = await import("mammoth");
     // convertToMarkdown accepts a buffer at runtime but is missing from the types
@@ -123,32 +131,37 @@ export function splitIntoChapters(text: string, minimumChapterChars = 200): Chap
   }
 
   // Enforce max size — split oversized chapters on paragraph boundaries
+  return enforceChapterSize(chapters);
+}
+
+/** Keep every model-facing chapter inside a fixed budget, even when OCR or an
+ * extractor returns one enormous paragraph without useful line breaks. */
+function enforceChapterSize(chapters: Chapter[]): Chapter[] {
   const sized: Chapter[] = [];
   for (const ch of chapters) {
     if (ch.text.length <= MAX_CHAPTER_CHARS) {
       sized.push(ch);
       continue;
     }
-    const paras = ch.text.split(/\n\n+/);
+
+    let remaining = ch.text.trim();
     let part = 1;
-    let buf: string[] = [];
-    let len = 0;
-    for (const p of paras) {
-      if (len + p.length > MAX_CHAPTER_CHARS && buf.length > 0) {
-        sized.push({ title: `${ch.title} (part ${part})`, text: buf.join("\n\n") });
-        part++;
-        buf = [];
-        len = 0;
-      }
-      buf.push(p);
-      len += p.length + 2;
+    while (remaining.length > MAX_CHAPTER_CHARS) {
+      const window = remaining.slice(0, MAX_CHAPTER_CHARS + 1);
+      const naturalCut = Math.max(
+        window.lastIndexOf("\n\n"),
+        window.lastIndexOf("\n"),
+        window.lastIndexOf(" ")
+      );
+      const cut = naturalCut >= Math.floor(MAX_CHAPTER_CHARS * 0.6)
+        ? naturalCut
+        : MAX_CHAPTER_CHARS;
+      const chunk = remaining.slice(0, cut).trim();
+      if (chunk) sized.push({ title: `${ch.title} (part ${part})`, text: chunk });
+      remaining = remaining.slice(cut).trim();
+      part += 1;
     }
-    if (buf.length > 0) {
-      sized.push({
-        title: part > 1 ? `${ch.title} (part ${part})` : ch.title,
-        text: buf.join("\n\n"),
-      });
-    }
+    if (remaining) sized.push({ title: `${ch.title} (part ${part})`, text: remaining });
   }
   return sized;
 }

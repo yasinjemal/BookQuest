@@ -7,7 +7,8 @@ import AppIcon, { type AppIconName } from "@/components/AppIcon";
 
 const items: Array<{ href: string; label: string; icon: AppIconName }> = [
   { href: "/", label: "Home", icon: "home" },
-  { href: "/explore", label: "Library", icon: "library" },
+  { href: "/explore", label: "Explore courses", icon: "compass" },
+  { href: "/summaries", label: "Deep Reads", icon: "library" },
   { href: "/review", label: "Practice", icon: "practice" },
   { href: "/passport", label: "Skill Passport", icon: "shield" },
   { href: "/spaces", label: "Spaces", icon: "spaces" },
@@ -15,10 +16,10 @@ const items: Array<{ href: string; label: string; icon: AppIconName }> = [
 ];
 
 const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
-  items[0],
-  items[1],
+  { href: "/", label: "Home", icon: "home" },
+  { href: "/summaries", label: "Deep Reads", icon: "library" },
   { href: "/create", label: "Create", icon: "create" },
-  items[4],
+  { href: "/spaces", label: "Spaces", icon: "spaces" },
   { href: "/profile", label: "Account", icon: "account" },
 ];
 
@@ -27,6 +28,7 @@ const barePaths = [
   "/verify-email", "/verify-credential", "/passport/verify", "/accessibility", "/security",
   "/c/", "/creator/", "/pricing", "/demo", "/explore", "/solutions",
   "/how-it-works", "/resources", "/about",
+  "/summary/",
 ];
 
 function activePath(pathname: string, href: string) {
@@ -64,7 +66,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <span><span className="block">BookQuest</span><span className="mt-0.5 block text-xs font-medium uppercase tracking-[0.15em] text-white/65">Living story worlds</span></span>
       </Link>
       <Link href="/create" aria-current={activePath(pathname, "/create") ? "page" : undefined} className={`relative mb-7 flex min-h-12 items-center justify-between rounded-2xl px-4 py-3 text-sm font-bold transition-all ${activePath(pathname, "/create") ? "bg-signal text-ink shadow-[0_12px_28px_rgba(216,255,99,0.16)]" : "border border-white/12 bg-white/[0.06] text-white hover:bg-white/10"}`}>
-        <span>New course</span><span className={`grid h-7 w-7 place-items-center rounded-full ${activePath(pathname, "/create") ? "bg-ink text-white" : "bg-white/10 text-signal"}`}><AppIcon name="create" className="h-3.5 w-3.5" /></span>
+        <span>New from document</span><span className={`grid h-7 w-7 place-items-center rounded-full ${activePath(pathname, "/create") ? "bg-ink text-white" : "bg-white/10 text-signal"}`}><AppIcon name="create" className="h-3.5 w-3.5" /></span>
       </Link>
         <p className="mb-2 px-3 text-xs font-bold uppercase tracking-[0.2em] text-white/65">Your library</p>
       <nav aria-label="Primary" className="space-y-1">

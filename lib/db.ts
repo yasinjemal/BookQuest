@@ -128,6 +128,19 @@ export async function adjustCredits(userId: number, delta: number) {
   ]);
 }
 
+/** Atomically reserve creation credits so concurrent uploads cannot both pass a
+ * stale balance check. Admin flows can continue to bypass billing at the route. */
+export async function consumeCredits(userId: number, amount: number): Promise<boolean> {
+  if (!Number.isInteger(amount) || amount < 1) return false;
+  const row = await one<{ credits: number }>(
+    `UPDATE users SET credits = credits - $2
+     WHERE id = $1 AND credits >= $2
+     RETURNING credits`,
+    [userId, amount]
+  );
+  return Boolean(row);
+}
+
 export async function grantPremium(userId: number, days: number) {
   const user = await getUserById(userId);
   if (!user) return;

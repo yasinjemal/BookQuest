@@ -100,6 +100,7 @@ export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> 
 // advisory lock the app might take). Paired with the course id as the lock key.
 const GENERATION_LOCK_NAMESPACE = 828170;
 const LESSON_COMPLETION_LOCK_NAMESPACE = 828171;
+const SUMMARY_GENERATION_LOCK_NAMESPACE = 828172;
 
 /**
  * Run `fn` while holding an exclusive advisory lock for one course, so only one
@@ -125,6 +126,33 @@ export async function withCourseGenerationLock<T>(
       await client.query("SELECT pg_advisory_unlock($1, $2)", [
         GENERATION_LOCK_NAMESPACE,
         courseId,
+      ]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/** Summary generation has its own lock namespace so summary and course ids may
+ * safely overlap while both artifacts are generated from the same upload. */
+export async function withSummaryGenerationLock<T>(
+  summaryId: number,
+  fn: () => Promise<T>
+): Promise<T | undefined> {
+  await ready();
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      "SELECT pg_try_advisory_lock($1, $2) AS ok",
+      [SUMMARY_GENERATION_LOCK_NAMESPACE, summaryId]
+    );
+    if (!rows[0].ok) return undefined;
+    try {
+      return await fn();
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1, $2)", [
+        SUMMARY_GENERATION_LOCK_NAMESPACE,
+        summaryId,
       ]);
     }
   } finally {

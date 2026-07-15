@@ -46,6 +46,14 @@ describe("migration list", () => {
     expect(migration?.sql).toContain("CREATE TABLE channel_resume_links");
   });
 
+  it("adds Deep Summaries as separate source-derived artifacts", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "deep_summaries_foundation");
+    expect(migration).toMatchObject({ id: 24 });
+    expect(migration?.sql).toContain("CREATE TABLE summaries");
+    expect(migration?.sql).toContain("CREATE TABLE summary_sections");
+    expect(migration?.sql).toContain("course_id INTEGER REFERENCES courses");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },

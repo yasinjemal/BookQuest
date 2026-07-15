@@ -3100,6 +3100,62 @@ CREATE TRIGGER channel_delivery_events_no_write
   FOR EACH ROW EXECUTE FUNCTION channel_history_block_write();
 `;
 
+const DEEP_SUMMARIES_FOUNDATION_SQL = `
+CREATE TABLE summaries (
+  id SERIAL PRIMARY KEY,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  owning_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  thesis TEXT NOT NULL DEFAULT '',
+  document_kind TEXT NOT NULL DEFAULT 'other'
+    CHECK (document_kind IN ('nonfiction','narrative','technical','research','policy','other')),
+  estimated_minutes INTEGER NOT NULL DEFAULT 0 CHECK (estimated_minutes >= 0),
+  source_filename TEXT NOT NULL,
+  source_json TEXT,
+  source_chapter_count INTEGER NOT NULL DEFAULT 0 CHECK (source_chapter_count >= 0),
+  status TEXT NOT NULL DEFAULT 'extracting'
+    CHECK (status IN ('extracting','outlining','generating','ready','error')),
+  error TEXT,
+  generation_run_id TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text),
+  generation_heartbeat TEXT,
+  generation_attempts INTEGER NOT NULL DEFAULT 0 CHECK (generation_attempts >= 0),
+  generator_model TEXT,
+  prompt_version TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX summaries_owner_time ON summaries(owner_id, created_at DESC);
+CREATE INDEX summaries_space_time ON summaries(owning_space_id, created_at DESC);
+CREATE INDEX summaries_status_heartbeat ON summaries(status, generation_heartbeat);
+CREATE INDEX summaries_course ON summaries(course_id) WHERE course_id IS NOT NULL;
+
+CREATE TABLE summary_sections (
+  id BIGSERIAL PRIMARY KEY,
+  summary_id INTEGER NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  hook TEXT NOT NULL DEFAULT '',
+  position INTEGER NOT NULL CHECK (position >= 0),
+  chapter_indexes TEXT NOT NULL DEFAULT '[]',
+  content_json TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending','generating','ready','error')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  error TEXT,
+  generation_run_id TEXT NOT NULL,
+  generator_model TEXT,
+  prompt_version TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (summary_id, generation_run_id, position)
+);
+CREATE INDEX summary_sections_summary_position
+  ON summary_sections(summary_id, position);
+CREATE INDEX summary_sections_claim
+  ON summary_sections(summary_id, generation_run_id, status, position);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -3128,6 +3184,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 21, name: "portable_recipe_archives", sql: PORTABLE_RECIPE_ARCHIVES_SQL },
   { id: 22, name: "learning_genome_foundation", sql: LEARNING_GENOME_FOUNDATION_SQL },
   { id: 23, name: "multi_channel_offline_foundation", sql: MULTI_CHANNEL_OFFLINE_FOUNDATION_SQL },
+  { id: 24, name: "deep_summaries_foundation", sql: DEEP_SUMMARIES_FOUNDATION_SQL },
 ];
 
 /**

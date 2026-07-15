@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const staticPages = [
   { path: "/", priority: 1, changeFrequency: "weekly" as const },
   { path: "/solutions", priority: 0.9, changeFrequency: "monthly" as const },
+  { path: "/solutions/long-document-summarizer", priority: 0.9, changeFrequency: "monthly" as const },
   { path: "/solutions/pdf-to-course", priority: 0.9, changeFrequency: "monthly" as const },
   { path: "/solutions/ai-course-generator", priority: 0.9, changeFrequency: "monthly" as const },
   { path: "/solutions/employee-training", priority: 0.8, changeFrequency: "monthly" as const },
