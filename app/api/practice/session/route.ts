@@ -11,9 +11,10 @@ import {
 import { requireUser } from "@/lib/auth";
 import {
   generatePracticeQuiz,
-  GENERATOR_MODEL,
+  getGeneratorModel,
   PRACTICE_PROMPT_VERSION,
 } from "@/lib/generator";
+import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
 import type { Card } from "@/lib/schemas";
 import type { QuizCard } from "@/lib/learning-types";
 import {
@@ -100,6 +101,11 @@ export async function POST(req: NextRequest) {
         { status: 402 }
       );
     }
+    const ai = getAiAvailability();
+    if (!ai.enabled) {
+      return NextResponse.json(aiUnavailablePayload(ai), { status: 503 });
+    }
+    const generatorModel = getGeneratorModel();
     const limit = await consumeRateLimit(
       RATE_LIMITS.freshPracticeUser,
       rateLimitSubject("user", user.id)
@@ -113,7 +119,7 @@ export async function POST(req: NextRequest) {
         severity: "info",
         area: "practice.fresh",
         subjectKey: operationalSubject("user", user.id),
-        metadata: { model: GENERATOR_MODEL, prompt_version: PRACTICE_PROMPT_VERSION },
+        metadata: { model: generatorModel, prompt_version: PRACTICE_PROMPT_VERSION },
       });
       const cards = await generatePracticeQuiz(
         course.title,
@@ -134,7 +140,7 @@ export async function POST(req: NextRequest) {
         items,
         true,
         {
-          generatorModel: GENERATOR_MODEL,
+          generatorModel,
           promptVersion: PRACTICE_PROMPT_VERSION,
         }
       );
@@ -150,7 +156,7 @@ export async function POST(req: NextRequest) {
         area: "practice.fresh",
         error: err,
         subjectKey: operationalSubject("user", user.id),
-        metadata: { model: GENERATOR_MODEL },
+        metadata: { model: generatorModel },
       });
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Generation failed" },

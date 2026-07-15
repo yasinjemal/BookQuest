@@ -1,0 +1,65 @@
+{
+  "phase": 5,
+  "slice": "bounded-sovereign-core",
+  "recordedAt": "2026-07-15T01:52:30.000Z",
+  "baseCommit": "8037020",
+  "environment": {
+    "application": "Next.js 15.5.20",
+    "database": "disposable PostgreSQL 16",
+    "productionDataUsedForTests": false,
+    "buildAiMode": "disabled"
+  },
+  "checks": {
+    "databaseRegression": {
+      "command": "npm test",
+      "testFilesPassed": 39,
+      "testsPassed": 213,
+      "failed": 0
+    },
+    "typecheck": {
+      "command": "npm run typecheck",
+      "passed": true
+    },
+    "productionBuild": {
+      "command": "BOOKQUEST_AI_PROVIDER=disabled NEXT_DIST_DIR=.next-codex-sovereign npm run build",
+      "passed": true,
+      "staticPagesGenerated": 56,
+      "capabilitiesRoutePresent": true
+    },
+    "dependencyAudit": {
+      "command": "npm audit --omit=dev --audit-level=high",
+      "productionVulnerabilities": 0
+    },
+    "diffCheck": {
+      "command": "git diff --check",
+      "passed": true
+    },
+    "browserSmoke": {
+      "origin": "http://localhost:3000",
+      "capabilities": {
+        "status": "enabled",
+        "manualAuthoring": true,
+        "sourceOnlyUpload": true,
+        "portableImport": true
+      },
+      "demoHeading": "From shop manual to a course people finish.",
+      "passed": true
+    }
+  },
+  "verifiedScope": [
+    "default, compatible, disabled and fail-closed AI provider policy",
+    "no AI credit or job creation when the installation disables AI",
+    "source-only and manual authoring paths remain available",
+    "account export schema 9 includes personally owned versioned authoring data",
+    "self-hosted upgrade guidance and isolated-operation limitations",
+    "least-privilege API/webhook permissions and executable-extension prohibition"
+  ],
+  "deferred": [
+    "full Space restore and clean-install restoration proof",
+    "real isolated deployment and self-hosted upgrade drill",
+    "licensing legal review",
+    "public template marketplace moderation and commerce",
+    "payout, refund, tax and provider reconciliation",
+    "external organization use of a non-default AI configuration"
+  ]
+}

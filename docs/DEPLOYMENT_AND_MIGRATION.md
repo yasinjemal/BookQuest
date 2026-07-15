@@ -157,7 +157,10 @@ still complete).
 2. In the Vercel project → **Settings → Environment Variables**, set:
    - `DATABASE_URL` — the Neon **`-pooler`** connection string
      (`…-pooler.…aws.neon.tech/neondb?sslmode=require`)
-   - `ANTHROPIC_API_KEY` — your Claude API key
+   - `BOOKQUEST_AI_PROVIDER` — `anthropic` (default),
+     `anthropic-compatible`, or `disabled`; see
+     [`SELF_HOSTING_AND_AI.md`](SELF_HOSTING_AND_AI.md).
+   - `ANTHROPIC_API_KEY` — your Claude API key when using the default provider.
    - `GENERATION_SECRET` — any random string; guards the internal generation
      worker so only the app can trigger it (see "Durable course generation").
      Recommended in production.

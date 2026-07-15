@@ -24,6 +24,11 @@ interface RecipeArchiveReport {
   conflicts: Array<{ code: string; message: string }>;
   issues: Array<{ severity: "error" | "warning" | "info"; code: string; message: string }>;
 }
+interface AiCapability {
+  enabled: boolean;
+  mode: "enabled" | "disabled" | "misconfigured";
+  message: string | null;
+}
 
 const creationMethods: Array<{ id: CreationMode; title: string; description: string; icon: AppIconName }> = [
   { id: "ai", title: "Create with AI", description: "Upload one document and receive an editable draft to review.", icon: "spark" },
@@ -50,6 +55,7 @@ export default function CreatePage() {
   const [sourceContent, setSourceContent] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [generateWithAi, setGenerateWithAi] = useState(true);
+  const [aiCapability, setAiCapability] = useState<AiCapability | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -68,6 +74,20 @@ export default function CreatePage() {
 
   useEffect(() => {
     setWelcome(new URLSearchParams(window.location.search).get("welcome") === "1");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/capabilities")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { ai?: AiCapability };
+        if (cancelled || !data.ai) return;
+        setAiCapability(data.ai);
+        if (!data.ai.enabled) setGenerateWithAi(false);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   const loadSources = useCallback(async (chosenSpace: string) => {
@@ -293,7 +313,7 @@ export default function CreatePage() {
         <section className="relative z-10 mx-auto -mt-5 max-w-3xl rounded-[1.6rem] border border-line bg-card p-5 shadow-pop sm:-mt-8 sm:p-8" aria-labelledby="quick-create-heading">
           <div className="max-w-2xl"><p className="section-label">The fastest way to begin</p><h2 id="quick-create-heading" className="display mt-2 text-4xl">Choose one document</h2><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest opens it as an editable draft. Nothing is published automatically.</p></div>
           <label onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) void uploadFile(file); }} className={`relative mt-6 flex min-h-60 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed p-6 text-center transition-colors focus-within:ring-4 focus-within:ring-teal/15 ${dragging ? "border-teal bg-teal/5" : "border-line-deep bg-paper/45 hover:border-teal"}`}><input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} aria-label="Choose a book, PDF, notes, or training document" className="absolute inset-0 cursor-pointer opacity-0" /><span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-6 w-6" /></span><strong className="display mt-5 text-3xl font-normal">{busy ? "Opening your document…" : "Drop your document here"}</strong><span className="mt-2 text-xs text-ink-soft">or tap to choose PDF, DOCX, PPTX, Markdown, or text</span></label>
-          <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">AI-assisted editable draft</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{generateWithAi ? "On · uses one creation credit" : "Off · source-only draft, no credit used"}</span></div><label className="inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold"><input type="checkbox" checked={generateWithAi} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label></div>
+          <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">AI-assisted editable draft</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message} Source-only upload remains available.` : generateWithAi ? "On · uses one creation credit" : "Off · source-only draft, no credit used"}</span></div><label className={`inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold ${aiCapability && !aiCapability.enabled ? "opacity-60" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label></div>
           {error && <p role="alert" className="mt-5 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
         </section>
 

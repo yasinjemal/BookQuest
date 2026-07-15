@@ -11,6 +11,7 @@ import {
 } from "@/lib/rate-limit";
 import { authorizeCourseAction } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
+import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -35,6 +36,11 @@ export async function POST(
     const response = spaceApiError(error);
     if (response) return response;
     throw error;
+  }
+
+  const ai = getAiAvailability();
+  if (!ai.enabled) {
+    return NextResponse.json(aiUnavailablePayload(ai), { status: 503 });
   }
 
   // The stored chapters are what generation regenerates from (no original file).

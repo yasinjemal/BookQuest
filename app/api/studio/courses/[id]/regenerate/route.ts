@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, tooManyRequests } from "@/lib/rate-limit";
 import { studioApiError } from "@/lib/studio-api";
 import { regenerateStudioScope } from "@/lib/studio-generator";
+import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,6 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!Number.isInteger(courseId) || !body.scopeType || !body.scopeKey) {
     return NextResponse.json({ error: "A valid regeneration scope is required" }, { status: 400 });
   }
+  const ai = getAiAvailability();
+  if (!ai.enabled) {
+    return NextResponse.json(aiUnavailablePayload(ai), { status: 503 });
+  }
   try {
     return NextResponse.json(await regenerateStudioScope(
       user.id,
@@ -31,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch (error) {
     const response = studioApiError(error);
     if (response) return response;
-    const message = error instanceof Error && /api.?key|authentication/i.test(error.message)
+    const message = error instanceof Error && /api.?key|authentication|provider/i.test(error.message)
       ? "AI regeneration is unavailable until the provider key is configured. Manual editing still works."
       : "Could not regenerate this scope";
     return NextResponse.json({ error: message }, { status: 502 });

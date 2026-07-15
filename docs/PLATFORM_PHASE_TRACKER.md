@@ -4,9 +4,10 @@
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
 **Last updated:** 15 July 2026
-**Current product priority:** Phase 5 portable authoring
-**Next product slice:** validated course, recipe and Space portability. External
-validation remains backlogged until real users or partners are available.
+**Current product priority:** Phase 6 permissioned evidence foundations
+**Next product slice:** research-eligibility classification and interpretable
+quality thresholds. External validation remains backlogged until real users or
+partners are available.
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -117,8 +118,8 @@ and an institution operate securely. Its four primary experiences are:
 | 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **Deployed** | **Pending user acquisition** |
 | 3. Institutional workflow | An organization can complete an auditable training journey | **Deployed** | **Pending user acquisition** |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | **Deployed** | **Pending user acquisition** |
-| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **In progress** | **Not available yet** |
-| 6. Learning Genome | Evidence improves questions and learning paths | **Not started** | **Not available yet** |
+| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **Tested** | **Not available yet** |
+| 6. Learning Genome | Evidence improves questions and learning paths | **In progress** | **Not available yet** |
 | 7. Multi-channel and scale | Learning works across web, offline and messaging | **Not started** | **Not available yet** |
 
 “Deployed” describes the documented engineering scope, not institutional
@@ -1092,43 +1093,72 @@ in the external validation backlog and does not block productization.
 
 ## Phase 5 — Open ecosystem and sovereign deployment
 
-**Engineering status:** In progress (15 July 2026 UTC)
+**Engineering status:** Tested (15 July 2026 UTC; bounded sovereign core)
 
 **External validation status:** Not available yet
 
-**Product decision:** the public-launch productization slice is deployed. The
-builder directed engineering to continue through locally executable phases and
-skip unavailable external gates, so Phase 5 has resumed with bounded portable
-authoring packages.
+**Product decision:** the public-launch productization slice and bounded
+sovereign core are tested. The builder directed engineering to complete locally
+executable work, skip unavailable external/legal/commerce gates and continue to
+the next phase. Full-Space restore and marketplace commerce are explicitly
+deferred rather than represented as complete.
 
 **Outcome:** users can extend, move and deploy BookQuest without surrendering
 control, while hosted editions remain commercially sustainable.
 
-### Build checklist
+### Completed local build scope
 
-- [ ] Publish course, recipe and Space export formats.
-  - [x] Publish `bookquest.course` schema version 1 for one exact authoring version,
-    its attached sources, optional recipe, appearance and current blocks.
-  - [x] Publish `bookquest.recipe` schema version 1 with authenticated export,
+- [x] Publish bounded course and recipe export formats.
+  - [x] `bookquest.course` schema version 1 carries one exact authoring version,
+    attached sources, optional recipe, appearance and current blocks.
+  - [x] `bookquest.recipe` schema version 1 provides authenticated export,
     no-write dry-run, deterministic conflict reporting and private-draft restore.
-  - [ ] Publish a full Space restore profile.
-- [ ] Export owned sources, content, evidence and credentials.
-- [ ] Import with validation, dry-run and conflict reporting.
-  - [x] Course packages validate profile, integrity, limits, block schemas and
-    internal source refs; dry-run reports title/content conflicts without writes,
-    and import creates a separate private draft in one transaction.
-- [ ] Publish stable APIs, webhook events and examples.
-- [ ] Support configurable AI providers and AI-disabled approved content.
-- [ ] Ship self-hosted deployment and upgrade guidance.
-- [ ] Evaluate isolated/air-gapped use.
-- [ ] Decide open-source/commercial licensing after legal review.
-- [ ] Add free/paid template publishing, provenance, ratings and moderation.
-- [ ] Preserve fork lineage so upstream changes cannot overwrite local work.
-- [ ] Add payouts, refunds, tax and transaction reconciliation.
-- [ ] Define reviewed plugin/integration permissions.
-- [ ] Sandbox or prohibit executable extensions until isolation is proven.
-- [ ] Define free community, hosted creator/team and enterprise editions.
-- [ ] Keep export, accessibility and learner ownership outside lock-in paywalls.
+- [x] Export owned sources, content, evidence and credentials.
+  (`createAccountExport` schema 9 includes personally owned versioned authoring
+  sources, collections, recipes, course versions/blocks, learning evidence and
+  credentials without raw-storage or authentication material; portable course
+  export provides the bounded authoring transfer profile.)
+- [x] Import bounded authoring packages with validation, dry-run and conflict
+  reporting. Course and recipe packages validate profile, integrity, size and
+  content rules; import creates separate private drafts transactionally.
+- [x] Publish stable APIs, webhook events and examples.
+  (`/api/v1` carries a dated contract; OAuth client and raw-body HMAC consumer
+  examples are in `docs/PHASE_4_PLATFORM_INTEGRATIONS.md`.)
+- [x] Support configurable AI endpoints and AI-disabled approved content.
+  (`lib/ai-provider.ts`, safe `/api/capabilities`, route-level no-job/no-credit
+  guards and source-only/manual/import UI behavior.)
+- [x] Ship self-hosted deployment and upgrade guidance.
+  (`docs/SELF_HOSTING_AND_AI.md` documents Node/Postgres setup, secret boundaries,
+  migration rehearsal, recovery and rollback limits.)
+- [x] Evaluate isolated/air-gapped use.
+  (Core no-AI runtime is viable with a transferred artifact; package/font build
+  inputs and outbound integrations are recorded as current limitations.)
+- [x] Preserve fork and block lineage so later work cannot overwrite prior local
+  versions. (`tests/recipes.test.ts` and `tests/studio-lifecycle.test.ts`.)
+- [x] Define reviewed integration permissions.
+  (Two allowlisted read scopes, Space binding, owner/admin grants, one-time
+  secrets, revocation and tenant-negative tests.)
+- [x] Prohibit executable extensions until isolation is proven.
+  (The extension boundary in `docs/PHASE_4_PLATFORM_INTEGRATIONS.md` allows only
+  declarative APIs/webhooks and states the isolation gates for any future code.)
+- [x] Define community/self-hosted, hosted creator/team and enterprise edition
+  boundaries without restricting portable export or learner ownership.
+- [x] Keep export, accessibility and learner ownership outside lock-in paywalls.
+  (Account/course/recipe export routes require identity and abuse controls, not
+  Premium or billing entitlement.)
+
+### Explicitly skipped or deferred
+
+- Full Space restore is deferred: Space archives contain administrative context,
+  memberships, evidence and integration metadata whose clean-install identity,
+  consent and credential semantics are not safely defined by the bounded course
+  profile. No partial restore is presented as a full restore.
+- Open-source/commercial licensing is deferred until qualified legal review.
+- Free/paid public template submissions, ratings, moderation, payouts, refunds,
+  tax and provider reconciliation are deferred as one marketplace programme.
+  They require real moderation ownership, merchant/provider decisions and legal
+  policy; synthetic approval or reconciliation evidence is prohibited.
+- Executable plugins remain prohibited rather than weakly sandboxed.
 
 ### Release gates
 
@@ -1155,9 +1185,20 @@ control, while hosted editions remain commercially sustainable.
   dry-run/private-draft UI.
 - `tests/migration-upgrade.test.ts` verifies forward-only migrations 20 and 21
   and their once-only ledger entries.
+- `tests/ai-provider.test.ts` verifies the default, compatible, disabled and
+  fail-closed provider configurations; `tests/phase5-sovereign-contract.test.ts`
+  locks the no-credit/no-job guards, Create capability UI, operator guidance and
+  declarative extension prohibition.
+- `tests/privacy-lifecycle.test.ts` verifies account export schema 9 includes
+  personally owned versioned authoring sources while omitting raw-storage and
+  authentication material.
 - `docs/evidence/phase5-portable-course-local-2026-07-15T004700Z.json` records
   the 37-file/205-test regression, successful production build, zero-vulnerability
   production dependency audit and bounded authenticated browser smoke.
+- `docs/evidence/phase5-sovereign-core-local-2026-07-15T015230Z.json` records the
+  39-file/213-test PostgreSQL regression, production build with AI disabled,
+  typecheck, zero-vulnerability dependency audit and live capabilities/demo
+  browser smoke.
 - The clean-Space round trip is engineering evidence for this bounded slice; it
   is not the full clean-install restore release gate, which remains open below.
 
@@ -1173,12 +1214,17 @@ control, while hosted editions remain commercially sustainable.
 
 ## Phase 6 — Learning Genome and adaptation
 
-**Engineering status:** Not started
+**Engineering status:** In progress (opened 15 July 2026 UTC)
 
 **External validation status:** Not available yet
 
 **Outcome:** eligible evidence improves questions, placement, explanations and
 sequencing without overstating what the data proves.
+
+**Kickoff decision:** Phase 6 is now the active engineering phase. The first
+slice is limited to permission/eligibility classification and interpretable
+quality thresholds. Cross-course mapping, adaptive decisions and causal claims
+remain gated until representative evidence exists.
 
 ### Build checklist
 

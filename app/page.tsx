@@ -36,6 +36,11 @@ interface Me {
   premium_until: string | null;
 }
 
+interface AiCapability {
+  enabled: boolean;
+  message: string | null;
+}
+
 function progressFor(course: CourseSummary) {
   return course.totalLessons > 0
     ? Math.round((course.doneLessons / course.totalLessons) * 100)
@@ -127,6 +132,7 @@ export default function HomePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [generateWithAi, setGenerateWithAi] = useState(true);
+  const [aiCapability, setAiCapability] = useState<AiCapability | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const hasLoadedRef = useRef(false);
 
@@ -159,6 +165,20 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/capabilities")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = (await response.json()) as { ai?: AiCapability };
+        if (cancelled || !data.ai) return;
+        setAiCapability(data.ai);
+        if (!data.ai.enabled) setGenerateWithAi(false);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!owned.some((course) => ["extracting", "outlining", "generating"].includes(course.status))) return;
@@ -218,9 +238,9 @@ export default function HomePage() {
             <input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" className="absolute inset-0 cursor-pointer opacity-0" aria-label="Upload a document to create a course" onChange={onFile} />
             <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="display mt-4 text-2xl">{uploading ? "Opening your source…" : "Quick start from a document"}</span><span className="mt-1 text-xs text-ink-soft">PDF, DOCX, PPTX, Markdown, or text</span>
           </label>
-          <label className="mt-3 flex items-start gap-3 rounded-xl px-2 py-2 text-sm"><input type="checkbox" checked={generateWithAi} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1 h-4 w-4" /><span><span className="block font-semibold">Create an AI-assisted draft</span><span className="block text-xs leading-5 text-ink-soft">Uses one credit. Turn this off for an editable source-only draft. You remain the author.</span></span></label>
+          <label className={`mt-3 flex items-start gap-3 rounded-xl px-2 py-2 text-sm ${aiCapability && !aiCapability.enabled ? "opacity-70" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1 h-4 w-4" /><span><span className="block font-semibold">Create an AI-assisted draft</span><span className="block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message} Quick uploads open as editable source-only drafts.` : "Uses one credit. Turn this off for an editable source-only draft. You remain the author."}</span></span></label>
           {uploadError && <p role="alert" className="mt-2 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{uploadError} {uploadError.includes("credit") && <Link href="/profile" className="underline">View plan</Link>}</p>}
-          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing on the shelf yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description || course.source_filename} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Edit in Studio</Link>}{course.status === "error" && <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>}<Link href={`/course/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link></div>} />)}</div>}
+          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing on the shelf yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description || course.source_filename} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Edit in Studio</Link>}{course.status === "error" && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>)}<Link href={`/course/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link></div>} />)}</div>}
         </section>
       </div>
     </div>

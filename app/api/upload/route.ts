@@ -15,6 +15,7 @@ import {
   operationalSubject,
   recordOperationalError,
 } from "@/lib/observability";
+import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const generateWithAi = form.get("generate") !== "false";
+  const ai = getAiAvailability();
+  if (generateWithAi && !ai.enabled) {
+    return NextResponse.json(aiUnavailablePayload(ai), { status: 503 });
+  }
   const isAdmin = user.role === "admin";
   if (generateWithAi && !isAdmin && user.credits < 1) {
     return NextResponse.json(

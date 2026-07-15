@@ -1,5 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import { createAiProvider } from "./ai-provider";
 import { BLOCK_SCHEMAS } from "./block-registry";
 import {
   applyScopedRegeneration,
@@ -7,9 +7,6 @@ import {
   failScopedRegeneration,
   type RegenerationScope,
 } from "./studio";
-
-const client = new Anthropic();
-const MODEL = "claude-opus-4-8";
 
 function sourceText(sources: Array<{ id: string; title: string; extracted_content_json: string | null }>) {
   return sources
@@ -34,6 +31,7 @@ export async function regenerateStudioScope(
   scope: RegenerationScope,
   instruction?: string
 ) {
+  const { client, model } = createAiProvider();
   const context = await beginScopedRegeneration(userId, courseId, scope);
   try {
     const groundedSource = sourceText(context.sources);
@@ -41,7 +39,7 @@ export async function regenerateStudioScope(
     for (const target of context.targets) {
       const schema = BLOCK_SCHEMAS[target.blockType];
       const response = await client.messages.parse({
-        model: MODEL,
+        model,
         max_tokens: 2500,
         system: "Revise one learning block. Stay faithful to the supplied source. Return only content matching the requested block schema. Keep language clear and accessible. Never add unsupported claims.",
         messages: [{

@@ -30,7 +30,8 @@ design baseline.
 1. `npm install`
 2. Put keys in `.env.local`:
    ```
-   ANTHROPIC_API_KEY=sk-ant-...     # required for course generation
+   BOOKQUEST_AI_PROVIDER=anthropic # anthropic | anthropic-compatible | disabled
+   ANTHROPIC_API_KEY=sk-ant-...     # required for default AI generation
    FLW_SECRET_KEY=FLWSECK-...       # optional; omit for test-mode billing
    BILLING_CURRENCY=USD             # optional, default USD
    RATE_LIMIT_SALT=random-secret    # recommended; hashes limiter identities
@@ -97,6 +98,8 @@ design baseline.
   append-only answer foundation, API contract, privacy model, and release gaps.
 - [`docs/PRIVACY_LIFECYCLE.md`](docs/PRIVACY_LIFECYCLE.md) — consent, retention,
   export, erasure, archive/redaction rules, and scaling thresholds.
+- [`docs/SELF_HOSTING_AND_AI.md`](docs/SELF_HOSTING_AND_AI.md) — Node/Postgres
+  deployment, upgrades, provider selection, no-AI mode and isolated-use limits.
 - [`docs/PHASE_0_THREAT_MODEL.md`](docs/PHASE_0_THREAT_MODEL.md) — Phase 0 assets,
   trust boundaries, route review, resolved findings and accepted limitations.
 - [`docs/PHASE_1_SPACE_MODEL.md`](docs/PHASE_1_SPACE_MODEL.md) — the gated Space,
@@ -108,7 +111,7 @@ design baseline.
 ## Going live (when ready)
 
 1. Create a Neon Postgres database → set `DATABASE_URL` (the `-pooler` host)
-   in the Vercel project's Environment Variables, plus `ANTHROPIC_API_KEY`
+   in the Vercel project's Environment Variables, plus your selected AI mode
 2. Create a Flutterwave merchant account → put `FLW_SECRET_KEY` in env
 3. Deploy to Vercel — the schema is created automatically on first request
 4. Point a domain, enable HTTPS — the PWA becomes installable for everyone

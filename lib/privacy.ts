@@ -7,7 +7,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 8;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 9;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -122,6 +122,133 @@ export async function createAccountExport(userId: number) {
       [userId]
     );
     const courseIds = ownedCourses.map((course) => Number(course.id));
+    const personalSpaces = await rows(
+      client,
+      `SELECT id, name, type, status, policy_version, created_at, updated_at
+         FROM spaces WHERE personal_owner_user_id = $1 ORDER BY created_at, id`,
+      [userId]
+    );
+    const personalSpaceIds = personalSpaces.map((space) => String(space.id));
+    const sourceAssets = personalSpaceIds.length
+      ? await rows(
+          client,
+          `SELECT id, owning_space_id, created_by_user_id, kind, title,
+                  lifecycle_status, access_policy, retention_policy_json,
+                  current_version, replaced_by_source_id, created_at, updated_at,
+                  deletion_scheduled_at
+             FROM source_assets
+            WHERE owning_space_id = ANY($1::text[]) ORDER BY created_at, id`,
+          [personalSpaceIds]
+        )
+      : [];
+    const sourceIds = sourceAssets.map((source) => String(source.id));
+    const sourceVersions = sourceIds.length
+      ? await rows(
+          client,
+          `SELECT id, source_id, version, content_hash, original_filename,
+                  mime_type, extracted_content_json, extraction_model,
+                  extractor_version, provenance_json, created_by_user_id, created_at
+             FROM source_versions
+            WHERE source_id = ANY($1::text[]) ORDER BY source_id, version`,
+          [sourceIds]
+        )
+      : [];
+    const sourceCollections = personalSpaceIds.length
+      ? await rows(
+          client,
+          `SELECT id, owning_space_id, name, lifecycle_status, current_version,
+                  created_by_user_id, created_at, updated_at
+             FROM source_collections
+            WHERE owning_space_id = ANY($1::text[]) ORDER BY created_at, id`,
+          [personalSpaceIds]
+        )
+      : [];
+    const collectionIds = sourceCollections.map((collection) => String(collection.id));
+    const sourceCollectionVersions = collectionIds.length
+      ? await rows(
+          client,
+          `SELECT id, collection_id, version, status, created_by_user_id,
+                  created_at, published_at
+             FROM source_collection_versions
+            WHERE collection_id = ANY($1::text[]) ORDER BY collection_id, version`,
+          [collectionIds]
+        )
+      : [];
+    const collectionVersionIds = sourceCollectionVersions.map((version) => String(version.id));
+    const sourceCollectionItems = collectionVersionIds.length
+      ? await rows(
+          client,
+          `SELECT collection_version_id, source_version_id, position, usage_policy
+             FROM source_collection_version_items
+            WHERE collection_version_id = ANY($1::text[])
+            ORDER BY collection_version_id, position`,
+          [collectionVersionIds]
+        )
+      : [];
+    const recipes = personalSpaceIds.length
+      ? await rows(
+          client,
+          `SELECT id, owning_space_id, title, visibility, created_by_user_id,
+                  current_version, forked_from_recipe_id, forked_from_version,
+                  created_at, updated_at
+             FROM recipes WHERE owning_space_id = ANY($1::text[])
+            ORDER BY created_at, id`,
+          [personalSpaceIds]
+        )
+      : [];
+    const recipeIds = recipes.map((recipe) => String(recipe.id));
+    const recipeVersions = recipeIds.length
+      ? await rows(
+          client,
+          `SELECT * FROM recipe_versions
+            WHERE recipe_id = ANY($1::text[]) ORDER BY recipe_id, version`,
+          [recipeIds]
+        )
+      : [];
+    const courseVersions = courseIds.length
+      ? await rows(
+          client,
+          `SELECT * FROM course_versions
+            WHERE course_id = ANY($1::int[]) ORDER BY course_id, version_number`,
+          [courseIds]
+        )
+      : [];
+    const courseVersionIds = courseVersions.map((version) => String(version.id));
+    const courseVersionSources = courseVersionIds.length
+      ? await rows(
+          client,
+          `SELECT course_version_id, source_version_id, position, coverage_json
+             FROM course_version_sources
+            WHERE course_version_id = ANY($1::text[])
+            ORDER BY course_version_id, position`,
+          [courseVersionIds]
+        )
+      : [];
+    const courseSourceAssets = courseIds.length
+      ? await rows(
+          client,
+          `SELECT course_id, source_id, position FROM course_source_assets
+            WHERE course_id = ANY($1::int[]) ORDER BY course_id, position`,
+          [courseIds]
+        )
+      : [];
+    const courseBlocks = courseVersionIds.length
+      ? await rows(
+          client,
+          `SELECT * FROM course_blocks WHERE course_version_id = ANY($1::text[])
+            ORDER BY course_version_id, module_position, lesson_position, position`,
+          [courseVersionIds]
+        )
+      : [];
+    const blockIds = courseBlocks.map((block) => String(block.id));
+    const courseBlockRevisions = blockIds.length
+      ? await rows(
+          client,
+          `SELECT * FROM course_block_revisions WHERE block_id = ANY($1::text[])
+            ORDER BY block_id, revision`,
+          [blockIds]
+        )
+      : [];
     const modules = courseIds.length
       ? await rows(client, "SELECT * FROM modules WHERE course_id = ANY($1::int[]) ORDER BY course_id, position", [courseIds])
       : [];
@@ -143,7 +270,26 @@ export async function createAccountExport(userId: number) {
       account,
       consentHistory: await rows(client, "SELECT purpose, version, decision, source, recorded_at FROM consent_records WHERE user_id = $1 ORDER BY id", [userId]),
       privacyHistory: await rows(client, "SELECT action, effective_at, metadata_json, recorded_at FROM privacy_actions WHERE user_id = $1 ORDER BY id", [userId]),
-      content: { courses: ownedCourses, modules, lessons },
+      content: {
+        courses: ownedCourses,
+        modules,
+        lessons,
+        authoring: {
+          personalSpaces,
+          sourceAssets,
+          sourceVersions,
+          sourceCollections,
+          sourceCollectionVersions,
+          sourceCollectionItems,
+          recipes,
+          recipeVersions,
+          courseVersions,
+          courseVersionSources,
+          courseSourceAssets,
+          courseBlocks,
+          courseBlockRevisions,
+        },
+      },
       learning: {
         identity,
         enrollments: await rows(client, `SELECT e.course_id, e.created_at, c.title FROM enrollments e JOIN courses c ON c.id = e.course_id WHERE e.user_id = $1 ORDER BY e.created_at`, [userId]),

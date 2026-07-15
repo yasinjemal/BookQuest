@@ -82,12 +82,16 @@ describe.skipIf(!TEST_DB)("account privacy lifecycle", () => {
     const exported = await privacy.createAccountExport(userId);
     expect(exported.account.email).toBe("privacy@example.com");
     expect(exported.content.courses[0].source_json).toContain("source text");
+    expect(exported.content.authoring.personalSpaces).toHaveLength(1);
+    expect(exported.content.authoring.sourceAssets.length).toBeGreaterThan(0);
+    expect(exported.content.authoring.sourceVersions[0].extracted_content_json).toContain("source text");
     expect(exported.learning.events).toHaveLength(1);
     expect(exported.billing).toHaveLength(1);
     const serialized = JSON.stringify(exported);
     expect(serialized).not.toContain("password_hash");
     expect(serialized).not.toContain("sessions");
     expect(serialized).not.toContain("account_tokens");
+    expect(serialized).not.toContain("raw_storage_key");
   });
 
   it("supports cancellation during the grace period", async () => {

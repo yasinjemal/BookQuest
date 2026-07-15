@@ -1,5 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import {
+  createAiProvider,
+  DEFAULT_AI_MODEL,
+  getAiAvailability,
+  resolveAiConfiguration,
+} from "./ai-provider";
 import {
   claimNextModule,
   countModules,
@@ -24,20 +29,21 @@ import {
   recordOperationalEvent,
 } from "./observability";
 
-export const GENERATOR_MODEL = "claude-opus-4-8";
 export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v1";
 export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v1";
+
+export function getGeneratorModel(): string {
+  return resolveAiConfiguration().model || DEFAULT_AI_MODEL;
+}
 
 /** A module gets this many attempts across the whole durable run before it is
  *  marked failed; the outline gets this many too before the course fails. */
 export const MAX_MODULE_ATTEMPTS = 3;
 export const MAX_OUTLINE_ATTEMPTS = 3;
 
-const client = new Anthropic();
-
 function apiKeyMessage(raw: string): string {
   return /authentication|api.?key|x-api-key/i.test(raw)
-    ? "No API key found. Add your Anthropic API key (ANTHROPIC_API_KEY), then tap Retry."
+    ? "No AI provider key was found. Configure the selected provider, then tap Retry."
     : raw;
 }
 
@@ -61,12 +67,13 @@ Rules for all content you write:
 
 /** Outline the whole document into modules (one Claude call). */
 async function generateOutline(chapters: Chapter[]) {
+  const { client, model } = createAiProvider();
   const chapterList = chapters
     .map((c, i) => `[${i}] ${c.title} — ${c.text.slice(0, 300).replace(/\n+/g, " ")}...`)
     .join("\n");
 
   const outlineResp = await client.messages.parse({
-    model: GENERATOR_MODEL,
+    model,
     max_tokens: 8000,
     thinking: { type: "adaptive" },
     system: SYSTEM,
@@ -106,6 +113,18 @@ export async function runGenerationStep(
   // Still extracting (or no stored source yet) — not ready to generate.
   if (!course.source_json) return "done";
 
+  const ai = getAiAvailability();
+  if (!ai.enabled) {
+    await setCourseStatus(
+      courseId,
+      "error",
+      ai.message || "AI generation is unavailable for this installation.",
+      generationRunId
+    );
+    return "done";
+  }
+  const generatorModel = ai.model || DEFAULT_AI_MODEL;
+
   await touchGenerationHeartbeat(courseId, generationRunId);
   const chapters = JSON.parse(course.source_json) as Chapter[];
 
@@ -118,7 +137,7 @@ export async function runGenerationStep(
         severity: "info",
         area: "course.outline",
         subjectKey: operationalSubject("course", courseId),
-        metadata: { model: GENERATOR_MODEL, prompt_version: "course-outline-v1" },
+        metadata: { model: generatorModel, prompt_version: "course-outline-v1" },
       });
       const outline = await generateOutline(chapters);
       await setCourseMeta(courseId, outline.title, outline.description, generationRunId);
@@ -143,7 +162,7 @@ export async function runGenerationStep(
         area: "course.outline",
         error: err,
         subjectKey: operationalSubject("course", courseId),
-        metadata: { model: GENERATOR_MODEL },
+        metadata: { model: generatorModel },
       });
       const attempts = await bumpCourseGenerationAttempts(courseId, generationRunId);
       if (attempts >= MAX_OUTLINE_ATTEMPTS) {
@@ -174,7 +193,7 @@ export async function runGenerationStep(
         area: "course.module",
         subjectKey: operationalSubject("course", courseId),
         metadata: {
-          model: GENERATOR_MODEL,
+          model: generatorModel,
           prompt_version: COURSE_LESSON_PROMPT_VERSION,
         },
       });
@@ -193,7 +212,7 @@ export async function runGenerationStep(
         area: "course.module",
         error: err,
         subjectKey: operationalSubject("course", courseId),
-        metadata: { model: GENERATOR_MODEL },
+        metadata: { model: generatorModel },
       });
       // Give up on this module after its final attempt; otherwise release it.
       await setModuleStatus(
@@ -247,8 +266,9 @@ export async function generatePracticeQuiz(
   weakConcepts: string[],
   sourceText: string
 ): Promise<Card[]> {
+  const { client, model } = createAiProvider();
   const resp = await client.messages.parse({
-    model: GENERATOR_MODEL,
+    model,
     max_tokens: 6000,
     thinking: { type: "adaptive" },
     system: SYSTEM,
@@ -273,8 +293,9 @@ async function generateModuleLessons(
   sourceText: string,
   generationRunId: string
 ) {
+  const { client, model } = createAiProvider();
   const resp = await client.messages.parse({
-    model: GENERATOR_MODEL,
+    model,
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: SYSTEM,
@@ -296,7 +317,7 @@ async function generateModuleLessons(
     const cards = lesson.cards.filter((c) => Card.safeParse(c).success);
     if (cards.length >= 4) {
       await createLesson(moduleId, lesson.title, idx, JSON.stringify(cards), {
-        generatorModel: GENERATOR_MODEL,
+        generatorModel: model,
         promptVersion: COURSE_LESSON_PROMPT_VERSION,
         generationRunId,
       });

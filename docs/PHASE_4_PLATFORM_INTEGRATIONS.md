@@ -51,6 +51,28 @@ bounded to Space-owned course and assignment metadata. This first contract does
 not expose member identity, Passport claims, evidence, credentials or learner
 activity.
 
+### Client example
+
+Create a client in **Settings → OAuth clients & signed webhooks** and copy its
+one-time secret. Exchange only the scope the process needs:
+
+```bash
+curl -u "$BOOKQUEST_CLIENT_ID:$BOOKQUEST_CLIENT_SECRET" \
+  -H "content-type: application/x-www-form-urlencoded" \
+  --data "grant_type=client_credentials&scope=courses.read" \
+  https://bookquest.example/api/oauth/token
+```
+
+Then call the versioned route with the returned opaque token:
+
+```bash
+curl -H "authorization: Bearer $BOOKQUEST_ACCESS_TOKEN" \
+  https://bookquest.example/api/v1/spaces/$SPACE_ID/courses
+```
+
+Clients must reject an unexpected `apiVersion`, request the smallest available
+scope and treat `401` as an expired or revoked credential. Tokens last one hour.
+
 ## Signed, idempotent webhooks
 
 Supported events:
@@ -87,6 +109,45 @@ HMAC-SHA256 over:
 Consumers must reject stale timestamps, compare signatures in constant time and
 store the event UUID before applying side effects. The headers also include
 `X-BookQuest-Event-Id`, `X-BookQuest-Delivery-Id` and `Idempotency-Key`.
+
+Minimal Node verification (perform this over the exact raw request bytes before
+JSON parsing):
+
+```js
+import crypto from "node:crypto";
+
+const [timestampPart, signaturePart] = signatureHeader.split(",");
+const timestamp = timestampPart.replace("t=", "");
+const supplied = Buffer.from(signaturePart.replace("v1=", ""), "hex");
+const expected = crypto.createHmac("sha256", signingSecret)
+  .update(`${timestamp}.${eventId}.${rawBody}`)
+  .digest();
+if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300 ||
+    supplied.length !== expected.length ||
+    !crypto.timingSafeEqual(supplied, expected)) throw new Error("invalid webhook");
+```
+
+Persist `eventId` under a unique constraint before applying the event. A retry
+uses the same ID and must not repeat the business action.
+
+## Integration and extension permission boundary
+
+The reviewed machine boundary is declarative and deny-by-default:
+
+- API clients receive only an allowlisted read scope selected by a Space owner
+  or administrator; tokens cannot cross their stored Space.
+- Webhook endpoints receive only selected allowlisted event envelopes and never
+  execute code inside BookQuest.
+- secrets are returned once, stored as hashes or authenticated ciphertext, and
+  omitted from exports and list responses.
+- no package, script, executable block or third-party plugin can be uploaded or
+  loaded by the application.
+
+Executable extensions are prohibited until a separate isolation design proves
+tenant separation, resource limits, egress controls, secret isolation,
+provenance, review, revocation and auditability. Adding a new API scope or event
+type requires code review, tenant-negative tests and a new documented contract;
+it is not treated as a configuration-only change.
 
 Signing secrets are 256-bit random values encrypted with AES-256-GCM and
 endpoint-bound additional authenticated data. Webhook URLs must be public HTTPS
