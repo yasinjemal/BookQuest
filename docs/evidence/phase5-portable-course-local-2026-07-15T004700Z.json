@@ -1,0 +1,49 @@
+{
+  "phase": 5,
+  "slice": "versioned portable course archive",
+  "captured_at_utc": "2026-07-15T00:47:00Z",
+  "environment": "local engineering verification",
+  "engineering_status": "In progress",
+  "external_validation_status": "Not available yet",
+  "external_validation_reason": "Pending user acquisition and partner access",
+  "implemented": [
+    "bookquest.course schema version 1 export",
+    "installation-neutral source and block references",
+    "whole-archive, source and recipe integrity checks",
+    "destination authorization and no-write dry-run",
+    "transactional private-draft restore",
+    "duplicate archive replay protection",
+    "creator-facing Studio download and Create restore controls",
+    "forward-only migration 20"
+  ],
+  "verification": {
+    "typecheck": "passed",
+    "targeted_tests": {
+      "command": "npx vitest run tests/portability.test.ts tests/migration-upgrade.test.ts tests/phase5-portability-contract.test.ts",
+      "result": "3 files passed; 20 tests passed"
+    },
+    "full_tests": {
+      "command": "npm test with TEST_DATABASE_URL on PostgreSQL 16",
+      "result": "37 files passed; 203 tests passed"
+    },
+    "production_build": "passed; Next.js generated 56 static pages and included both portability routes",
+    "dependency_audit": "npm audit --omit=dev --audit-level=high: 0 vulnerabilities",
+    "browser_smoke": "Authenticated Create loaded against the scratch PostgreSQL database; Space, source and recipe requests returned 200 and the creator workspace rendered. Archive UI semantics are locked by the contract test."
+  },
+  "security_and_privacy": [
+    "cross-Space export and import denied",
+    "learner, answer, progress, evidence, credential, member and secret records excluded",
+    "imports remain unpublished private drafts",
+    "responses are authenticated, rate limited, private no-store and nosniff",
+    "same archive digest cannot be replayed into one destination Space"
+  ],
+  "open_release_gates": [
+    "standalone recipe archive",
+    "full Space and account restore",
+    "full export restored into a clean compatible installation",
+    "self-hosted upgrade proof",
+    "non-default AI organization proof",
+    "marketplace moderation, payout and extension isolation gates"
+  ],
+  "claim_boundary": "This evidence proves a bounded clean-Space authoring round trip, not a full clean-install restore or Phase 5 readiness."
+}

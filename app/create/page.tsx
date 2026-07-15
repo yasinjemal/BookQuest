@@ -10,6 +10,14 @@ interface SpaceOption { space: { id: string; name: string; type: string }; membe
 interface SourceOption { id: string; title: string; kind: string; source_version_id: string }
 interface RecipeOption { id: string; title: string; recipe_version_id: string; status: string }
 interface StarterOption { id: string; title: string }
+interface PortableImportReport {
+  canImport: boolean;
+  proposedTitle: string;
+  counts: { sources: number; blocks: number; lessons: number; modules: number; recipes: number };
+  conflicts: Array<{ code: string; message: string; resolution: string }>;
+  warnings: string[];
+  issues: Array<{ severity: "error" | "warning" | "info"; code: string; message: string }>;
+}
 
 const creationMethods: Array<{ id: CreationMode; title: string; description: string; icon: AppIconName }> = [
   { id: "ai", title: "Create with AI", description: "Upload one document and receive an editable draft to review.", icon: "spark" },
@@ -40,6 +48,11 @@ export default function CreatePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [welcome, setWelcome] = useState(false);
+  const [portablePackage, setPortablePackage] = useState<unknown>(null);
+  const [portableFileName, setPortableFileName] = useState("");
+  const [portableTitle, setPortableTitle] = useState("");
+  const [portableReport, setPortableReport] = useState<PortableImportReport | null>(null);
+  const [portableBusy, setPortableBusy] = useState(false);
 
   useEffect(() => {
     setWelcome(new URLSearchParams(window.location.search).get("welcome") === "1");
@@ -47,33 +60,50 @@ export default function CreatePage() {
 
   const loadSources = useCallback(async (chosenSpace: string) => {
     if (!chosenSpace) return setSources([]);
-    const response = await fetch(`/api/studio/sources?spaceId=${encodeURIComponent(chosenSpace)}`);
-    if (!response.ok) return;
-    const data = await response.json();
-    setSources(data.sources ?? []);
-    setSelected([]);
+    try {
+      const response = await fetch(`/api/studio/sources?spaceId=${encodeURIComponent(chosenSpace)}`);
+      if (!response.ok) return setSources([]);
+      const data = await response.json();
+      setSources(data.sources ?? []);
+      setSelected([]);
+    } catch {
+      setSources([]);
+    }
   }, []);
 
   const loadRecipes = useCallback(async (chosenSpace: string) => {
     if (!chosenSpace) return setRecipes([]);
-    const response = await fetch(`/api/studio/recipes?spaceId=${encodeURIComponent(chosenSpace)}`);
-    if (!response.ok) return;
-    const data = await response.json();
-    setRecipes(data.recipes ?? []);
-    setStarters(data.starters ?? []);
-    setRecipeVersionId("");
+    try {
+      const response = await fetch(`/api/studio/recipes?spaceId=${encodeURIComponent(chosenSpace)}`);
+      if (!response.ok) return setRecipes([]);
+      const data = await response.json();
+      setRecipes(data.recipes ?? []);
+      setStarters(data.starters ?? []);
+      setRecipeVersionId("");
+    } catch {
+      setRecipes([]);
+    }
   }, []);
 
   useEffect(() => {
-    void fetch("/api/spaces").then(async (response) => {
-      if (response.status === 401) return router.push("/login");
-      const data = await response.json();
-      const available = data.spaces ?? [];
-      setSpaces(available);
-      const first = available[0]?.space.id ?? "";
-      setSpaceId(first);
-      await Promise.all([loadSources(first), loadRecipes(first)]);
-    });
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/spaces");
+        if (response.status === 401) return router.push("/login");
+        if (!response.ok) throw new Error("workspace request failed");
+        const data = await response.json();
+        if (cancelled) return;
+        const available = data.spaces ?? [];
+        setSpaces(available);
+        const first = available[0]?.space.id ?? "";
+        setSpaceId(first);
+        await Promise.all([loadSources(first), loadRecipes(first)]);
+      } catch {
+        if (!cancelled) setError("Your workspaces could not be loaded. Check your connection and refresh this page.");
+      }
+    })();
+    return () => { cancelled = true; };
   }, [loadRecipes, loadSources, router]);
 
   async function uploadFile(file: File) {
@@ -127,6 +157,56 @@ export default function CreatePage() {
     } finally { setBusy(false); }
   }
 
+  async function inspectPortableCourse(file: File) {
+    setPortableBusy(true);
+    setPortablePackage(null);
+    setPortableReport(null);
+    setPortableFileName(file.name);
+    setError("");
+    try {
+      if (file.size > 10 * 1024 * 1024) throw new Error("Portable course files must be 10 MB or smaller.");
+      const coursePackage = JSON.parse(await file.text()) as unknown;
+      const response = await fetch("/api/studio/imports/course", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "dry_run", targetSpaceId: spaceId, package: coursePackage }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "This portable course could not be validated.");
+      setPortablePackage(coursePackage);
+      setPortableReport(data.report);
+      setPortableTitle(data.report.proposedTitle);
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message ? cause.message : "This portable course is not valid JSON.");
+    } finally {
+      setPortableBusy(false);
+    }
+  }
+
+  async function restorePortableCourse() {
+    if (!portablePackage || !portableReport?.canImport) return;
+    setPortableBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/studio/imports/course", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "import",
+          targetSpaceId: spaceId,
+          title: portableTitle,
+          package: portablePackage,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "The portable course could not be restored.");
+      router.push(data.import.studioUrl);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The portable course could not be restored.");
+      setPortableBusy(false);
+    }
+  }
+
   const showSources = creationMode === "sources" || creationMode === "recipe";
   const selectedSpace = spaces.find(({ space }) => space.id === spaceId)?.space;
 
@@ -151,7 +231,16 @@ export default function CreatePage() {
           <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 font-semibold"><span>More ways to create</span><span className="text-xs font-normal text-ink-soft">Blank course, saved sources, recipes, and destination</span></summary>
           <div className="mt-6 border-t border-line pt-6">
             <section aria-labelledby="creation-method-heading"><p className="section-label">Optional starting points</p><h2 id="creation-method-heading" className="display mt-2 text-4xl">Choose a different starting point</h2><div className="mt-5 grid gap-3 md:grid-cols-3">{creationMethods.filter((method) => method.id !== "ai").map((method) => <button key={method.id} type="button" onClick={() => setCreationMode(method.id)} aria-pressed={creationMode === method.id} className={`min-h-40 rounded-[1.35rem] border p-5 text-left transition-[transform,border-color,background] hover:-translate-y-0.5 ${creationMode === method.id ? "border-ink bg-ink text-white shadow-pop" : "border-line bg-card text-ink shadow-card"}`}><span className={`grid h-10 w-10 place-items-center rounded-full ${creationMode === method.id ? "bg-signal text-ink" : "bg-paper text-teal"}`}><AppIcon name={method.icon} className="h-5 w-5" /></span><span className="mt-6 block font-semibold">{method.title}</span><span className={`mt-2 block text-xs leading-5 ${creationMode === method.id ? "text-white/65" : "text-ink-soft"}`}>{method.description}</span></button>)}</div></section>
-            <section className="mt-6 rounded-xl border border-line bg-paper/60 p-4" aria-labelledby="space-choice-heading"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-signal text-ink"><AppIcon name="spaces" className="h-4 w-4" /></span><div className="min-w-0 flex-1"><label id="space-choice-heading" htmlFor="creation-space" className="block text-xs font-bold uppercase tracking-[0.13em] text-ink-soft">Save course in</label><select id="creation-space" value={spaceId} onChange={(event) => { setSpaceId(event.target.value); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="mt-1 w-full bg-transparent text-base font-semibold outline-none">{spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name}{spaces.length > 1 ? ` · ${space.type}` : ""}</option>)}</select></div></div>{selectedSpace && <p className="mt-3 pl-12 text-xs text-ink-soft">Your default is {selectedSpace.name}. Change it only when you are creating for another workspace.</p>}</section>
+            <section className="mt-6 rounded-xl border border-line bg-paper/60 p-4" aria-labelledby="space-choice-heading"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-signal text-ink"><AppIcon name="spaces" className="h-4 w-4" /></span><div className="min-w-0 flex-1"><label id="space-choice-heading" htmlFor="creation-space" className="block text-xs font-bold uppercase tracking-[0.13em] text-ink-soft">Save course in</label><select id="creation-space" value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setPortablePackage(null); setPortableReport(null); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="mt-1 w-full bg-transparent text-base font-semibold outline-none">{spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name}{spaces.length > 1 ? ` · ${space.type}` : ""}</option>)}</select></div></div>{selectedSpace && <p className="mt-3 pl-12 text-xs text-ink-soft">Your default is {selectedSpace.name}. Change it only when you are creating for another workspace.</p>}</section>
+            <details className="mt-6 rounded-[1.2rem] border border-line bg-card p-4 sm:p-5">
+              <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-4 text-sm font-semibold"><span>Restore a portable BookQuest course</span><span className="text-xs font-normal text-ink-soft">JSON · dry-run first</span></summary>
+              <div className="mt-5 border-t border-line pt-5">
+                <p className="text-xs leading-5 text-ink-soft">BookQuest validates the profile, integrity digest, source references, block schemas, size limits, and destination access before writing anything.</p>
+                <label className="quiet-button mt-4 cursor-pointer justify-center text-xs">{portableBusy ? "Checking package…" : "Choose portable course file"}<input type="file" accept=".json,application/json" className="sr-only" disabled={portableBusy || !spaceId} onChange={(event) => { const file = event.target.files?.[0]; if (file) void inspectPortableCourse(file); event.target.value = ""; }} /></label>
+                {portableFileName && <p className="mt-2 truncate text-[10px] text-ink-soft">{portableFileName}</p>}
+                {portableReport && <div className="mt-4 rounded-xl bg-sky/35 p-4"><p className={`text-xs font-bold ${portableReport.canImport ? "text-ink" : "text-no"}`}>{portableReport.canImport ? "Dry-run passed" : "Archive needs attention"}</p><p className="mt-2 text-xs leading-5 text-ink-soft">{portableReport.counts.modules} modules · {portableReport.counts.lessons} lessons · {portableReport.counts.blocks} blocks · {portableReport.counts.sources} sources{portableReport.counts.recipes ? " · 1 recipe" : ""}</p>{portableReport.issues.filter((issue) => issue.severity === "error").map((issue) => <p key={issue.code} className="mt-2 text-xs font-semibold leading-5 text-no">{issue.message}</p>)}{portableReport.conflicts.map((conflict) => <p key={conflict.code} className="mt-2 text-xs leading-5 text-ink-soft"><strong className="text-ink">{conflict.message}</strong> {conflict.resolution}</p>)}<label className="mt-4 block text-xs font-semibold">Imported course title<input value={portableTitle} onChange={(event) => setPortableTitle(event.target.value)} maxLength={120} className="field mt-2" /></label><button type="button" disabled={!portableReport.canImport || portableBusy || portableTitle.trim().length < 2} onClick={() => void restorePortableCourse()} className="btn-primary mt-4 w-full text-xs disabled:opacity-40">{portableBusy ? "Restoring private draft…" : "Restore as private draft"}</button><p className="mt-3 text-[10px] leading-4 text-ink-soft">Learners, answers, credentials, members, and secrets are never imported with an authoring package.</p></div>}
+              </div>
+            </details>
             {creationMode !== "ai" && <form onSubmit={createCourse} className="mt-6 space-y-6 rounded-[1.35rem] border border-line bg-card p-5 sm:p-7"><div><p className="section-label">{creationMethods.find((method) => method.id === creationMode)?.title}</p><h2 className="display mt-2 text-4xl">Name your course</h2><p className="mt-3 text-sm leading-6 text-ink-soft">You will enter Studio with full editorial control.</p></div><label className="block text-sm font-semibold">Course title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="A clear title learners can remember" className="field mt-2" /></label>
             {showSources && <fieldset><legend className="text-sm font-semibold">{creationMode === "sources" ? "Choose one or more trusted sources" : "Optional source foundation"}</legend><div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">{sources.length === 0 && <p className="rounded-xl bg-paper p-4 text-sm text-ink-soft">No saved sources yet. Add text to the source library below, or continue with a blank recipe draft.</p>}{sources.map((source) => <label key={source.source_version_id} className="flex min-h-14 items-start gap-3 rounded-xl border border-line bg-ivory p-4 hover:border-line-deep"><input type="checkbox" checked={selected.includes(source.source_version_id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} className="mt-1 h-4 w-4" /><span><span className="block text-sm font-semibold">{source.title}</span><span className="text-xs capitalize text-ink-soft">{source.kind}</span></span></label>)}</div></fieldset>}
             {creationMode === "recipe" && <div className="rounded-[1.2rem] bg-sky/35 p-4 sm:p-5"><label className="block text-sm font-semibold">Teaching recipe<select value={recipeVersionId} onChange={(event) => setRecipeVersionId(event.target.value)} className="field mt-2"><option value="">Choose a recipe later</option>{recipes.map((recipe) => <option key={recipe.recipe_version_id} value={recipe.recipe_version_id}>{recipe.title} · {recipe.status}</option>)}</select></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={starterId} onChange={(event) => setStarterId(event.target.value)} aria-label="Starter recipe" className="field min-w-0 flex-1">{starters.map((starter) => <option key={starter.id} value={starter.id}>{starter.title}</option>)}</select><button type="button" onClick={() => void addStarterRecipe()} className="inline-flex min-h-12 items-center justify-center rounded-full border border-line-deep bg-card px-5 text-sm font-semibold">Add starter recipe</button></div></div>}

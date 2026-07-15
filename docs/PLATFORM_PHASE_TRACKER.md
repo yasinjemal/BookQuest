@@ -3,10 +3,10 @@
 **Purpose:** the single execution tracker for growing BookQuest from a
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
-**Last updated:** 14 July 2026
-**Current product priority:** public-launch productization
-**Next product slice:** public-launch conversion and accessibility polish based
-on acquired-user feedback; Phase 5 remains paused
+**Last updated:** 15 July 2026
+**Current product priority:** Phase 5 portable authoring
+**Next product slice:** validated course, recipe and Space portability. External
+validation remains backlogged until real users or partners are available.
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -117,14 +117,14 @@ and an institution operate securely. Its four primary experiences are:
 | 2. Course Studio and recipes | Creators can build, edit and reuse many course types | **Deployed** | **Pending user acquisition** |
 | 3. Institutional workflow | An organization can complete an auditable training journey | **Deployed** | **Pending user acquisition** |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | **Deployed** | **Pending user acquisition** |
-| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **Not started** | **Not available yet** |
+| 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **In progress** | **Not available yet** |
 | 6. Learning Genome | Evidence improves questions and learning paths | **Not started** | **Not available yet** |
 | 7. Multi-channel and scale | Learning works across web, offline and messaging | **Not started** | **Not available yet** |
 
 “Deployed” describes the documented engineering scope, not institutional
-validation or certification. Phase 5 architecture expansion is paused while the
-public product is productized. Productization priorities and the A–D audit are in
-`docs/PUBLIC_LAUNCH_PRODUCTIZATION.md`.
+validation or certification. Public productization is deployed and Phase 5 is
+now proceeding in bounded, locally verifiable slices. Productization priorities
+and the A–D audit remain in `docs/PUBLIC_LAUNCH_PRODUCTIZATION.md`.
 
 ## External validation backlog
 
@@ -1092,12 +1092,14 @@ in the external validation backlog and does not block productization.
 
 ## Phase 5 — Open ecosystem and sovereign deployment
 
-**Engineering status:** Not started
+**Engineering status:** In progress (15 July 2026 UTC)
 
 **External validation status:** Not available yet
 
-**Product decision:** architecture expansion is paused until public-launch
-productization is understandable, usable and promotable.
+**Product decision:** the public-launch productization slice is deployed. The
+builder directed engineering to continue through locally executable phases and
+skip unavailable external gates, so Phase 5 has resumed with bounded portable
+authoring packages.
 
 **Outcome:** users can extend, move and deploy BookQuest without surrendering
 control, while hosted editions remain commercially sustainable.
@@ -1105,8 +1107,14 @@ control, while hosted editions remain commercially sustainable.
 ### Build checklist
 
 - [ ] Publish course, recipe and Space export formats.
+  - [x] Publish `bookquest.course` schema version 1 for one exact authoring version,
+    its attached sources, optional recipe, appearance and current blocks.
+  - [ ] Publish standalone recipe and full Space restore profiles.
 - [ ] Export owned sources, content, evidence and credentials.
 - [ ] Import with validation, dry-run and conflict reporting.
+  - [x] Course packages validate profile, integrity, limits, block schemas and
+    internal source refs; dry-run reports title/content conflicts without writes,
+    and import creates a separate private draft in one transaction.
 - [ ] Publish stable APIs, webhook events and examples.
 - [ ] Support configurable AI providers and AI-disabled approved content.
 - [ ] Ship self-hosted deployment and upgrade guidance.
@@ -1128,6 +1136,27 @@ control, while hosted editions remain commercially sustainable.
 - [ ] Moderation and abuse workflows exist before paid public submissions.
 - [ ] Payout/refund ledgers reconcile with the provider.
 - [ ] Extensions cannot access other Spaces by default.
+
+### Implementation evidence
+
+- `docs/PHASE_5_PORTABLE_COURSE.md` defines the bounded authoring-package
+  contract and its explicit privacy/evidence exclusions.
+- Studio downloads replace database source identities with package-local refs;
+  imports recreate sources, an optional private recipe and editable blocks with
+  new target identities. Existing courses and sources are never overwritten.
+- `tests/portability.test.ts` covers cross-tenant denial, identity/secret
+  exclusion, integrity tampering, dry-run no-write behavior, deterministic
+  conflicts, transactional clean-Space restoration, remapped citations, private
+  defaults, absent learner records, semantic round trip and replay blocking.
+- `tests/phase5-portability-contract.test.ts` locks the authenticated,
+  rate-limited, private/no-store API and creator-facing dry-run/private-draft UI.
+- `tests/migration-upgrade.test.ts` verifies forward-only migration 20 and its
+  once-only ledger entry.
+- `docs/evidence/phase5-portable-course-local-2026-07-15T004700Z.json` records
+  the 37-file/203-test regression, successful production build, zero-vulnerability
+  production dependency audit and bounded authenticated browser smoke.
+- The clean-Space round trip is engineering evidence for this bounded slice; it
+  is not the full clean-install restore release gate, which remains open below.
 
 ### Measure
 
