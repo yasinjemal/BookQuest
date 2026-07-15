@@ -30,6 +30,22 @@ describe("migration list", () => {
     expect(migration?.sql).toContain("appearance_json");
   });
 
+  it("adds the governed learning-genome foundation as a forward migration", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "learning_genome_foundation");
+    expect(migration).toMatchObject({ id: 22 });
+    expect(migration?.sql).toContain("CREATE TABLE learning_analysis_versions");
+    expect(migration?.sql).toContain("CREATE TABLE question_quality_snapshots");
+    expect(migration?.sql).toContain("CREATE TABLE concept_mapping_events");
+  });
+
+  it("adds privacy-safe multi-channel and offline state as a forward migration", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "multi_channel_offline_foundation");
+    expect(migration).toMatchObject({ id: 23 });
+    expect(migration?.sql).toContain("CREATE TABLE channel_identity_links");
+    expect(migration?.sql).toContain("CREATE TABLE channel_inbound_events");
+    expect(migration?.sql).toContain("CREATE TABLE channel_resume_links");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },

@@ -11,6 +11,7 @@ import CourseOverviewHero from "@/components/CourseOverviewHero";
 import JourneyMap from "@/components/JourneyMap";
 import Loading from "@/components/Loading";
 import ShareCourseButton from "@/components/ShareCourseButton";
+import OfflineCourseControls from "@/components/OfflineCourseControls";
 import { DEFAULT_COURSE_APPEARANCE, type CourseAppearance } from "@/lib/course-appearance";
 import { CATEGORIES } from "@/lib/categories";
 import styles from "./CoursePage.module.css";
@@ -31,6 +32,7 @@ interface ModuleData {
 }
 
 interface CourseData {
+  viewerId: number;
   course: {
     id: number;
     title: string;
@@ -152,6 +154,10 @@ export default function CoursePathPage() {
         )}
 
         {data.course.status === "ready" && <CourseLearningPulse courseId={data.course.id} learning={data.learning} />}
+
+        {data.course.status === "ready" && (
+          <OfflineCourseControls accountId={data.viewerId} courseId={data.course.id} />
+        )}
 
         <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
           <header className={styles.journeyHeading}>

@@ -1493,6 +1493,27 @@ export interface AnswerSessionRow {
   space_policy_version?: number | null;
 }
 
+async function excludeRetiredQuestionVersions<T extends PracticeSessionItem>(
+  items: T[],
+  exec: Queryable
+): Promise<T[]> {
+  if (items.length === 0) return items;
+  const versionIds = items.map((item) => describeQuestionVersion(item.questionId, item.card).id);
+  const retired = new Set((await many<{ question_version_id: string }>(
+    `SELECT latest.question_version_id
+       FROM (
+         SELECT DISTINCT ON (question_version_id) question_version_id,decision
+           FROM question_review_decisions
+          WHERE question_version_id=ANY($1::text[])
+          ORDER BY question_version_id,created_at DESC,id DESC
+       ) latest
+      WHERE latest.decision='retire'`,
+    [versionIds],
+    exec
+  )).map((row) => row.question_version_id));
+  return items.filter((item) => !retired.has(describeQuestionVersion(item.questionId, item.card).id));
+}
+
 async function createAnswerSession(
   userId: number,
   kind: AnswerSessionRow["kind"],
@@ -1524,6 +1545,7 @@ async function createAnswerSession(
         c
       );
     }
+    items = await excludeRetiredQuestionVersions(items, c);
     const sharedContext = contexts.length > 0 && contexts.every((context) =>
       context?.spaceId === contexts[0]?.spaceId &&
       context?.membershipId === contexts[0]?.membershipId &&
@@ -1633,7 +1655,7 @@ export async function createPracticeSession(
   provenance?: { generatorModel?: string; promptVersion?: string }
 ): Promise<PracticeSessionRow> {
   const id = `practice_${crypto.randomUUID()}`;
-  const sessionItems: PracticeSessionItem[] = items.map((item, index) => ({
+  let sessionItems: PracticeSessionItem[] = items.map((item, index) => ({
     ...item,
     courseId,
     questionId: item.questionId ?? `${id}:question:${index}`,
@@ -1651,6 +1673,23 @@ export async function createPracticeSession(
     ).rows[0];
     if (!course) throw new Error("Course not found");
     for (const item of sessionItems) item.courseVersion ??= course.content_version;
+    for (const item of sessionItems) {
+      await ensureQuestionVersion(
+        {
+          courseId,
+          courseVersion: item.courseVersion,
+          lessonId: item.lessonId,
+          cardIndex: item.cardIndex,
+          questionId: item.questionId,
+          concept: item.concept,
+          card: item.card,
+          generatorModel: item.generatorModel ?? provenance?.generatorModel,
+          promptVersion: item.promptVersion ?? provenance?.promptVersion,
+        },
+        c
+      );
+    }
+    sessionItems = await excludeRetiredQuestionVersions(sessionItems, c);
     await c.query(
       `INSERT INTO practice_sessions
         (id, user_id, course_id, fresh, items_json, generator_model,
@@ -1672,22 +1711,6 @@ export async function createPracticeSession(
         context.policyVersion,
       ]
     );
-    for (const item of sessionItems) {
-      await ensureQuestionVersion(
-        {
-          courseId,
-          courseVersion: item.courseVersion,
-          lessonId: item.lessonId,
-          cardIndex: item.cardIndex,
-          questionId: item.questionId,
-          concept: item.concept,
-          card: item.card,
-          generatorModel: item.generatorModel ?? provenance?.generatorModel,
-          promptVersion: item.promptVersion ?? provenance?.promptVersion,
-        },
-        c
-      );
-    }
   });
 
   return {

@@ -80,7 +80,10 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
     const client: PoolClient = await raw.connect();
     try {
       const applied = await applyPendingMigrations(client);
-      expect(applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
+      expect(applied).toEqual([
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+      ]);
     } finally {
       client.release();
     }
@@ -116,6 +119,8 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       { id: 19, name: "public_launch_productization" },
       { id: 20, name: "portable_course_archives" },
       { id: 21, name: "portable_recipe_archives" },
+      { id: 22, name: "learning_genome_foundation" },
+      { id: 23, name: "multi_channel_offline_foundation" },
     ]);
   });
 
@@ -221,6 +226,21 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "institutional_pilot_observations",
       "institutional_pilot_gate_attestations",
       "institutional_pilot_status_events",
+      "learning_analysis_versions",
+      "question_quality_snapshots",
+      "question_review_decisions",
+      "concept_mapping_proposals",
+      "concept_mapping_events",
+      "prerequisite_candidates",
+      "learning_feature_flags",
+      "course_placement_preferences",
+      "explanation_experiment_versions",
+      "channel_identity_links",
+      "channel_consent_events",
+      "channel_inbound_events",
+      "channel_delivery_events",
+      "channel_resume_points",
+      "channel_resume_links",
     ];
     for (const table of expected) expect(present).toContain(table);
   });
@@ -413,6 +433,11 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
         "learning_events_no_delete",
         "question_versions_no_content_update",
         "question_versions_no_delete",
+        "question_quality_snapshots_no_update",
+        "question_review_decisions_no_update",
+        "concept_mapping_events_no_update",
+        "channel_consent_events_no_write",
+        "channel_delivery_events_no_write",
       ])
     );
   });

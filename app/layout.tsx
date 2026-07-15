@@ -3,6 +3,7 @@ import { Instrument_Serif, Manrope } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import SWRegister from "@/components/SWRegister";
+import LearningSyncStatus from "@/components/LearningSyncStatus";
 
 const editorial = Instrument_Serif({
   subsets: ["latin"],
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return <html lang="en" className={`${editorial.variable} ${manrope.variable}`}>
     <body className="min-h-dvh">
       <AppShell>{children}</AppShell>
+      <LearningSyncStatus />
       <SWRegister />
     </body>
   </html>;

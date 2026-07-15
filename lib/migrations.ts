@@ -2857,6 +2857,249 @@ CREATE INDEX portable_recipe_imports_space_time
   ON portable_recipe_imports(target_space_id, created_at DESC);
 `;
 
+const LEARNING_GENOME_FOUNDATION_SQL = `
+CREATE TABLE learning_analysis_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  version INTEGER NOT NULL UNIQUE CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','superseded')),
+  algorithm_version TEXT NOT NULL,
+  minimum_learner_sample INTEGER NOT NULL CHECK (minimum_learner_sample >= 10),
+  source_event_count INTEGER NOT NULL CHECK (source_event_count >= 0),
+  public_event_count INTEGER NOT NULL CHECK (public_event_count >= 0),
+  consented_event_count INTEGER NOT NULL CHECK (consented_event_count >= 0),
+  eligible_event_count INTEGER NOT NULL CHECK (eligible_event_count >= 0),
+  source_cutoff TEXT NOT NULL,
+  limitations_json TEXT NOT NULL DEFAULT '[]',
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  published_at TEXT
+);
+CREATE INDEX learning_analysis_versions_status_version
+  ON learning_analysis_versions(status, version DESC);
+
+CREATE TABLE question_quality_snapshots (
+  analysis_version_id TEXT NOT NULL REFERENCES learning_analysis_versions(id) ON DELETE CASCADE,
+  question_version_id TEXT NOT NULL REFERENCES question_versions(id) ON DELETE RESTRICT,
+  course_id INTEGER REFERENCES courses(id) ON DELETE SET NULL,
+  concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
+  attempts INTEGER NOT NULL CHECK (attempts >= 0),
+  unique_learners INTEGER NOT NULL CHECK (unique_learners >= 0),
+  correct_rate DOUBLE PRECISION,
+  skip_rate DOUBLE PRECISION NOT NULL CHECK (skip_rate >= 0 AND skip_rate <= 1),
+  avg_response_time_ms DOUBLE PRECISION,
+  difficulty DOUBLE PRECISION,
+  discrimination DOUBLE PRECISION,
+  confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  flags_json TEXT NOT NULL DEFAULT '[]',
+  limitations_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (analysis_version_id, question_version_id)
+);
+CREATE INDEX question_quality_snapshots_question
+  ON question_quality_snapshots(question_version_id, analysis_version_id);
+
+CREATE TABLE question_review_decisions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  question_version_id TEXT NOT NULL REFERENCES question_versions(id) ON DELETE RESTRICT,
+  analysis_version_id TEXT REFERENCES learning_analysis_versions(id) ON DELETE SET NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('keep','revise','retire')),
+  reason TEXT NOT NULL,
+  reviewer_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX question_review_decisions_question_time
+  ON question_review_decisions(question_version_id, created_at DESC);
+
+CREATE TABLE concept_mapping_proposals (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  analysis_version_id TEXT NOT NULL REFERENCES learning_analysis_versions(id) ON DELETE RESTRICT,
+  source_concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
+  target_concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
+  proposed_confidence DOUBLE PRECISION NOT NULL CHECK (proposed_confidence >= 0 AND proposed_confidence <= 1),
+  effective_confidence DOUBLE PRECISION NOT NULL CHECK (effective_confidence >= 0 AND effective_confidence <= 1),
+  rationale TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','approved','rejected','revoked')),
+  proposed_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  reviewed_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  reviewed_at TEXT,
+  CHECK (source_concept_id <> target_concept_id)
+);
+CREATE INDEX concept_mapping_proposals_status
+  ON concept_mapping_proposals(status, created_at DESC);
+
+CREATE TABLE concept_mapping_events (
+  id BIGSERIAL PRIMARY KEY,
+  mapping_id TEXT NOT NULL REFERENCES concept_mapping_proposals(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('proposed','approved','rejected','revoked')),
+  actor_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  reason TEXT NOT NULL,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX concept_mapping_events_mapping_time
+  ON concept_mapping_events(mapping_id, occurred_at, id);
+
+CREATE TABLE prerequisite_candidates (
+  analysis_version_id TEXT NOT NULL REFERENCES learning_analysis_versions(id) ON DELETE CASCADE,
+  prerequisite_concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
+  target_concept_id TEXT NOT NULL REFERENCES concepts(id) ON DELETE RESTRICT,
+  learner_sample INTEGER NOT NULL CHECK (learner_sample >= 0),
+  precedence_rate DOUBLE PRECISION NOT NULL CHECK (precedence_rate >= 0 AND precedence_rate <= 1),
+  confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  provenance_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'candidate' CHECK (status IN ('candidate','approved','rejected')),
+  reviewed_by_user_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+  reviewed_at TEXT,
+  PRIMARY KEY (analysis_version_id, prerequisite_concept_id, target_concept_id),
+  CHECK (prerequisite_concept_id <> target_concept_id)
+);
+
+CREATE TABLE learning_feature_flags (
+  course_id INTEGER PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+  adaptive_review_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  adaptive_sequencing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  placement_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  explanation_experiments_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  policy_version INTEGER NOT NULL DEFAULT 1 CHECK (policy_version > 0),
+  updated_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+CREATE TABLE course_placement_preferences (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  analysis_version_id TEXT REFERENCES learning_analysis_versions(id) ON DELETE SET NULL,
+  recommended_lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
+  selected_lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
+  decision TEXT NOT NULL CHECK (decision IN ('accepted','overridden','start_beginning')),
+  confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  limitations_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX course_placement_preferences_user_course
+  ON course_placement_preferences(user_id, course_id, created_at DESC);
+
+CREATE TABLE explanation_experiment_versions (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  experiment_key TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (version > 0),
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','stopped','archived')),
+  hypothesis TEXT NOT NULL,
+  variants_json TEXT NOT NULL,
+  causal_claim_allowed BOOLEAN NOT NULL DEFAULT FALSE CHECK (causal_claim_allowed = FALSE),
+  created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (course_id, experiment_key, version)
+);
+
+CREATE OR REPLACE FUNCTION learning_genome_snapshot_block_write() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'published learning analysis and quality snapshots are immutable';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER question_quality_snapshots_no_update
+  BEFORE UPDATE OR DELETE ON question_quality_snapshots
+  FOR EACH ROW EXECUTE FUNCTION learning_genome_snapshot_block_write();
+CREATE TRIGGER question_review_decisions_no_update
+  BEFORE UPDATE OR DELETE ON question_review_decisions
+  FOR EACH ROW EXECUTE FUNCTION learning_genome_snapshot_block_write();
+CREATE TRIGGER concept_mapping_events_no_update
+  BEFORE UPDATE OR DELETE ON concept_mapping_events
+  FOR EACH ROW EXECUTE FUNCTION learning_genome_snapshot_block_write();
+`;
+
+const MULTI_CHANNEL_OFFLINE_FOUNDATION_SQL = `
+CREATE TABLE channel_identity_links (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp','email','chat')),
+  external_subject_hash TEXT NOT NULL CHECK (external_subject_hash ~ '^[0-9a-f]{64}$'),
+  status TEXT NOT NULL DEFAULT 'linked' CHECK (status IN ('linked','opted_in','opted_out','revoked')),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (channel, external_subject_hash),
+  UNIQUE (user_id, channel)
+);
+CREATE INDEX channel_identity_links_user_status
+  ON channel_identity_links(user_id, status);
+
+CREATE TABLE channel_consent_events (
+  id BIGSERIAL PRIMARY KEY,
+  identity_link_id TEXT NOT NULL REFERENCES channel_identity_links(id) ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('linked','opted_in','opted_out','help_requested','revoked')),
+  policy_version TEXT NOT NULL,
+  source_event_id TEXT,
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX channel_consent_events_link_time
+  ON channel_consent_events(identity_link_id, occurred_at DESC, id DESC);
+
+CREATE TABLE channel_inbound_events (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp','email','chat')),
+  external_event_id TEXT NOT NULL,
+  external_subject_hash TEXT NOT NULL CHECK (external_subject_hash ~ '^[0-9a-f]{64}$'),
+  event_type TEXT NOT NULL CHECK (event_type IN ('reply','stop','help','delivery_receipt','complaint')),
+  payload_digest TEXT NOT NULL CHECK (payload_digest ~ '^[0-9a-f]{64}$'),
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','processed','ignored','failed')),
+  received_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  processed_at TEXT,
+  UNIQUE (channel, external_event_id)
+);
+CREATE INDEX channel_inbound_events_status_time
+  ON channel_inbound_events(status, received_at);
+
+CREATE TABLE channel_delivery_events (
+  id BIGSERIAL PRIMARY KEY,
+  identity_link_id TEXT REFERENCES channel_identity_links(id) ON DELETE SET NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('sms','whatsapp','email','chat')),
+  message_kind TEXT NOT NULL CHECK (message_kind IN ('lesson_card','reminder','resume_link','help','opt_out_confirmation')),
+  provider_message_hash TEXT CHECK (provider_message_hash IS NULL OR provider_message_hash ~ '^[0-9a-f]{64}$'),
+  status TEXT NOT NULL CHECK (status IN ('queued','sent','delivered','replied','failed','complaint','opted_out')),
+  cost_micros BIGINT NOT NULL DEFAULT 0 CHECK (cost_micros >= 0),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX channel_delivery_events_channel_status_time
+  ON channel_delivery_events(channel, status, occurred_at DESC);
+
+CREATE TABLE channel_resume_points (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('web','offline','sms','whatsapp','email','chat')),
+  sequence INTEGER NOT NULL DEFAULT 0 CHECK (sequence >= 0),
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (user_id, course_id)
+);
+
+CREATE TABLE channel_resume_links (
+  token_hash TEXT PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  lesson_id INTEGER REFERENCES lessons(id) ON DELETE SET NULL,
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX channel_resume_links_expiry ON channel_resume_links(expires_at);
+
+CREATE OR REPLACE FUNCTION channel_history_block_write() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'channel consent and delivery history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER channel_consent_events_no_write
+  BEFORE UPDATE OR DELETE ON channel_consent_events
+  FOR EACH ROW EXECUTE FUNCTION channel_history_block_write();
+CREATE TRIGGER channel_delivery_events_no_write
+  BEFORE UPDATE OR DELETE ON channel_delivery_events
+  FOR EACH ROW EXECUTE FUNCTION channel_history_block_write();
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2883,6 +3126,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 19, name: "public_launch_productization", sql: PUBLIC_LAUNCH_PRODUCTIZATION_SQL },
   { id: 20, name: "portable_course_archives", sql: PORTABLE_COURSE_ARCHIVES_SQL },
   { id: 21, name: "portable_recipe_archives", sql: PORTABLE_RECIPE_ARCHIVES_SQL },
+  { id: 22, name: "learning_genome_foundation", sql: LEARNING_GENOME_FOUNDATION_SQL },
+  { id: 23, name: "multi_channel_offline_foundation", sql: MULTI_CHANNEL_OFFLINE_FOUNDATION_SQL },
 ];
 
 /**

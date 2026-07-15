@@ -2,6 +2,15 @@
 
 const ACCOUNT_KEY = "bookquest.answer-account.v1";
 const STORAGE_PREFIX = "bookquest.answer-outbox.v2";
+export const LEARNING_OUTBOX_STATUS_EVENT = "bookquest:learning-outbox-status";
+
+export interface LearningOutboxStatus {
+  accountId: number | undefined;
+  answerCount: number;
+  completionCount: number;
+  pendingCount: number;
+  online: boolean;
+}
 
 export type AnswerOutboxPayload = Record<string, unknown> & { eventId: string };
 
@@ -15,6 +24,12 @@ interface OutboxItem {
 const flushes = new Map<number, Promise<void>>();
 let listening = false;
 let memoryAccountId: number | undefined;
+
+function emitOutboxStatus() {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new Event(LEARNING_OUTBOX_STATUS_EVENT));
+  }
+}
 
 function currentAccountId(): number | undefined {
   if (memoryAccountId) return memoryAccountId;
@@ -43,6 +58,7 @@ export function setAnswerOutboxAccount(accountId: number) {
   } catch {
     console.warn("Account scope will remain in memory for this session.");
   }
+  emitOutboxStatus();
   void flushLearningOutbox();
 }
 
@@ -55,6 +71,7 @@ export function clearAnswerOutboxAccount() {
       // The in-memory scope is still cleared.
     }
   }
+  emitOutboxStatus();
 }
 
 function readStoredList<T>(key: string): T[] {
@@ -78,6 +95,7 @@ function readOutbox(accountId: number): OutboxItem[] {
 
 function writeOutbox(accountId: number, items: OutboxItem[]) {
   writeStoredList(storageKey(accountId), items);
+  emitOutboxStatus();
 }
 
 function enqueue(accountId: number, body: AnswerOutboxPayload) {
@@ -217,6 +235,20 @@ function readCompletions(accountId: number): CompletionOutboxItem[] {
 
 function writeCompletions(accountId: number, items: CompletionOutboxItem[]) {
   writeStoredList(completionKey(accountId), items);
+  emitOutboxStatus();
+}
+
+export function getLearningOutboxStatus(): LearningOutboxStatus {
+  const accountId = currentAccountId();
+  const answerCount = accountId ? readOutbox(accountId).length : 0;
+  const completionCount = accountId ? readCompletions(accountId).length : 0;
+  return {
+    accountId,
+    answerCount,
+    completionCount,
+    pendingCount: answerCount + completionCount,
+    online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
+  };
 }
 
 function enqueueCompletion(accountId: number, item: CompletionOutboxItem) {
@@ -365,6 +397,9 @@ export function flushLearningOutbox(): Promise<void> {
         attempted,
         drained: Math.max(0, attempted - remaining),
       });
+    })
+    .finally(() => {
+      emitOutboxStatus();
     });
 }
 

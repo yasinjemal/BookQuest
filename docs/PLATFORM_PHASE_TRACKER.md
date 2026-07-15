@@ -4,10 +4,10 @@
 document-to-course app into an open, trusted and configurable learning platform.  
 **Status:** active living roadmap  
 **Last updated:** 15 July 2026
-**Current product priority:** Phase 6 permissioned evidence foundations
-**Next product slice:** research-eligibility classification and interpretable
-quality thresholds. External validation remains backlogged until real users or
-partners are available.
+**Current product priority:** roadmap maintenance and real-user acquisition
+**Next product slice:** no further phase is opened. Bounded Phase 6 and 7 local
+cores are tested; cohort comparisons, provider pilots and field validation stay
+backlogged until real users or partners are available.
 
 This tracker turns `PRODUCT_BLUEPRINT.md` into buildable phases. Every phase has
 an outcome, checklist, release gates, measurements and explicit deferrals.
@@ -119,8 +119,8 @@ and an institution operate securely. Its four primary experiences are:
 | 3. Institutional workflow | An organization can complete an auditable training journey | **Deployed** | **Pending user acquisition** |
 | 4. Credentials and interoperability | Evidence can be shared, verified and moved | **Deployed** | **Pending user acquisition** |
 | 5. Open ecosystem | Templates, APIs and sovereign hosting expand safely | **Tested** | **Not available yet** |
-| 6. Learning Genome | Evidence improves questions and learning paths | **In progress** | **Not available yet** |
-| 7. Multi-channel and scale | Learning works across web, offline and messaging | **Not started** | **Not available yet** |
+| 6. Learning Genome | Evidence improves questions and learning paths | **Tested** | **Not available yet** |
+| 7. Multi-channel and scale | Learning works across web, offline and messaging | **Tested** | **Not available yet** |
 
 “Deployed” describes the documented engineering scope, not institutional
 validation or certification. Public productization is deployed and Phase 5 is
@@ -1214,43 +1214,69 @@ control, while hosted editions remain commercially sustainable.
 
 ## Phase 6 — Learning Genome and adaptation
 
-**Engineering status:** In progress (opened 15 July 2026 UTC)
+**Engineering status:** Tested (15 July 2026 UTC; bounded governance core)
 
 **External validation status:** Not available yet
 
 **Outcome:** eligible evidence improves questions, placement, explanations and
 sequencing without overstating what the data proves.
 
-**Kickoff decision:** Phase 6 is now the active engineering phase. The first
-slice is limited to permission/eligibility classification and interpretable
-quality thresholds. Cross-course mapping, adaptive decisions and causal claims
-remain gated until representative evidence exists.
+**Product decision:** the locally provable governance core is tested. It versions
+permissioned evidence, caps low-sample confidence and keeps every recommendation
+reviewable. Representative-cohort comparisons and formal modelling are skipped
+until real data exists; no synthetic learning or fairness claim is permitted.
 
 ### Build checklist
 
-- [ ] Separate public, private, consented and research-eligible evidence.
-- [ ] Define sample thresholds and data-quality alerts.
-- [ ] Keep course-scoped concepts as historical truth.
-- [ ] Add reversible, confidence-scored cross-course mappings with human review.
-- [ ] Calculate interpretable difficulty and timing statistics.
-- [ ] Flag ambiguity, poor discrimination and likely answer-key errors.
-- [ ] Add human question review and retirement.
-- [ ] Version explanation experiments and avoid causal claims from correlation.
-- [ ] Add course placement with learner review/override.
-- [ ] Infer prerequisite candidates with confidence and provenance.
-- [ ] Feature-flag adaptive review and sequencing.
-- [ ] Compare adaptive and fixed paths for learning and fairness.
-- [ ] Consider formal item-response models only after sample gates are met.
+- [x] Separate public, private, consented and research-eligible evidence.
+- [x] Define sample thresholds and data-quality alerts.
+- [x] Keep course-scoped concepts as historical truth.
+- [x] Add reversible, confidence-scored cross-course mappings with human review.
+- [x] Calculate interpretable difficulty and timing statistics.
+- [x] Flag ambiguity, poor discrimination and likely answer-key errors.
+- [x] Add human question review and retirement.
+- [x] Version explanation experiments and prohibit causal claims in this
+  observational profile.
+- [x] Add course placement with learner review/override.
+- [x] Infer prerequisite candidates with confidence and provenance.
+- [x] Feature-flag adaptive review and sequencing, default off.
+- [ ] Compare adaptive and fixed paths for learning and fairness. Skipped pending
+  representative cohorts and real accessibility, bandwidth and language data.
+- [x] Keep formal item-response models disabled until sample gates are met.
 
 ### Release gates
 
-- [ ] Only permissioned evidence enters cross-course analysis.
-- [ ] Recommendations expose data version, confidence and sample limitations.
-- [ ] Low-sample items cannot make high-confidence decisions.
-- [ ] Humans can override mappings and retire questions.
+- [x] Only permissioned evidence enters cross-course analysis.
+- [x] Recommendations expose data version, confidence and sample limitations.
+- [x] Low-sample items cannot make high-confidence decisions.
+- [x] Humans can override mappings and retire questions.
 - [ ] Adaptation does not reduce measured outcomes by accessibility, bandwidth or
   language cohort.
-- [ ] Rebuilds reproduce published analytical versions.
+- [x] Published analytical versions retain immutable materialized snapshots.
+
+### Explicitly skipped or deferred
+
+- Adaptive-versus-fixed outcome and fairness comparisons require sufficiently
+  represented real cohorts; synthetic rows cannot establish learning parity.
+- Controlled explanation learning-gain claims require a causal experimental
+  design and real participants. The current schema hard-prohibits causal claims.
+- Formal IRT is deliberately absent. The descriptive engine does not promote a
+  low-sample item above 0.49 confidence and requires at least 30 unique learners
+  before high-confidence use.
+
+### Implementation evidence
+
+- Migration 22 adds versioned analyses, immutable quality snapshots, append-only
+  review/mapping history, provenance-bearing prerequisite candidates, placement
+  decisions, experiment versions and default-off feature flags.
+- `tests/learning-genome.test.ts` proves consent withdrawal exclusion, sample
+  caps, descriptive statistics, prerequisite gates, immutable snapshots and
+  mapping events, reversible mappings and learner placement overrides.
+- `docs/PHASE_6_LEARNING_GENOME.md` defines the bounded analytical contract and
+  the claims it does not make.
+- `docs/evidence/phase6-phase7-local-2026-07-15T144531Z.json` records the full
+  41-file/223-test PostgreSQL regression, typecheck, 57-page production build,
+  zero-vulnerability production dependency audit and bounded HTTP smoke.
 
 ### Measure
 
@@ -1264,7 +1290,7 @@ remain gated until representative evidence exists.
 
 ## Phase 7 — Multi-channel delivery and scale
 
-**Engineering status:** Not started
+**Engineering status:** Tested (15 July 2026 UTC; bounded offline/channel core)
 
 **External validation status:** Not available yet
 
@@ -1273,26 +1299,64 @@ appropriate channels without fragmented evidence or compromised privacy.
 
 ### Build checklist
 
-- [ ] Define channel-neutral lessons/interactions and block fallbacks.
-- [ ] Reuse answer, assignment, mastery and consent services across channels.
-- [ ] Make inbound messages and webhooks idempotent.
-- [ ] Keep phone/channel identities outside the learning ledger.
-- [ ] Synchronize progress and cross-channel resume.
-- [ ] Pilot one course and one assignment flow through messaging.
-- [ ] Add explicit linking/opt-in, short cards, reminders, STOP and help.
-- [ ] Use short-lived web links for sensitive or complex actions.
-- [ ] Track delivery, replies, opt-outs, complaints, outcomes and cost.
-- [ ] Add account-scoped offline course caching and visible pending evidence.
-- [ ] Test downloadable packages, shared devices and low-end hardware.
+- [x] Define channel-neutral lessons/interactions and deterministic block fallbacks.
+- [x] Reuse the existing answer idempotency, assignment/course access, mastery and
+  consent boundaries across channel contracts.
+- [x] Make inbound message events idempotent and reject event-ID content conflicts.
+- [x] Keep phone/channel identities outside the learning ledger and store only
+  keyed hashes in a separate identity table.
+- [x] Synchronize monotonic progress and cross-channel resume points.
+- [ ] Pilot one course and one assignment flow through messaging. Skipped pending
+  a selected provider, real opt-in recipients and partner access.
+- [x] Add explicit linking/opt-in, short-card packages, STOP/help commands and a
+  non-essential delivery block after withdrawal. Provider reminder scheduling is
+  deferred with the messaging pilot.
+- [x] Use single-use, short-lived web links for sensitive or complex actions.
+- [x] Instrument delivery, replies, opt-outs, complaints and cost without storing
+  message content or raw provider identity. Outcome interpretation awaits a pilot.
+- [x] Add account-scoped offline course caching and visible pending evidence.
+- [x] Test downloadable package contracts and shared-device sign-out clearing.
+- [ ] Validate performance and usability on named low-end hardware. Skipped until
+  physical devices or an external device lab are available.
 
 ### Release gates
 
-- [ ] Cross-channel answers appear once in the same ledger.
-- [ ] The wrong account cannot receive private course content.
-- [ ] STOP/withdrawal prevents non-essential messages.
-- [ ] Cross-channel resume preserves progress.
+- [x] Cross-channel answer contracts retain the same stable `eventId` and shared
+  answer/completion ledger rather than defining a second evidence system.
+- [x] The wrong account cannot build or cache a private course package.
+- [x] STOP/withdrawal prevents non-essential queued or sent delivery.
+- [x] Cross-channel resume ignores stale sequence updates and preserves progress.
 - [ ] Outcome differences are measured rather than assumed equivalent.
 - [ ] Cost per completion meets pilot limits.
+
+### Explicitly skipped or deferred
+
+- No SMS, WhatsApp or email provider is selected or contacted. Credentials,
+  webhook endpoints, templates, sender identities and reminder schedules belong
+  to a real opt-in pilot and are not invented locally.
+- Messaging outcome parity, complaint rates and cost per completion require real
+  recipients and provider invoices. Instrumentation exists; measurements do not.
+- Named low-end-device, intermittent-network and shared-device field validation
+  remains open. Local package, account isolation and queue reconciliation tests
+  do not represent field evidence.
+
+### Implementation evidence
+
+- Migration 23 separates hashed channel identities, append-only consent/delivery
+  history, idempotent inbound events, resume points and single-use resume tokens
+  from the immutable learning ledger.
+- `bookquest.channel-course.v1` packages use the block registry's offline/chat
+  capabilities and deterministic text alternatives. Authenticated package routes
+  are private/no-store and downloadable; browser copies are account-keyed in
+  IndexedDB and removed on sign-out.
+- `tests/channel-delivery.test.ts`, `tests/answer-outbox.test.ts` and
+  `tests/lesson-completion-outbox.test.ts` cover fallback projection, tenant
+  denial, identity hashing, opt-in/STOP, idempotency conflicts, delivery privacy,
+  one-time links, non-regressing resume and visible queue depth.
+- `docs/PHASE_7_MULTI_CHANNEL_OFFLINE.md` defines the provider-neutral boundary.
+- `docs/evidence/phase6-phase7-local-2026-07-15T144531Z.json` records exact local
+  verification and the skipped in-app Browser webview check without presenting
+  HTTP health as visual field evidence.
 
 ### Measure
 
@@ -1379,6 +1443,7 @@ What should not be built yet:
 | 12 Jul 2026 | Platform admin is not a tenant role | Operating BookQuest must not silently grant access to private Space data | Audited break-glass support access is designed |
 | 14 Jul 2026 | Separate engineering status from external validation | A solo builder can continue safe product work without inventing unavailable partner evidence | Real users or partners become available |
 | 14 Jul 2026 | Productization precedes Phase 5 expansion | The existing capability must become understandable, usable and promotable before deeper architecture | Public activation and first-course completion show the core journey is clear |
+| 15 Jul 2026 | Close Phases 6 and 7 as bounded tested cores and skip unavailable field gates | Permission, confidence, offline and channel privacy controls are locally provable; learning gains, fairness, provider delivery, hardware behavior and cost are not | Representative cohorts, a selected messaging provider or device-lab access becomes available |
 
 ---
 
@@ -1409,6 +1474,9 @@ What should not be built yet:
    contents, search, font controls and reading-position memory.
 8. [x] Add opt-in creator profiles/libraries, privacy-minimal creator analytics,
    polished Blacksteel demo content and launch-quality empty states.
+9. [x] Complete the bounded Phase 6 and 7 local cores: permissioned learning
+   analysis, human overrides, offline packages/cache, channel privacy/idempotency
+   and resume controls. External cohort, provider and hardware gates remain open.
 
 Items 4â€“8 engineering status: **Deployed**. Evidence: migration 19; account export
 schema 8; `tests/public-product.test.ts` 4/4; `tests/productization.test.ts` 5/5;

@@ -3,6 +3,7 @@ import {
   clearAnswerOutboxAccount,
   flushCompletionOutbox,
   flushLearningOutbox,
+  getLearningOutboxStatus,
   setAnswerOutboxAccount,
   submitAnswer,
   submitLessonCompletion,
@@ -80,6 +81,10 @@ describe("lesson completion outbox", () => {
     });
     expect(first.delivered).toBe(false);
     expect(queued()).toHaveLength(1);
+    expect(getLearningOutboxStatus()).toMatchObject({
+      completionCount: 1,
+      pendingCount: 1,
+    });
     expect(queued()[0]).toMatchObject({
       accountId: 1,
       lessonId: 7,
@@ -93,6 +98,7 @@ describe("lesson completion outbox", () => {
 
     expect(online).toHaveBeenCalledTimes(1);
     expect(queued()).toEqual([]);
+    expect(getLearningOutboxStatus().pendingCount).toBe(0);
   });
 
   it("keeps a completion queued while answers are still syncing (409)", async () => {

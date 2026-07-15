@@ -35,7 +35,8 @@ describe("Phase 5 course portability surface", () => {
     expect(implementation).toContain('COURSE_ARCHIVE_FORMAT = "bookquest.course"');
     expect(implementation).toContain("portable_course_imports");
     expect(implementation).toContain("content.create");
-    expect(tracker).toContain("**Engineering status:** In progress");
+    expect(tracker).toContain("**Engineering status:** Tested (15 July 2026 UTC; bounded sovereign core)");
+    expect(tracker).toContain("Full Space restore is deferred");
     expect(tracker).toContain("- [ ] A full export restores into a clean compatible installation.");
   });
 

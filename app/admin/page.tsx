@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Loading from "@/components/Loading";
 
 interface AdminData {
@@ -96,6 +97,16 @@ export default function AdminPage() {
   return (
     <div className="page-wrap max-w-5xl">
       <h1 className="text-2xl font-extrabold mb-4">Admin</h1>
+
+      <Link
+        href="/admin/learning-genome"
+        className="mb-4 block rounded-2xl border border-line bg-card p-4 shadow-card"
+      >
+        <span className="font-bold">Learning quality review →</span>
+        <span className="block text-xs text-ink-soft mt-1">
+          Version consent-eligible evidence, inspect question flags, and record human decisions.
+        </span>
+      </Link>
 
       <div className="grid grid-cols-2 gap-3">
         {[

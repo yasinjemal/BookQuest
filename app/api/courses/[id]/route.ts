@@ -52,6 +52,7 @@ export async function GET(
     }))
   );
   return NextResponse.json({
+    viewerId: user.id,
     course: {
       ...course,
       isOwner,

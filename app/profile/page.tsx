@@ -7,6 +7,7 @@ import AppIcon from "@/components/AppIcon";
 import CourseWorld from "@/components/CourseWorld";
 import Loading from "@/components/Loading";
 import { clearAnswerOutboxAccount, flushAnswerOutbox } from "@/lib/answer-outbox";
+import { clearOfflineCourseCache } from "@/lib/offline-course-cache";
 
 interface Data {
   user: { id: number; email: string; name: string; role: string; credits: number; premium_until: string | null };
@@ -78,6 +79,12 @@ function ProfileInner() {
 
   async function logout() {
     await flushAnswerOutbox();
+    try {
+      await clearOfflineCourseCache();
+    } catch {
+      setNotice("Could not clear saved offline courses. Close other BookQuest tabs and try signing out again.");
+      return;
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     clearAnswerOutboxAccount();
     router.push("/login"); router.refresh();
