@@ -2841,6 +2841,22 @@ CREATE INDEX portable_course_imports_space_time
   ON portable_course_imports(target_space_id, created_at DESC);
 `;
 
+const PORTABLE_RECIPE_ARCHIVES_SQL = `
+CREATE TABLE portable_recipe_imports (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  target_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+  archive_id TEXT NOT NULL,
+  archive_sha256 TEXT NOT NULL CHECK (archive_sha256 ~ '^[0-9a-f]{64}$'),
+  imported_recipe_id TEXT REFERENCES recipes(id) ON DELETE SET NULL,
+  imported_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+  report_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  UNIQUE (target_space_id, archive_sha256)
+);
+CREATE INDEX portable_recipe_imports_space_time
+  ON portable_recipe_imports(target_space_id, created_at DESC);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -2866,6 +2882,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 18, name: "lti_tool_foundation", sql: LTI_TOOL_FOUNDATION_SQL },
   { id: 19, name: "public_launch_productization", sql: PUBLIC_LAUNCH_PRODUCTIZATION_SQL },
   { id: 20, name: "portable_course_archives", sql: PORTABLE_COURSE_ARCHIVES_SQL },
+  { id: 21, name: "portable_recipe_archives", sql: PORTABLE_RECIPE_ARCHIVES_SQL },
 ];
 
 /**

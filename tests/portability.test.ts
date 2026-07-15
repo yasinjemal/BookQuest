@@ -12,6 +12,7 @@ let outsiderId: number;
 let sourceSpaceId: string;
 let targetSpaceId: string;
 let courseId: number;
+let sourceRecipeId: string;
 let archive: import("../lib/portability").CourseArchive;
 let importedCourseId: number;
 
@@ -33,6 +34,7 @@ describe.skipIf(!TEST_DB)("Phase 5 portable course archive", () => {
       provenance: { approvedBy: "Owner", generationRunId: "must-not-export", apiKey: "must-not-export" },
     });
     const recipe = await recipes.createStarterRecipe(ownerId, sourceSpaceId, "onboarding", "space");
+    sourceRecipeId = recipe.recipeId;
     const course = await studio.createCourseDraftFromSources(ownerId, sourceSpaceId, {
       title: "Blacksteel Shop Playbook",
       sourceVersionIds: [source.sourceVersionId],
@@ -47,6 +49,7 @@ describe.skipIf(!TEST_DB)("Phase 5 portable course archive", () => {
       sourceRefs: [{ sourceVersionId: source.sourceVersionId, locator: { section: "Opening" } }],
     });
     await studio.createBlankCourseDraft(ownerId, targetSpaceId, "Blacksteel Shop Playbook");
+    await recipes.createStarterRecipe(ownerId, targetSpaceId, "onboarding", "private");
   });
 
   afterAll(async () => { await pg?.pool.end(); delete process.env.DATABASE_URL; });
@@ -102,6 +105,52 @@ describe.skipIf(!TEST_DB)("Phase 5 portable course archive", () => {
       await expect(portability.importCourseArchive(ownerId, targetSpaceId, citationTamper)).rejects.toMatchObject({ status: 409 });
       expect(Number((await pg.one<{ count: number }>("SELECT COUNT(*)::int AS count FROM courses WHERE owning_space_id=$1", [targetSpaceId]))!.count)).toBe(before);
     }
+  });
+
+  it("round-trips a standalone recipe as a private draft and blocks replay", async () => {
+    const recipeArchive = await portability.exportRecipeArchive(ownerId, sourceRecipeId);
+    expect(recipeArchive).toMatchObject({
+      format: "bookquest.recipe",
+      schemaVersion: 1,
+      payload: { recipe: { title: "Team Onboarding", visibility: "space" } },
+      integrity: { algorithm: "sha256", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    });
+    expect(JSON.stringify(recipeArchive)).not.toContain(sourceSpaceId);
+    await expect(portability.exportRecipeArchive(outsiderId, sourceRecipeId))
+      .rejects.toMatchObject({ reason: "membership_required" });
+
+    const tampered = structuredClone(recipeArchive);
+    tampered.payload.recipe.definition.objectives[0] = "Changed after export";
+    expect(() => portability.parseRecipeArchive(tampered)).toThrow(/integrity/i);
+
+    const innerTamper = structuredClone(recipeArchive);
+    innerTamper.payload.recipe.definition.objectives[0] = "Changed and resealed";
+    const { integrity: _oldIntegrity, ...tamperedCore } = innerTamper;
+    innerTamper.integrity.sha256 = portability.portableSha256(tamperedCore);
+    const tamperReport = await portability.analyzeRecipeArchive(ownerId, targetSpaceId, innerTamper);
+    expect(tamperReport.canImport).toBe(false);
+    expect(tamperReport.issues).toContainEqual(expect.objectContaining({ code: "recipe_hash_mismatch", severity: "error" }));
+
+    const report = await portability.analyzeRecipeArchive(ownerId, targetSpaceId, recipeArchive);
+    expect(report).toMatchObject({ canImport: true, proposedTitle: "Team Onboarding (imported)" });
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: "title_conflict", severity: "warning" }));
+    const imported = await portability.importRecipeArchive(ownerId, targetSpaceId, recipeArchive);
+    const restored = await pg.one<{ title: string; visibility: string; status: string; objectives_json: string }>(
+      `SELECT recipe.title,recipe.visibility,version.status,version.objectives_json
+       FROM recipes recipe JOIN recipe_versions version ON version.recipe_id=recipe.id
+       WHERE version.id=$1`,
+      [imported.recipeVersionId]
+    );
+    expect(restored).toMatchObject({ title: "Team Onboarding (imported)", visibility: "private", status: "draft" });
+    expect(JSON.parse(restored!.objectives_json)).toEqual(recipeArchive.payload.recipe.definition.objectives);
+
+    const roundTrip = await portability.exportRecipeArchive(ownerId, imported.recipeId);
+    expect(roundTrip.payload.recipe.definition).toEqual(recipeArchive.payload.recipe.definition);
+    const replay = await portability.analyzeRecipeArchive(ownerId, targetSpaceId, recipeArchive);
+    expect(replay.canImport).toBe(false);
+    expect(replay.issues).toContainEqual(expect.objectContaining({ code: "archive_already_imported" }));
+    await expect(portability.importRecipeArchive(ownerId, targetSpaceId, recipeArchive))
+      .rejects.toMatchObject({ status: 409 });
   });
 
   it("dry-runs tenant authorization, counts and deterministic conflict reporting without writes", async () => {

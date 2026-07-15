@@ -1109,7 +1109,9 @@ control, while hosted editions remain commercially sustainable.
 - [ ] Publish course, recipe and Space export formats.
   - [x] Publish `bookquest.course` schema version 1 for one exact authoring version,
     its attached sources, optional recipe, appearance and current blocks.
-  - [ ] Publish standalone recipe and full Space restore profiles.
+  - [x] Publish `bookquest.recipe` schema version 1 with authenticated export,
+    no-write dry-run, deterministic conflict reporting and private-draft restore.
+  - [ ] Publish a full Space restore profile.
 - [ ] Export owned sources, content, evidence and credentials.
 - [ ] Import with validation, dry-run and conflict reporting.
   - [x] Course packages validate profile, integrity, limits, block schemas and
@@ -1149,11 +1151,12 @@ control, while hosted editions remain commercially sustainable.
   conflicts, transactional clean-Space restoration, remapped citations, private
   defaults, absent learner records, semantic round trip and replay blocking.
 - `tests/phase5-portability-contract.test.ts` locks the authenticated,
-  rate-limited, private/no-store API and creator-facing dry-run/private-draft UI.
-- `tests/migration-upgrade.test.ts` verifies forward-only migration 20 and its
-  once-only ledger entry.
+  rate-limited, private/no-store course and recipe APIs plus creator-facing
+  dry-run/private-draft UI.
+- `tests/migration-upgrade.test.ts` verifies forward-only migrations 20 and 21
+  and their once-only ledger entries.
 - `docs/evidence/phase5-portable-course-local-2026-07-15T004700Z.json` records
-  the 37-file/203-test regression, successful production build, zero-vulnerability
+  the 37-file/205-test regression, successful production build, zero-vulnerability
   production dependency audit and bounded authenticated browser smoke.
 - The clean-Space round trip is engineering evidence for this bounded slice; it
   is not the full clean-install restore release gate, which remains open below.

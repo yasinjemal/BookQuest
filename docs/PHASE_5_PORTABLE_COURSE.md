@@ -2,6 +2,7 @@
 
 **Engineering status:** In progress  
 **Archive format:** `bookquest.course` schema version `1`  
+**Recipe format:** `bookquest.recipe` schema version `1`
 **External validation status:** Not available yet
 
 ## Purpose
@@ -100,15 +101,34 @@ defaults, absence of learner records, semantic round trip and replay blocking.
 `tests/phase5-portability-contract.test.ts` locks the authenticated, rate-limited,
 no-store API surface and creator-facing dry-run/private-draft language.
 
-`tests/migration-upgrade.test.ts` verifies migration 20 applies forward from the
-pre-ledger schema and is recorded once.
+`tests/migration-upgrade.test.ts` verifies migrations 20 and 21 apply forward
+from the pre-ledger schema and are each recorded once.
 
 ## Open Phase 5 boundaries
 
-This slice does not yet provide a standalone recipe archive, a full Space or
-account restore, multi-version history, binary raw-source transfer, evidence or
+This slice does not yet provide a full Space or account restore, multi-version
+history, binary raw-source transfer, evidence or
 credential restoration, self-hosted installation guidance, upgrade proof or a
 clean-install restore exercise. The full Phase 5 release gate remains open.
 
 External validation remains `Pending user acquisition and partner access` and
 is not represented as passed.
+
+## Standalone recipe archive
+
+`bookquest.recipe` schema version 1 moves one exact current recipe definition
+without requiring a course archive. The authenticated, rate-limited export is:
+
+`GET /api/studio/recipes/{recipeId}/portable`
+
+The Create workflow downloads a selected recipe and restores a recipe JSON
+through an explicit dry-run at:
+
+`POST /api/studio/imports/recipe`
+
+The 2 MB bounded archive carries the recipe title, original visibility/version,
+status, complete teaching definition and inner/outer SHA-256 digests. Import
+requires `content.create`, resolves title conflicts deterministically, always
+creates a private draft, records the destination-Space/archive digest and
+rejects replay. It never imports creator identity, Space identity, learners,
+secrets or executable content.

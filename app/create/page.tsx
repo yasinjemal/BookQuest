@@ -18,6 +18,12 @@ interface PortableImportReport {
   warnings: string[];
   issues: Array<{ severity: "error" | "warning" | "info"; code: string; message: string }>;
 }
+interface RecipeArchiveReport {
+  canImport: boolean;
+  proposedTitle: string;
+  conflicts: Array<{ code: string; message: string }>;
+  issues: Array<{ severity: "error" | "warning" | "info"; code: string; message: string }>;
+}
 
 const creationMethods: Array<{ id: CreationMode; title: string; description: string; icon: AppIconName }> = [
   { id: "ai", title: "Create with AI", description: "Upload one document and receive an editable draft to review.", icon: "spark" },
@@ -53,6 +59,12 @@ export default function CreatePage() {
   const [portableTitle, setPortableTitle] = useState("");
   const [portableReport, setPortableReport] = useState<PortableImportReport | null>(null);
   const [portableBusy, setPortableBusy] = useState(false);
+  const [recipeArchivePackage, setRecipeArchivePackage] = useState<unknown>(null);
+  const [recipeArchiveFileName, setRecipeArchiveFileName] = useState("");
+  const [recipeArchiveTitle, setRecipeArchiveTitle] = useState("");
+  const [recipeArchiveReport, setRecipeArchiveReport] = useState<RecipeArchiveReport | null>(null);
+  const [recipeArchiveBusy, setRecipeArchiveBusy] = useState(false);
+  const [recipeArchiveNotice, setRecipeArchiveNotice] = useState("");
 
   useEffect(() => {
     setWelcome(new URLSearchParams(window.location.search).get("welcome") === "1");
@@ -207,8 +219,66 @@ export default function CreatePage() {
     }
   }
 
+  async function inspectRecipeArchive(file: File) {
+    setRecipeArchiveBusy(true);
+    setRecipeArchivePackage(null);
+    setRecipeArchiveReport(null);
+    setRecipeArchiveNotice("");
+    setRecipeArchiveFileName(file.name);
+    setError("");
+    try {
+      if (file.size > 2 * 1024 * 1024) throw new Error("Portable recipe files must be 2 MB or smaller.");
+      const recipePackage = JSON.parse(await file.text()) as unknown;
+      const response = await fetch("/api/studio/imports/recipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "dry_run", targetSpaceId: spaceId, package: recipePackage }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "This portable recipe could not be validated.");
+      setRecipeArchivePackage(recipePackage);
+      setRecipeArchiveReport(data.report);
+      setRecipeArchiveTitle(data.report.proposedTitle);
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message ? cause.message : "This portable recipe is not valid JSON.");
+    } finally {
+      setRecipeArchiveBusy(false);
+    }
+  }
+
+  async function restoreRecipeArchive() {
+    if (!recipeArchivePackage || !recipeArchiveReport?.canImport) return;
+    setRecipeArchiveBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/studio/imports/recipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "import",
+          targetSpaceId: spaceId,
+          title: recipeArchiveTitle,
+          package: recipeArchivePackage,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "The portable recipe could not be restored.");
+      await loadRecipes(spaceId);
+      setRecipeVersionId(data.import.recipeVersionId);
+      setRecipeArchivePackage(null);
+      setRecipeArchiveReport(null);
+      setRecipeArchiveFileName("");
+      setRecipeArchiveNotice("Recipe restored as a private draft and selected for this course.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The portable recipe could not be restored.");
+    } finally {
+      setRecipeArchiveBusy(false);
+    }
+  }
+
   const showSources = creationMode === "sources" || creationMode === "recipe";
   const selectedSpace = spaces.find(({ space }) => space.id === spaceId)?.space;
+  const selectedRecipe = recipes.find((recipe) => recipe.recipe_version_id === recipeVersionId);
 
   return (
     <div className="page-wrap">
@@ -231,7 +301,7 @@ export default function CreatePage() {
           <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-4 font-semibold"><span>More ways to create</span><span className="text-xs font-normal text-ink-soft">Blank course, saved sources, recipes, and destination</span></summary>
           <div className="mt-6 border-t border-line pt-6">
             <section aria-labelledby="creation-method-heading"><p className="section-label">Optional starting points</p><h2 id="creation-method-heading" className="display mt-2 text-4xl">Choose a different starting point</h2><div className="mt-5 grid gap-3 md:grid-cols-3">{creationMethods.filter((method) => method.id !== "ai").map((method) => <button key={method.id} type="button" onClick={() => setCreationMode(method.id)} aria-pressed={creationMode === method.id} className={`min-h-40 rounded-[1.35rem] border p-5 text-left transition-[transform,border-color,background] hover:-translate-y-0.5 ${creationMode === method.id ? "border-ink bg-ink text-white shadow-pop" : "border-line bg-card text-ink shadow-card"}`}><span className={`grid h-10 w-10 place-items-center rounded-full ${creationMode === method.id ? "bg-signal text-ink" : "bg-paper text-teal"}`}><AppIcon name={method.icon} className="h-5 w-5" /></span><span className="mt-6 block font-semibold">{method.title}</span><span className={`mt-2 block text-xs leading-5 ${creationMode === method.id ? "text-white/65" : "text-ink-soft"}`}>{method.description}</span></button>)}</div></section>
-            <section className="mt-6 rounded-xl border border-line bg-paper/60 p-4" aria-labelledby="space-choice-heading"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-signal text-ink"><AppIcon name="spaces" className="h-4 w-4" /></span><div className="min-w-0 flex-1"><label id="space-choice-heading" htmlFor="creation-space" className="block text-xs font-bold uppercase tracking-[0.13em] text-ink-soft">Save course in</label><select id="creation-space" value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setPortablePackage(null); setPortableReport(null); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="mt-1 w-full bg-transparent text-base font-semibold outline-none">{spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name}{spaces.length > 1 ? ` · ${space.type}` : ""}</option>)}</select></div></div>{selectedSpace && <p className="mt-3 pl-12 text-xs text-ink-soft">Your default is {selectedSpace.name}. Change it only when you are creating for another workspace.</p>}</section>
+            <section className="mt-6 rounded-xl border border-line bg-paper/60 p-4" aria-labelledby="space-choice-heading"><div className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full bg-signal text-ink"><AppIcon name="spaces" className="h-4 w-4" /></span><div className="min-w-0 flex-1"><label id="space-choice-heading" htmlFor="creation-space" className="block text-xs font-bold uppercase tracking-[0.13em] text-ink-soft">Save course in</label><select id="creation-space" value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setPortablePackage(null); setPortableReport(null); setRecipeArchivePackage(null); setRecipeArchiveReport(null); setRecipeArchiveNotice(""); void Promise.all([loadSources(event.target.value), loadRecipes(event.target.value)]); }} className="mt-1 w-full bg-transparent text-base font-semibold outline-none">{spaces.map(({ space }) => <option key={space.id} value={space.id}>{space.name}{spaces.length > 1 ? ` · ${space.type}` : ""}</option>)}</select></div></div>{selectedSpace && <p className="mt-3 pl-12 text-xs text-ink-soft">Your default is {selectedSpace.name}. Change it only when you are creating for another workspace.</p>}</section>
             <details className="mt-6 rounded-[1.2rem] border border-line bg-card p-4 sm:p-5">
               <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-4 text-sm font-semibold"><span>Restore a portable BookQuest course</span><span className="text-xs font-normal text-ink-soft">JSON · dry-run first</span></summary>
               <div className="mt-5 border-t border-line pt-5">
@@ -243,7 +313,7 @@ export default function CreatePage() {
             </details>
             {creationMode !== "ai" && <form onSubmit={createCourse} className="mt-6 space-y-6 rounded-[1.35rem] border border-line bg-card p-5 sm:p-7"><div><p className="section-label">{creationMethods.find((method) => method.id === creationMode)?.title}</p><h2 className="display mt-2 text-4xl">Name your course</h2><p className="mt-3 text-sm leading-6 text-ink-soft">You will enter Studio with full editorial control.</p></div><label className="block text-sm font-semibold">Course title<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="A clear title learners can remember" className="field mt-2" /></label>
             {showSources && <fieldset><legend className="text-sm font-semibold">{creationMode === "sources" ? "Choose one or more trusted sources" : "Optional source foundation"}</legend><div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">{sources.length === 0 && <p className="rounded-xl bg-paper p-4 text-sm text-ink-soft">No saved sources yet. Add text to the source library below, or continue with a blank recipe draft.</p>}{sources.map((source) => <label key={source.source_version_id} className="flex min-h-14 items-start gap-3 rounded-xl border border-line bg-ivory p-4 hover:border-line-deep"><input type="checkbox" checked={selected.includes(source.source_version_id)} onChange={(event) => setSelected((current) => event.target.checked ? [...current, source.source_version_id] : current.filter((id) => id !== source.source_version_id))} className="mt-1 h-4 w-4" /><span><span className="block text-sm font-semibold">{source.title}</span><span className="text-xs capitalize text-ink-soft">{source.kind}</span></span></label>)}</div></fieldset>}
-            {creationMode === "recipe" && <div className="rounded-[1.2rem] bg-sky/35 p-4 sm:p-5"><label className="block text-sm font-semibold">Teaching recipe<select value={recipeVersionId} onChange={(event) => setRecipeVersionId(event.target.value)} className="field mt-2"><option value="">Choose a recipe later</option>{recipes.map((recipe) => <option key={recipe.recipe_version_id} value={recipe.recipe_version_id}>{recipe.title} · {recipe.status}</option>)}</select></label><div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={starterId} onChange={(event) => setStarterId(event.target.value)} aria-label="Starter recipe" className="field min-w-0 flex-1">{starters.map((starter) => <option key={starter.id} value={starter.id}>{starter.title}</option>)}</select><button type="button" onClick={() => void addStarterRecipe()} className="inline-flex min-h-12 items-center justify-center rounded-full border border-line-deep bg-card px-5 text-sm font-semibold">Add starter recipe</button></div></div>}
+            {creationMode === "recipe" && <div className="rounded-[1.2rem] bg-sky/35 p-4 sm:p-5"><label className="block text-sm font-semibold">Teaching recipe<select value={recipeVersionId} onChange={(event) => setRecipeVersionId(event.target.value)} className="field mt-2"><option value="">Choose a recipe later</option>{recipes.map((recipe) => <option key={recipe.recipe_version_id} value={recipe.recipe_version_id}>{recipe.title} · {recipe.status}</option>)}</select></label>{selectedRecipe && <a href={`/api/studio/recipes/${selectedRecipe.id}/portable`} className="quiet-button mt-3 justify-center text-xs">Download selected recipe</a>}<div className="mt-4 flex flex-col gap-2 sm:flex-row"><select value={starterId} onChange={(event) => setStarterId(event.target.value)} aria-label="Starter recipe" className="field min-w-0 flex-1">{starters.map((starter) => <option key={starter.id} value={starter.id}>{starter.title}</option>)}</select><button type="button" onClick={() => void addStarterRecipe()} className="inline-flex min-h-12 items-center justify-center rounded-full border border-line-deep bg-card px-5 text-sm font-semibold">Add starter recipe</button></div><details className="mt-4 border-t border-line pt-4"><summary className="min-h-10 cursor-pointer text-xs font-semibold">Restore a portable recipe</summary><p className="mt-2 text-xs leading-5 text-ink-soft">Validate a `bookquest.recipe` file before adding it as a private draft to this workspace.</p><label className="quiet-button mt-3 cursor-pointer justify-center text-xs">{recipeArchiveBusy ? "Checking recipe…" : "Choose recipe JSON"}<input type="file" accept=".json,application/json" className="sr-only" disabled={recipeArchiveBusy || !spaceId} onChange={(event) => { const file = event.target.files?.[0]; if (file) void inspectRecipeArchive(file); event.target.value = ""; }} /></label>{recipeArchiveFileName && <p className="mt-2 truncate text-[10px] text-ink-soft">{recipeArchiveFileName}</p>}{recipeArchiveReport && <div className="mt-3 rounded-xl bg-card p-3"><p className={`text-xs font-bold ${recipeArchiveReport.canImport ? "text-go-deep" : "text-no"}`}>{recipeArchiveReport.canImport ? "Recipe dry-run passed" : "Recipe needs attention"}</p>{recipeArchiveReport.issues.filter((issue) => issue.severity === "error").map((issue) => <p key={issue.code} className="mt-2 text-xs text-no">{issue.message}</p>)}{recipeArchiveReport.conflicts.map((conflict) => <p key={conflict.code} className="mt-2 text-xs leading-5 text-ink-soft">{conflict.message}</p>)}<label className="mt-3 block text-xs font-semibold">Imported recipe title<input value={recipeArchiveTitle} onChange={(event) => setRecipeArchiveTitle(event.target.value)} maxLength={240} className="field mt-2" /></label><button type="button" disabled={!recipeArchiveReport.canImport || recipeArchiveBusy || recipeArchiveTitle.trim().length < 2} onClick={() => void restoreRecipeArchive()} className="btn-teal mt-3 w-full text-xs disabled:opacity-40">{recipeArchiveBusy ? "Restoring…" : "Restore private recipe"}</button></div>}{recipeArchiveNotice && <p role="status" className="mt-3 rounded-xl bg-go-soft p-3 text-xs font-semibold text-go-deep">{recipeArchiveNotice}</p>}</details></div>}
             <button disabled={busy || !spaceId || title.trim().length < 2 || (creationMode === "sources" && selected.length === 0)} className="btn-primary w-full">{busy ? "Opening Studio…" : creationMode === "sources" ? `Create from ${selected.length} source${selected.length === 1 ? "" : "s"}` : creationMode === "recipe" ? "Create recipe draft" : "Create blank draft"}<AppIcon name="arrow" className="h-4 w-4" /></button>
             </form>}
           </div>

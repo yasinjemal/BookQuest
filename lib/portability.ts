@@ -10,6 +10,9 @@ import { authorizeStoredMembership } from "./spaces";
 export const COURSE_ARCHIVE_FORMAT = "bookquest.course" as const;
 export const COURSE_ARCHIVE_SCHEMA_VERSION = 1 as const;
 export const MAX_COURSE_ARCHIVE_BYTES = 10 * 1024 * 1024;
+export const RECIPE_ARCHIVE_FORMAT = "bookquest.recipe" as const;
+export const RECIPE_ARCHIVE_SCHEMA_VERSION = 1 as const;
+export const MAX_RECIPE_ARCHIVE_BYTES = 2 * 1024 * 1024;
 
 export class PortabilityError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -97,6 +100,19 @@ export const CourseArchiveSchema = ArchiveCoreSchema.extend({
 });
 export type CourseArchive = z.infer<typeof CourseArchiveSchema>;
 
+const RecipeArchiveCoreSchema = z.object({
+  format: z.literal(RECIPE_ARCHIVE_FORMAT),
+  schemaVersion: z.literal(RECIPE_ARCHIVE_SCHEMA_VERSION),
+  archiveId: z.string().min(1).max(240),
+  exportedAt: z.string().datetime({ offset: true }),
+  payload: z.object({ recipe: RecipeSchema }),
+});
+
+export const RecipeArchiveSchema = RecipeArchiveCoreSchema.extend({
+  integrity: z.object({ algorithm: z.literal("sha256"), sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
+});
+export type RecipeArchive = z.infer<typeof RecipeArchiveSchema>;
+
 export interface ImportIssue {
   severity: "error" | "warning" | "info";
   code: string;
@@ -112,6 +128,16 @@ export interface CourseImportReport {
   canImport: boolean;
   proposedTitle: string;
   counts: { sources: number; blocks: number; modules: number; lessons: number; recipe: number };
+  issues: ImportIssue[];
+}
+
+export interface RecipeImportReport {
+  format: typeof RECIPE_ARCHIVE_FORMAT;
+  schemaVersion: typeof RECIPE_ARCHIVE_SCHEMA_VERSION;
+  archiveId: string;
+  archiveSha256: string;
+  canImport: boolean;
+  proposedTitle: string;
   issues: ImportIssue[];
 }
 
@@ -321,6 +347,106 @@ export function parseCourseArchive(input: unknown): CourseArchive {
   return result.data;
 }
 
+export async function exportRecipeArchive(actorUserId: number, recipeId: string): Promise<RecipeArchive> {
+  return tx(async (client) => {
+    const row = (await client.query<Record<string, unknown>>(
+      `SELECT recipe.id,recipe.owning_space_id,recipe.title,recipe.visibility,
+              recipe.current_version,version.*
+       FROM recipes recipe JOIN recipe_versions version
+         ON version.recipe_id=recipe.id AND version.version=recipe.current_version
+       WHERE recipe.id=$1`, [recipeId])).rows[0];
+    if (!row) throw new PortabilityError("Recipe not found", 404);
+    await authorizeStoredMembership(actorUserId, String(row.owning_space_id), "content.update", client);
+    const definition = recipeDefinition(row);
+    const archiveScope = portableSha256(`${String(row.id)}:${String(row.content_hash)}`).slice(0, 24);
+    const recipe: z.infer<typeof RecipeSchema> = {
+      portableId: "recipe-1",
+      title: String(row.title),
+      visibility: row.visibility as RecipeVisibility,
+      version: Number(row.current_version),
+      status: row.status as z.infer<typeof RecipeSchema>["status"],
+      definition,
+      contentSha256: portableSha256(definition),
+    };
+    const core: z.infer<typeof RecipeArchiveCoreSchema> = {
+      format: RECIPE_ARCHIVE_FORMAT,
+      schemaVersion: RECIPE_ARCHIVE_SCHEMA_VERSION,
+      archiveId: `urn:bookquest:recipe:${archiveScope}:v${recipe.version}`,
+      exportedAt: new Date().toISOString(),
+      payload: { recipe },
+    };
+    return RecipeArchiveSchema.parse({
+      ...core,
+      integrity: { algorithm: "sha256", sha256: portableSha256(core) },
+    });
+  });
+}
+
+export function parseRecipeArchive(input: unknown): RecipeArchive {
+  if (Buffer.byteLength(JSON.stringify(input), "utf8") > MAX_RECIPE_ARCHIVE_BYTES) {
+    throw new PortabilityError("Recipe archive exceeds the 2 MB limit", 413);
+  }
+  const result = RecipeArchiveSchema.safeParse(input);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    throw new PortabilityError(`Invalid recipe archive at ${issue?.path.join(".") || "document"}: ${issue?.message || "validation failed"}`);
+  }
+  const { integrity, ...core } = result.data;
+  if (portableSha256(core) !== integrity.sha256) throw new PortabilityError("Recipe archive integrity check failed");
+  return result.data;
+}
+
+async function analyzeParsedRecipeArchive(
+  exec: Queryable,
+  actorUserId: number,
+  targetSpaceId: string,
+  archive: RecipeArchive,
+  titleOverride?: string
+): Promise<RecipeImportReport> {
+  await authorizeStoredMembership(actorUserId, targetSpaceId, "content.create", exec);
+  const issues: ImportIssue[] = [];
+  const requestedTitle = titleOverride?.trim() || archive.payload.recipe.title;
+  if (requestedTitle.length < 2 || requestedTitle.length > 240) {
+    issues.push({ severity: "error", code: "invalid_title", path: "title", message: "Imported recipe title must be between 2 and 240 characters." });
+  }
+  if (portableSha256(archive.payload.recipe.definition) !== archive.payload.recipe.contentSha256) {
+    issues.push({ severity: "error", code: "recipe_hash_mismatch", path: "payload.recipe", message: "Recipe failed its integrity check." });
+  }
+  const duplicate = await exec.query(
+    "SELECT 1 FROM portable_recipe_imports WHERE target_space_id=$1 AND archive_sha256=$2",
+    [targetSpaceId, archive.integrity.sha256]
+  );
+  if (duplicate.rowCount) {
+    issues.push({ severity: "error", code: "archive_already_imported", message: "This exact recipe archive has already been imported into the target Space." });
+  }
+  const title = await exec.query(
+    "SELECT 1 FROM recipes WHERE owning_space_id=$1 AND lower(title)=lower($2) LIMIT 1",
+    [targetSpaceId, requestedTitle]
+  );
+  const proposedTitle = title.rowCount ? `${requestedTitle.slice(0, 229).trimEnd()} (imported)` : requestedTitle;
+  if (title.rowCount) {
+    issues.push({ severity: "warning", code: "title_conflict", message: `A recipe with this title already exists; the imported private draft will be named “${proposedTitle}”.` });
+  }
+  return {
+    format: RECIPE_ARCHIVE_FORMAT,
+    schemaVersion: RECIPE_ARCHIVE_SCHEMA_VERSION,
+    archiveId: archive.archiveId,
+    archiveSha256: archive.integrity.sha256,
+    canImport: !issues.some((issue) => issue.severity === "error"),
+    proposedTitle,
+    issues,
+  };
+}
+
+export async function analyzeRecipeArchive(
+  actorUserId: number,
+  targetSpaceId: string,
+  input: unknown,
+  titleOverride?: string
+): Promise<RecipeImportReport> {
+  return analyzeParsedRecipeArchive(pool, actorUserId, targetSpaceId, parseRecipeArchive(input), titleOverride);
+}
+
 async function analyzeParsedArchive(exec: Queryable, actorUserId: number, targetSpaceId: string, archive: CourseArchive, titleOverride?: string): Promise<CourseImportReport> {
   await authorizeStoredMembership(actorUserId, targetSpaceId, "content.create", exec);
   const issues: ImportIssue[] = [];
@@ -403,6 +529,47 @@ async function insertImportedRecipe(exec: Queryable, actorUserId: number, target
       JSON.stringify(d.accessibility), d.sourceTracePolicy, JSON.stringify(d.safetyBoundaries),
       portableSha256(d), actorUserId])).rows[0];
   return version.id;
+}
+
+export async function importRecipeArchive(
+  actorUserId: number,
+  targetSpaceId: string,
+  input: unknown,
+  titleOverride?: string
+) {
+  const archive = parseRecipeArchive(input);
+  return tx(async (client) => {
+    const report = await analyzeParsedRecipeArchive(client, actorUserId, targetSpaceId, archive, titleOverride);
+    if (!report.canImport) {
+      throw new PortabilityError(
+        report.issues.find((issue) => issue.severity === "error")?.message ?? "Recipe archive cannot be imported",
+        409
+      );
+    }
+    const importedRecipe = { ...archive.payload.recipe, title: report.proposedTitle };
+    const recipeVersionId = await insertImportedRecipe(client, actorUserId, targetSpaceId, importedRecipe);
+    const recipeRow = (await client.query<{ recipe_id: string }>(
+      "SELECT recipe_id FROM recipe_versions WHERE id=$1",
+      [recipeVersionId]
+    )).rows[0];
+    const at = new Date().toISOString();
+    await client.query(
+      `INSERT INTO portable_recipe_imports
+        (target_space_id,archive_id,archive_sha256,imported_recipe_id,
+         imported_by_user_id,report_json,created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        targetSpaceId,
+        archive.archiveId,
+        archive.integrity.sha256,
+        recipeRow.recipe_id,
+        actorUserId,
+        JSON.stringify(report),
+        at,
+      ]
+    );
+    return { recipeId: recipeRow.recipe_id, recipeVersionId, report };
+  });
 }
 
 export async function importCourseArchive(actorUserId: number, targetSpaceId: string, input: unknown, titleOverride?: string) {

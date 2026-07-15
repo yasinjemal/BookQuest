@@ -38,4 +38,19 @@ describe("Phase 5 course portability surface", () => {
     expect(tracker).toContain("**Engineering status:** In progress");
     expect(tracker).toContain("- [ ] A full export restores into a clean compatible installation.");
   });
+
+  it("publishes a separate recipe archive with dry-run and private restore controls", () => {
+    const implementation = source("lib/portability.ts");
+    const exportRoute = source("app/api/studio/recipes/[id]/portable/route.ts");
+    const importRoute = source("app/api/studio/imports/recipe/route.ts");
+    const create = source("app/create/page.tsx");
+    expect(implementation).toContain('RECIPE_ARCHIVE_FORMAT = "bookquest.recipe"');
+    expect(implementation).toContain("portable_recipe_imports");
+    expect(exportRoute).toContain("application/vnd.bookquest.recipe+json");
+    expect(importRoute).toContain("analyzeRecipeArchive");
+    expect(importRoute).toContain("importRecipeArchive");
+    expect(create).toContain("Restore a portable recipe");
+    expect(create).toContain("Recipe needs attention");
+    expect(create).toContain("Restore private recipe");
+  });
 });
