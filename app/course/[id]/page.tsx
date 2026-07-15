@@ -128,9 +128,23 @@ export default function CoursePathPage() {
 
         {busy && <div className={styles.generationNotice}><span />Still shaping this world — new lessons appear as they finish.</div>}
 
+        <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
+          <header className={styles.journeyHeading}>
+            <div><p>Lessons</p><h2 id="journey-heading" className="display">Pick up where you left off.</h2><span>Finished lessons stay open — revisit any of them whenever you like.</span></div>
+            <div><span>{data.modules.length} unit{data.modules.length === 1 ? "" : "s"}</span><span>{allLessons.length} lesson{allLessons.length === 1 ? "" : "s"}</span><Link href={`/course/${id}/read`}>Source document <AppIcon name="source" className="h-4 w-4" /></Link></div>
+          </header>
+          <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />
+        </section>
+
+        {data.course.status === "ready" && <CourseLearningPulse courseId={data.course.id} learning={data.learning} />}
+
+        {data.course.status === "ready" && (
+          <OfflineCourseControls accountId={data.viewerId} courseId={data.course.id} />
+        )}
+
         {data.course.isOwner && data.course.status === "ready" && (
           <section className={styles.creatorDock} aria-label="Course publishing controls">
-            <div className={styles.creatorCopy}><span><AppIcon name="create" className="h-4 w-4" /></span><div><p>Creator dock</p><strong>Shape, preview, and release this world.</strong></div></div>
+            <div className={styles.creatorCopy}><span><AppIcon name="create" className="h-4 w-4" /></span><div><p>Creator tools</p><strong>Edit lessons, set a category, and publish.</strong></div></div>
             <div className={styles.creatorActions}>
               <Link href={`/studio/${id}`} className={styles.studioButton}>Edit in Studio <AppIcon name="arrow" className="h-4 w-4" /></Link>
               {data.course.published ? (
@@ -152,20 +166,6 @@ export default function CoursePathPage() {
         {data.course.isOwner && data.course.status === "ready" && (
           <CourseAppearanceEditor courseId={data.course.id} courseTitle={data.course.title} value={appearance} onSaved={(nextAppearance) => setData((current) => current ? { ...current, course: { ...current.course, appearance: nextAppearance } } : current)} />
         )}
-
-        {data.course.status === "ready" && <CourseLearningPulse courseId={data.course.id} learning={data.learning} />}
-
-        {data.course.status === "ready" && (
-          <OfflineCourseControls accountId={data.viewerId} courseId={data.course.id} />
-        )}
-
-        <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
-          <header className={styles.journeyHeading}>
-            <div><p>Course atlas</p><h2 id="journey-heading" className="display">Choose your next region.</h2><span>Continue where you left off, revisit a completed lesson, or see what unlocks next.</span></div>
-            <div><span>{data.modules.length} regions</span><span>{allLessons.length} lessons</span><Link href={`/course/${id}/read`}>Source document <AppIcon name="source" className="h-4 w-4" /></Link></div>
-          </header>
-          <JourneyMap modules={data.modules} courseId={data.course.id} courseTitle={data.course.title} appearance={appearance} />
-        </section>
 
         {data.course.isOwner && (
           <details className={styles.dangerZone}>

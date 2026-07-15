@@ -26,8 +26,14 @@ interface CourseSummary {
   category: string;
   totalLessons: number;
   doneLessons: number;
+  nextLessonId?: number | null;
   moduleCount?: number;
   appearance?: CourseAppearance;
+}
+
+/** Drafts inherit the raw file name as their title — never show that. */
+function displayTitle(course: CourseSummary) {
+  return course.title === course.source_filename ? "Untitled draft" : course.title;
 }
 
 interface Me {
@@ -124,19 +130,26 @@ function PublicHome() {
 function ContinueJourney({ course }: { course: CourseSummary }) {
   const progress = progressFor(course);
   const appearance = course.appearance ?? DEFAULT_COURSE_APPEARANCE;
+  const title = displayTitle(course);
+  // One tap from opening the app to being inside the next lesson.
+  const continueHref = course.nextLessonId
+    ? `/lesson/${course.nextLessonId}`
+    : `/course/${course.id}`;
   return (
     <CourseAppearanceFrame appearance={appearance} className="rounded-[1.75rem]">
-    <section aria-labelledby="continue-journey-heading" className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.1fr_.9fr]">
-      <CourseWorld seed={course.id} title={course.title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={progress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="min-h-64 sm:min-h-80 lg:min-h-[25rem]" />
-      <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-11">
-        <p className="course-accent-text text-[10px] font-bold uppercase tracking-[0.18em]">Continue your journey</p>
-        <h2 id="continue-journey-heading" className="display mt-3 text-[clamp(2.35rem,8vw,4.4rem)] leading-[0.92]">{course.title}</h2>
-        <p className="mt-4 max-w-xl text-sm leading-6 text-white/70">{course.description || "Return to where you paused. Your progress is safe."}</p>
-        <div className="mt-7">
-          <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/65"><span>{course.doneLessons} of {course.totalLessons} chapters discovered</span><span>{progress}%</span></div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${course.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-[var(--course-accent)]" style={{ width: `${progress}%` }} /></div>
+    <section aria-labelledby="continue-journey-heading" className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[.9fr_1.1fr]">
+      <CourseWorld seed={course.id} title={title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={progress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className="min-h-44 sm:min-h-56 lg:min-h-full" />
+      <div className="flex flex-col justify-center p-6 sm:p-8 lg:p-10">
+        <p className="course-accent-text text-[10px] font-bold uppercase tracking-[0.18em]">Continue learning</p>
+        <h2 id="continue-journey-heading" className="display mt-3 text-[clamp(1.9rem,5vw,3.1rem)] leading-[0.95]">{title}</h2>
+        <div className="mt-6">
+          <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-white/70"><span>Lesson {Math.min(course.doneLessons + 1, course.totalLessons)} of {course.totalLessons}</span><span>{progress}%</span></div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/15" role="progressbar" aria-label={`Progress through ${title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-[var(--course-accent)]" style={{ width: `${progress}%` }} /></div>
         </div>
-        <Link href={`/course/${course.id}`} className="course-accent-button mt-8 inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-full px-6 py-3 text-sm font-bold transition-transform hover:-translate-y-0.5 sm:w-fit">Return to where you paused <AppIcon name="arrow" className="h-4 w-4" /></Link>
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+          <Link href={continueHref} className="course-accent-button inline-flex min-h-12 items-center justify-center gap-3 rounded-full px-6 py-3 text-sm font-bold transition-transform hover:-translate-y-0.5">Continue lesson <AppIcon name="arrow" className="h-4 w-4" /></Link>
+          <Link href={`/course/${course.id}`} className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/25 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10">View course</Link>
+        </div>
       </div>
     </section>
     </CourseAppearanceFrame>
@@ -232,35 +245,43 @@ export default function HomePage() {
   if (failed) return <div className="page-wrap mx-auto max-w-xl pt-20 text-center"><span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-no-soft text-no"><AppIcon name="compass" className="h-6 w-6" /></span><h1 className="display mt-5 text-4xl">We lost the trail for a moment.</h1><p className="mt-3 text-sm leading-6 text-ink-soft">BookQuest could not reach the server. Your saved progress has not moved.</p><button onClick={() => void load()} className="btn-primary mt-6">Try again</button></div>;
   if (!loaded || me === null) return <Loading />;
 
-  const current = enrolled.find((course) => course.status === "ready" && course.doneLessons < course.totalLessons) ?? enrolled.find((course) => course.status === "ready");
-  const discovered = enrolled.reduce((total, course) => total + course.doneLessons, 0);
+  // The continue hero considers every course the user can learn from —
+  // owned ones included (creators learn from their own courses too).
+  const learnable = [...enrolled, ...owned].filter(
+    (course) => course.status === "ready" && course.totalLessons > 0
+  );
+  const current =
+    learnable.find((course) => course.doneLessons > 0 && course.doneLessons < course.totalLessons) ??
+    learnable.find((course) => course.doneLessons < course.totalLessons) ??
+    learnable[0];
+  const discovered = [...enrolled, ...owned].reduce((total, course) => total + course.doneLessons, 0);
   const firstName = me.name.split(" ")[0];
 
   return (
     <div className="page-wrap">
       <div className="content-measure">
-        <header className="mb-9 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="section-label mb-3">{greeting()}</p><h1 className="page-heading">Welcome back, {firstName}.</h1><p className="mt-4 max-w-xl text-sm leading-6 text-ink-soft">Every chapter you finish leaves the path a little clearer.</p></div>
-          <div className="flex items-center gap-3 rounded-full border border-line bg-card px-4 py-2.5 text-xs font-semibold text-ink-soft shadow-card"><AppIcon name="bookmark" className="h-4 w-4 text-teal" />{discovered > 0 ? `${discovered} chapter${discovered === 1 ? "" : "s"} discovered` : "Your progress is safe"}</div>
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-xl font-bold tracking-tight">{greeting()}, {firstName}</h1>
+          <div className="flex items-center gap-3 rounded-full border border-line bg-card px-4 py-2 text-xs font-semibold text-ink-soft shadow-card"><AppIcon name="bookmark" className="h-4 w-4 text-teal" />{discovered > 0 ? `${discovered} lesson${discovered === 1 ? "" : "s"} completed` : "Your progress is safe"}</div>
         </header>
 
-        {current ? <ContinueJourney course={current} /> : <section className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop sm:grid-cols-[.9fr_1.1fr]"><CourseWorld seed={`${me.id}:first-world`} theme="sunrise-plains" progress={0} className="min-h-60 sm:min-h-80" /><div className="flex flex-col justify-center p-7 sm:p-10"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Your first destination</p><h2 className="display mt-3 text-4xl leading-none sm:text-5xl">A new world is waiting quietly.</h2><p className="mt-4 text-sm leading-6 text-white/70">Choose a course from the library when you are ready.</p><Link href="/explore" className="mt-7 inline-flex min-h-12 w-fit items-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink">Explore the library <AppIcon name="arrow" className="h-4 w-4" /></Link></div></section>}
+        {current ? <ContinueJourney course={current} /> : <section className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop sm:grid-cols-[.9fr_1.1fr]"><CourseWorld seed={`${me.id}:first-world`} theme="sunrise-plains" progress={0} className="min-h-52 sm:min-h-72" /><div className="flex flex-col justify-center p-7 sm:p-10"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">Get started</p><h2 className="display mt-3 text-4xl leading-none">Pick your first course.</h2><p className="mt-4 text-sm leading-6 text-white/70">Browse the library, or turn one of your own documents into a course below.</p><Link href="/explore" className="mt-7 inline-flex min-h-12 w-fit items-center gap-3 rounded-full bg-signal px-6 py-3 text-sm font-bold text-ink">Browse the library <AppIcon name="arrow" className="h-4 w-4" /></Link></div></section>}
 
-        {enrolled.length > 0 && <section className="mt-14" aria-labelledby="your-worlds-heading"><div className="mb-5 flex items-end justify-between gap-5"><div><p className="section-label">Your worlds</p><h2 id="your-worlds-heading" className="display mt-2 text-4xl">Places you can return to</h2></div><Link href="/explore" className="hidden text-sm font-semibold text-teal sm:inline-flex sm:items-center sm:gap-2">Open library <AppIcon name="arrow" className="h-4 w-4" /></Link></div><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{enrolled.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} appearance={course.appearance} action={<Link href={`/course/${course.id}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white">{progressFor(course) > 0 ? "Continue journey" : "Enter this world"}<AppIcon name="arrow" className="h-4 w-4" /></Link>} />)}</div></section>}
+        {enrolled.length > 0 && <section className="mt-10" aria-labelledby="your-courses-heading"><div className="mb-4 flex items-end justify-between gap-5"><h2 id="your-courses-heading" className="text-lg font-bold tracking-tight">Your courses</h2><Link href="/explore" className="text-sm font-semibold text-teal-deep sm:inline-flex sm:items-center sm:gap-2">Open library <AppIcon name="arrow" className="h-4 w-4" /></Link></div><div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{enrolled.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={displayTitle(course)} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} appearance={course.appearance} action={<Link href={`/course/${course.id}`} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white">{progressFor(course) > 0 ? "Continue" : "Start course"}<AppIcon name="arrow" className="h-4 w-4" /></Link>} />)}</div></section>}
 
-        <section className="mt-14 grid gap-5 lg:grid-cols-[1.15fr_.85fr]" aria-labelledby="quiet-step-heading">
-          <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card sm:p-8"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-go-soft text-go"><AppIcon name="practice" className="h-5 w-5" /></span><div><p className="section-label">A quiet next step</p><h2 id="quiet-step-heading" className="display mt-2 text-3xl">Keep one idea close.</h2><p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">A short review can strengthen what you have already discovered without starting something new.</p><Link href="/review" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep px-5 py-2.5 text-sm font-semibold hover:bg-paper">Open practice <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
-          <div className="rounded-[1.5rem] bg-sky/75 p-6 sm:p-8"><p className="section-label">Make something worth exploring</p><h2 className="display mt-2 text-3xl">A new world begins with a source.</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Create manually, work from saved sources, or use AI for a draft you review.</p><Link href="/create" className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Open Create <AppIcon name="arrow" className="h-4 w-4" /></Link></div>
+        <section className="mt-10 grid gap-5 sm:grid-cols-2" aria-labelledby="quiet-step-heading">
+          <div className="rounded-[1.5rem] border border-line bg-card p-6 shadow-card"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-go-soft text-go"><AppIcon name="practice" className="h-5 w-5" /></span><div><h2 id="quiet-step-heading" className="text-lg font-bold tracking-tight">Practice</h2><p className="mt-1.5 max-w-xl text-sm leading-6 text-ink-soft">Short reviews bring back the questions you missed, right before you would forget them.</p><Link href="/review" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep px-5 py-2.5 text-sm font-semibold hover:bg-paper">Open practice <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
+          <div className="rounded-[1.5rem] bg-sky/75 p-6"><div className="flex items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-white"><AppIcon name="create" className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Create a course</h2><p className="mt-1.5 text-sm leading-6 text-ink-soft">Start from a document, saved sources, or an AI-assisted draft you review.</p><Link href="/create" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Open Create <AppIcon name="arrow" className="h-4 w-4" /></Link></div></div></div>
         </section>
 
-        <section className="mt-14" aria-labelledby="creator-shelf-heading"><div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="section-label">Creator shelf</p><h2 id="creator-shelf-heading" className="display mt-2 text-4xl">Courses you are shaping</h2></div><span className="text-xs font-semibold text-ink-soft">{me.role === "admin" ? "Creator access" : `${me.credits} creation credit${me.credits === 1 ? "" : "s"}`}</span></div>
+        <section className="mt-10" aria-labelledby="creator-shelf-heading"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><h2 id="creator-shelf-heading" className="text-lg font-bold tracking-tight">Courses you are creating</h2><span className="text-xs font-semibold text-ink-soft">{me.role === "admin" ? "Creator access" : `${me.credits} creation credit${me.credits === 1 ? "" : "s"}`}</span></div>
           <label className={`group relative flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed border-line-deep bg-card/60 p-6 text-center transition-colors hover:border-teal hover:bg-card focus-within:border-teal focus-within:ring-4 focus-within:ring-teal/15 ${uploading ? "pointer-events-none opacity-60" : ""}`}>
             <input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" className="absolute inset-0 cursor-pointer opacity-0" aria-label="Upload a document to create a course" onChange={onFile} />
             <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="display mt-4 text-2xl">{uploading ? "Opening your source…" : "Quick start from a document"}</span><span className="mt-1 text-xs text-ink-soft">PDF, DOCX, PPTX, Markdown, or text</span>
           </label>
           <label className={`mt-3 flex items-start gap-3 rounded-xl px-2 py-2 text-sm ${aiCapability && !aiCapability.enabled ? "opacity-70" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="mt-1 h-4 w-4" /><span><span className="block font-semibold">Create an AI-assisted draft</span><span className="block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message} Quick uploads open as editable source-only drafts.` : "Uses one credit. Turn this off for an editable source-only draft. You remain the author."}</span></span></label>
           {uploadError && <p role="alert" className="mt-2 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{uploadError} {uploadError.includes("credit") && <Link href="/profile" className="underline">View plan</Link>}</p>}
-          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing on the shelf yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={course.title} description={course.description || course.source_filename} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Edit in Studio</Link>}{course.status === "error" && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>)}<Link href={`/course/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link></div>} />)}</div>}
+          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing here yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={displayTitle(course)} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Open</Link>}{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit in Studio</Link>}{course.status === "error" && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>)}{course.status !== "ready" && course.status !== "error" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link>}</div>} />)}</div>}
         </section>
       </div>
     </div>

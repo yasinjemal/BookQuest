@@ -30,16 +30,21 @@ async function withProgress(
       const modules = await listModules(c.id);
       let totalLessons = 0;
       let doneLessons = 0;
+      let nextLessonId: number | null = null;
       for (const m of modules) {
         const lessons = await listLessons(m.id);
         totalLessons += lessons.length;
         doneLessons += lessons.filter((l) => completed.has(l.id)).length;
+        if (nextLessonId === null) {
+          nextLessonId = lessons.find((l) => !completed.has(l.id))?.id ?? null;
+        }
       }
       return {
         ...c,
         appearance: parseCourseAppearance(c.appearance_json),
         totalLessons,
         doneLessons,
+        nextLessonId,
         moduleCount: modules.length,
       };
     })

@@ -34,16 +34,16 @@ export default function CourseOverviewHero({
       <CourseWorld seed={courseId} title={title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={progress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className={styles.world} />
       <div className={styles.shade} aria-hidden="true" />
       <div className={styles.topline}>
-        <Link href="/" className={styles.backLink}><span aria-hidden="true">←</span> Your worlds</Link>
+        <Link href="/" className={styles.backLink}><span aria-hidden="true">←</span> Home</Link>
         <span className={styles.themePill}><i aria-hidden="true" />{theme.name}</span>
       </div>
       <div className={styles.content}>
         <div className={styles.copy}>
-          <p>Living story world · {moduleCount} regions</p>
+          <p>{moduleCount} unit{moduleCount === 1 ? "" : "s"} · {totalLessons} lesson{totalLessons === 1 ? "" : "s"}</p>
           <h1 className="display">{title}</h1>
           <span>{description}</span>
           <div className={styles.actions}>
-            {nextLessonId ? <Link href={`/lesson/${nextLessonId}`} className="course-accent-button">Continue journey <AppIcon name="arrow" className="h-4 w-4" /></Link> : totalLessons > 0 ? <Link href="#course-journey" className="course-accent-button">Review the map <AppIcon name="trail" className="h-4 w-4" /></Link> : null}
+            {nextLessonId ? <Link href={`/lesson/${nextLessonId}`} className="course-accent-button">Continue lesson <AppIcon name="arrow" className="h-4 w-4" /></Link> : totalLessons > 0 ? <Link href="#course-journey" className="course-accent-button">Review lessons <AppIcon name="trail" className="h-4 w-4" /></Link> : null}
             {sourceHref !== null && <Link href={sourceHref ?? `/course/${courseId}/read`} className={styles.sourceLink}>Read source</Link>}
           </div>
         </div>

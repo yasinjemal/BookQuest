@@ -25,7 +25,7 @@ function LessonStop({ lesson, current, lockCopy }: { lesson: JourneyLesson; curr
   const content = <>
     <div className={styles.landmark}><AppIcon name={lesson.completed ? "check" : current ? "compass" : "lock"} className="h-4 w-4" /></div>
     <div className={styles.lessonCard}>
-      <p className={styles.stateLabel}>{lesson.completed ? "Discovered" : current ? "Current lesson" : lockCopy.eyebrow}</p>
+      <p className={styles.stateLabel}>{lesson.completed ? "Completed" : current ? "Current lesson" : lockCopy.eyebrow}</p>
       <h3 className={styles.lessonTitle}>{lesson.title}</h3>
       {future ? <p className={styles.lockHint}>{lockCopy.hint}</p> : <p className={styles.cardCount}>{lesson.cardCount} lesson part{lesson.cardCount === 1 ? "" : "s"}</p>}
     </div>
@@ -45,7 +45,7 @@ export default function JourneyMap({ modules, courseId, courseTitle, appearance 
   const lockCopy = courseWorldLockCopy(courseTheme);
   const activeModuleId = modules.find((module) => module.lessons.some((lesson) => lesson.id === firstIncomplete))?.id;
 
-  if (modules.length === 0) return <div className="border border-line bg-card px-6 py-12 text-center shadow-card" style={{ borderRadius: "var(--course-card-radius)" }}><p className="section-label">The map is being drawn</p><h2 className="display mt-3 text-3xl">Your first region will appear here.</h2></div>;
+  if (modules.length === 0) return <div className="border border-line bg-card px-6 py-12 text-center shadow-card" style={{ borderRadius: "var(--course-card-radius)" }}><p className="section-label">The map is being drawn</p><h2 className="display mt-3 text-3xl">Your first unit will appear here.</h2></div>;
 
   return (
     <div className={styles.atlas} aria-label={`Journey map for ${courseTitle}`}>
@@ -57,11 +57,11 @@ export default function JourneyMap({ modules, courseId, courseTitle, appearance 
             <div className={styles.regionHeader}>
               <CourseWorld seed={`${courseId}:${module.id}`} title={module.title} theme={courseTheme} accent={accent} progress={progress} mood={appearance.atmosphere === "quiet" ? "calm" : moduleIndex % 3 === 1 ? "dusk" : "calm"} className={styles.regionWorld} />
               <div className={styles.regionCopy}>
-                <p>Region {String(moduleIndex + 1).padStart(2, "0")} · {completed}/{module.lessons.length}</p>
+                <p>Unit {moduleIndex + 1} · {completed} of {module.lessons.length} lessons</p>
                 <h2 id={`region-${module.id}`} className="display">{module.title}</h2>
                 {module.summary && <span>{module.summary}</span>}
                 {(module.status === "pending" || module.status === "generating") && <small><i />Still taking shape.</small>}
-                {module.status === "error" && <small>This region could not be generated.</small>}
+                {module.status === "error" && <small>This unit could not be generated.</small>}
               </div>
             </div>
             <ol className={styles.route}>{module.lessons.map((lesson) => <LessonStop key={lesson.id} lesson={lesson} current={lesson.id === firstIncomplete} lockCopy={lockCopy} />)}</ol>

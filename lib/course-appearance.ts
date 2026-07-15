@@ -189,51 +189,25 @@ export type CourseWorldLockCopy = {
 };
 
 const DEFAULT_LOCK_COPY: CourseWorldLockCopy = {
-  eyebrow: "Further along the path",
-  hint: "Complete the previous lesson to reveal this stop.",
+  eyebrow: "Locked",
+  hint: "Finish the lesson above to unlock this one.",
 };
 
+// Themed flavor lives in the eyebrow only; the hint is always plain,
+// functional English — many learners read in their second language.
+const PLAIN_LOCK_HINT = "Finish the lesson above to unlock this one.";
+
 const WORLD_LOCK_COPY: Partial<Record<CourseWorldTheme, CourseWorldLockCopy>> = {
-  shadow: {
-    eyebrow: "Restricted lesson",
-    hint: "Continue the investigation to earn clearance.",
-  },
-  archive: {
-    eyebrow: "Archive sealed",
-    hint: "Complete the previous record to break the seal.",
-  },
-  manuscript: {
-    eyebrow: "Sealed folio",
-    hint: "Follow the text to reveal the next page.",
-  },
-  cosmic: {
-    eyebrow: "Signal encrypted",
-    hint: "Reach this coordinate to decode the transmission.",
-  },
-  workshop: {
-    eyebrow: "Toolbox locked",
-    hint: "Finish the current build to open this station.",
-  },
-  wealth: {
-    eyebrow: "Vault sealed",
-    hint: "Reach the next milestone to open this reserve.",
-  },
-  strategy: {
-    eyebrow: "Next horizon",
-    hint: "Complete this move to reveal the next advantage.",
-  },
-  sanctuary: {
-    eyebrow: "Study circle ahead",
-    hint: "Complete the present lesson to open the next reading.",
-  },
-  science: {
-    eyebrow: "Module encrypted",
-    hint: "Finish this experiment to decode the next signal.",
-  },
-  neutral: {
-    eyebrow: "Next chapter",
-    hint: "Complete the current lesson to continue.",
-  },
+  shadow: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  archive: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  manuscript: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  cosmic: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  workshop: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  wealth: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  strategy: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  sanctuary: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  science: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
+  neutral: { eyebrow: "Locked", hint: PLAIN_LOCK_HINT },
 };
 
 export function courseWorldLockCopy(theme: CourseWorldTheme): CourseWorldLockCopy {
