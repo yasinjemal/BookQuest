@@ -12,8 +12,10 @@ describe("quiz interlude experience", () => {
 
     expect(layout).toContain("if (isLessonQuiz(card))");
     expect(layout).toContain("Retrieval checks become their own focused interludes");
+    expect(layout).toContain('return "Choose the missing idea"');
     expect(lesson).toContain("<QuizInterlude");
     expect(lesson).toContain("const quizEntry");
+    expect(lesson).toContain('key={`${lesson.id}:${quizEntry.cardIndex}`}');
   });
 
   it("uses deliberate answer locking and restores completed answer state", () => {
@@ -24,6 +26,13 @@ describe("quiz interlude experience", () => {
     expect(quiz).toContain('answerResult?: QuizAnswerResult');
     expect(quiz).toContain("Lock answer");
     expect(quiz).toContain('role={immersive ? "radiogroup" : "group"}');
+    expect(quiz).toContain("fillBlankChoiceOptions");
+    expect(quiz).toContain("Which idea completes the sentence?");
+    expect(quiz).toContain("recordedAnswer = null");
+    expect(quiz).toContain("hintCount = 1");
+    expect(quiz).toContain("aria-pressed={choice === option}");
+    expect(quiz).toContain("answerResult.hintCount > 0");
+    expect(quiz).not.toContain("Type what you remember");
     expect(interlude).toContain('answerResult={result}');
     expect(interlude).toContain("Continue the journey");
   });
@@ -35,4 +44,3 @@ describe("quiz interlude experience", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
   });
 });
-

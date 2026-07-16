@@ -45,6 +45,7 @@ const BLOCKS: Array<{ type: BlockType; label: string; description: string; group
   { type: "recap", label: "Recap", description: "Close with key takeaways", group: "Assess" },
 ];
 const LABELS = Object.fromEntries(BLOCKS.map((item) => [item.type, item.label])) as Record<BlockType, string>;
+const CREATION_BLOCKS = BLOCKS.filter((item) => item.type !== "fill_in");
 
 function template(type: BlockType): Record<string, unknown> {
   const values: Record<BlockType, Record<string, unknown>> = {
@@ -54,7 +55,7 @@ function template(type: BlockType): Record<string, unknown> {
     story: { type, title: "A moment at work", body: "Tell a short, relevant story." },
     worked_example: { type, title: "See it done", problem: "Describe the task.", steps: ["First step", "Second step"], result: "Describe the correct result." },
     flashcard: { type, front: "What should you remember?", back: "The answer", frontLabel: "Question", backLabel: "Answer" },
-    multiple_choice: { type, question: "What is the correct action?", options: ["First option", "Second option", "Third option"], correctIndex: 0, explanation: "Explain why this answer is correct." },
+    multiple_choice: { type, question: "What is the correct action?", options: ["Correct option", "Plausible alternative"], correctIndex: 0, explanation: "Explain why this answer is correct." },
     true_false: { type, statement: "This statement is correct.", answer: true, explanation: "Explain why." },
     fill_in: { type, prompt: "Complete this sentence: ___", answer: "answer", acceptedAnswers: [], explanation: "Explain why." },
     scenario: { type, context: "Describe a realistic workplace situation.", decisionPrompt: "What should the learner do?", options: ["First action", "Second action"], guidance: "Explain the best approach." },
@@ -161,7 +162,7 @@ export default function StudioPage() {
 
   if (!data) return <div className="page-wrap"><div className="mx-auto max-w-6xl rounded-2xl border border-line bg-card p-10 text-center text-ink-soft">{error || "Opening your course workspace…"}</div></div>;
   const readiness = [{ label: "Content added", pass: (analysis?.totalBlocks ?? 0) > 0 }, { label: "Every block linked to a source", pass: analysis ? analysis.tracedBlocks === analysis.totalBlocks && analysis.totalBlocks > 0 : false }, { label: "Accessibility checks clear", pass: analysis ? analysis.accessibilityIssueBlockIds.length === 0 : false }, { label: "Review notes resolved", pass: data.comments.every((item) => item.status !== "open") }];
-  const palette = BLOCKS.filter((item) => `${item.label} ${item.description} ${item.group}`.toLowerCase().includes(paletteQuery.toLowerCase()));
+  const palette = CREATION_BLOCKS.filter((item) => `${item.label} ${item.description} ${item.group}`.toLowerCase().includes(paletteQuery.toLowerCase()));
   return <div className="min-h-dvh bg-paper">
     <header className="sticky top-0 z-30 border-b border-line bg-card/92 backdrop-blur-xl"><div className="mx-auto flex max-w-[100rem] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"><div className="flex min-w-0 items-center gap-3"><Link href={`/course/${id}`} aria-label="Back to course" className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line hover:bg-paper">←</Link><div className="min-w-0"><div className="flex items-center gap-2"><h1 className="truncate text-sm font-bold sm:text-base">{data.version.title}</h1><span className="hidden rounded-full bg-paper px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-ink-soft sm:inline">v{data.version.version_number} · {data.version.lifecycle_status}</span></div><SaveState state={saveState} /></div></div><div className="flex flex-wrap items-center gap-2"><Link href={`/course/${id}/appearance`} className="quiet-button hidden min-h-10 py-2 text-xs md:inline-flex">Theme</Link>{(["mobile", "desktop", "offline"] as const).map((mode) => <button key={mode} type="button" onClick={() => { setPreviewMode(previewMode === mode ? "edit" : mode); setMobilePanel("canvas"); }} className={`${mode === "mobile" ? "inline-flex" : "hidden"} min-h-10 items-center rounded-full px-3 text-xs font-semibold sm:inline-flex ${previewMode === mode ? "bg-ink text-white" : "border border-line bg-card"}`}>{mode === "mobile" ? <><span className="sm:hidden">Preview</span><span className="hidden sm:inline">Phone</span></> : mode === "desktop" ? "Preview" : "Offline"}</button>)}<button type="button" onClick={() => { setToolTab("publish"); setMobilePanel("tools"); }} className="btn-primary min-h-10 px-4 py-2 text-xs">Review & publish</button></div></div></header>
     <nav className="sticky top-[121px] z-20 grid grid-cols-3 border-b border-line bg-card lg:top-[65px] xl:hidden" aria-label="Studio panels">{(["outline", "canvas", "tools"] as const).map((panel) => <button key={panel} onClick={() => setMobilePanel(panel)} aria-pressed={mobilePanel === panel} className={`min-h-11 text-xs font-bold capitalize ${mobilePanel === panel ? "border-b-2 border-teal text-teal" : "text-ink-soft"}`}>{panel === "tools" ? "Source & checks" : panel}</button>)}</nav>

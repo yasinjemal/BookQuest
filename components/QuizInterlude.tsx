@@ -45,9 +45,12 @@ export default function QuizInterlude({
   saving: boolean;
   error?: string | null;
 }) {
-  const outcome = result?.correct ? "correct" : result ? "incorrect" : "unanswered";
+  const usedClue = card.type === "quiz_fillblank" && result?.answer === null && result.hintCount > 0;
+  const outcome = result?.correct ? "correct" : usedClue ? "hint" : result ? "incorrect" : "unanswered";
   const headline = result?.correct
     ? "That idea is yours to carry."
+    : usedClue
+      ? "The missing idea is now in view."
     : result
       ? "A correction is still progress."
       : "Close the loop from memory.";
@@ -73,7 +76,7 @@ export default function QuizInterlude({
         <p><AppIcon name="compass" className="h-4 w-4" />Recall gate · Moment {momentNumber} of {totalMoments}</p>
         <h1 className="display">{headline}</h1>
         <span>{result
-          ? result.correct ? "You found the signal without the source beside you." : "Read the connection, then carry it into the next moment."
+          ? result.correct ? "You found the signal without the source beside you." : usedClue ? "Use the explanation, then carry the idea forward." : "Read the connection, then carry it into the next moment."
           : "The reading has stepped out of sight on purpose. Choose what stayed with you."}</span>
       </header>
 
@@ -82,8 +85,8 @@ export default function QuizInterlude({
       </div>
 
       <footer className={styles.stageFooter}>
-        {result ? <div className={styles.outcome}><span data-correct={result.correct}><AppIcon name={result.correct ? "check" : "spark"} className="h-4 w-4" /></span><p><strong>{result.correct ? "Checkpoint cleared" : "Connection restored"}</strong><small>{result.correct ? "Ready for the next part of the path." : "The explanation is now part of the journey."}</small></p></div> : <p className={styles.waiting}><span />Select an answer, then lock it in. Keyboard shortcuts work too.</p>}
-        <button type="button" onClick={onContinue} disabled={!result || saving} className={`${styles.continueAction} course-accent-button`}>{saving ? "Saving your progress…" : isLastMoment ? "Complete lesson" : result?.correct ? "Continue the journey" : "Carry the correction forward"}<AppIcon name="arrow" className="h-4 w-4" /></button>
+        {result ? <div className={styles.outcome}><span data-correct={result.correct}><AppIcon name={result.correct ? "check" : "spark"} className="h-4 w-4" /></span><p><strong>{result.correct ? "Checkpoint cleared" : usedClue ? "Clue revealed" : "Connection restored"}</strong><small>{result.correct ? "Ready for the next part of the path." : usedClue ? "Your mastery score was not reduced." : "The explanation is now part of the journey."}</small></p></div> : <p className={styles.waiting}><span />{card.type === "quiz_fillblank" ? "Choose the missing idea or ask for a clue." : "Choose an answer, then lock it in."}</p>}
+        <button type="button" onClick={onContinue} disabled={!result || saving} className={`${styles.continueAction} course-accent-button`}>{saving ? "Saving your progress…" : isLastMoment ? "Complete lesson" : result?.correct ? "Continue the journey" : usedClue ? "Carry the idea forward" : "Carry the correction forward"}<AppIcon name="arrow" className="h-4 w-4" /></button>
       </footer>
       {error && <p role="alert" className={styles.error}>{error}</p>}
     </div>

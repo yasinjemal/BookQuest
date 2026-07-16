@@ -27,15 +27,31 @@ function TextField({ name, value, onChange }: { name: string; value: string; onC
   </label>;
 }
 
-function StringList({ name, values, onChange }: { name: string; values: string[]; onChange: (values: string[]) => void }) {
+function StringList({
+  name,
+  values,
+  onChange,
+  minItems = 1,
+  maxItems,
+  protectedIndex,
+}: {
+  name: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  minItems?: number;
+  maxItems?: number;
+  protectedIndex?: number;
+}) {
   return <fieldset className="space-y-2 rounded-xl border border-line bg-paper/45 p-3">
     <legend className="px-1 text-xs font-semibold">{labelFor(name)}</legend>
     {values.map((value, index) => <div key={index} className="flex items-start gap-2">
       <span className="mt-3 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-ink text-[10px] font-bold text-white">{index + 1}</span>
       <textarea aria-label={`${labelFor(name)} ${index + 1}`} value={value} onChange={(event) => onChange(values.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} rows={2} className="field min-h-11 flex-1 resize-y" />
-      <button type="button" onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))} disabled={values.length === 1} aria-label={`Remove ${labelFor(name)} ${index + 1}`} className="mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line text-lg text-ink-soft hover:border-no hover:text-no">×</button>
+      <button type="button" onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))} disabled={values.length <= minItems || index === protectedIndex} title={index === protectedIndex ? "Choose a different correct answer before removing this option" : undefined} aria-label={`Remove ${labelFor(name)} ${index + 1}`} className="mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line text-lg text-ink-soft hover:border-no hover:text-no">×</button>
     </div>)}
-    <button type="button" onClick={() => onChange([...values, ""])} className="quiet-button min-h-10 w-full text-xs">+ Add {labelFor(name).toLowerCase().replace(/s$/, "")}</button>
+    {maxItems === undefined || values.length < maxItems
+      ? <button type="button" onClick={() => onChange([...values, ""])} className="quiet-button min-h-10 w-full text-xs">+ Add {labelFor(name).toLowerCase().replace(/s$/, "")}</button>
+      : maxItems === 2 && <p className="px-1 text-xs leading-5 text-ink-soft">Two options keep this check quick and focused.</p>}
   </fieldset>;
 }
 
@@ -74,7 +90,18 @@ export default function StudioBlockFields({ blockType, content, onChange }: { bl
         if (key === "correctIndex" && Array.isArray(content.options)) return <fieldset key={key} className="space-y-2"><legend className="text-xs font-semibold">Correct answer</legend>{(content.options as string[]).map((option, index) => <label key={index} className="flex min-h-10 items-center gap-3 rounded-xl border border-line px-3 text-sm"><input type="radio" name="correctIndex" checked={value === index} onChange={() => update(key, index)} />{option || `Option ${index + 1}`}</label>)}</fieldset>;
         return <label key={key} className="block text-xs font-semibold">{labelFor(key)}<input type="number" value={value} onChange={(event) => update(key, Number(event.target.value))} className="field mt-2" /></label>;
       }
-      if (Array.isArray(value) && value.every((item) => typeof item === "string")) return <StringList key={key} name={key} values={value as string[]} onChange={(next) => update(key, next)} />;
+      if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+        const isTwoChoiceQuestion = blockType === "multiple_choice" && key === "options";
+        const currentOptions = value as string[];
+        const currentCorrectIndex = Number(content.correctIndex ?? 0);
+        const updateList = (next: string[]) => {
+          if (!isTwoChoiceQuestion || next.length >= currentOptions.length) return update(key, next);
+          const correctOption = currentOptions[currentCorrectIndex];
+          const nextCorrectIndex = next.indexOf(correctOption);
+          onChange({ ...content, [key]: next, correctIndex: nextCorrectIndex >= 0 ? nextCorrectIndex : 0 });
+        };
+        return <StringList key={key} name={key} values={currentOptions} onChange={updateList} minItems={isTwoChoiceQuestion ? 2 : 1} maxItems={isTwoChoiceQuestion ? 2 : undefined} protectedIndex={isTwoChoiceQuestion ? currentCorrectIndex : undefined} />;
+      }
       if (typeof value === "string") return <TextField key={key} name={key} value={value} onChange={(next) => update(key, next)} />;
       return <div key={key} className="rounded-xl bg-paper p-3 text-xs text-ink-soft">{labelFor(key)} is retained as structured data.</div>;
     })}

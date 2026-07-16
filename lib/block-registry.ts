@@ -11,6 +11,9 @@ const legacyMcq = z.object({
   correct_index: z.number().int().nonnegative(),
   explanation: nonEmpty,
   concept: z.string().optional(),
+}).refine((value) => value.correct_index < value.options.length, {
+  path: ["correct_index"],
+  message: "Correct answer must refer to an existing option",
 });
 const legacyTrueFalse = z.object({
   type: z.literal("quiz_truefalse"),
@@ -79,6 +82,9 @@ export const BLOCK_SCHEMAS = {
       options: z.array(nonEmpty).min(2),
       correctIndex: z.number().int().nonnegative(),
       explanation: nonEmpty,
+    }).refine((value) => value.correctIndex < value.options.length, {
+      path: ["correctIndex"],
+      message: "Correct answer must refer to an existing option",
     }),
   ]),
   true_false: z.union([

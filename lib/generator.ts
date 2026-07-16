@@ -29,8 +29,8 @@ import {
   recordOperationalEvent,
 } from "./observability";
 
-export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v1";
-export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v1";
+export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v2-two-choice";
+export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v2-two-choice";
 
 export function getGeneratorModel(): string {
   return resolveAiConfiguration().model || DEFAULT_AI_MODEL;
@@ -62,6 +62,7 @@ Rules for all content you write:
 - One idea per card. Never cram.
 - Give every lesson card an intent, importance, and density. Use intent for its learning purpose, importance for emphasis, and density for reading footprint. Reserve critical and immersive for genuinely pivotal content.
 - Quizzes must test understanding of what was just taught, not trivia or wording.
+- Every quiz must be either multiple choice with exactly 2 concise options or true/false. For multiple choice, write one clearly correct answer and one plausible distractor. Never create fill-in, typed-answer, or drag interactions. Avoid trick wording.
 - Stay faithful to the source document. Do not invent facts that are not in it.
 - Be warm and encouraging, never condescending.`;
 
@@ -267,24 +268,31 @@ export async function generatePracticeQuiz(
   sourceText: string
 ): Promise<Card[]> {
   const { client, model } = createAiProvider();
-  const resp = await client.messages.parse({
-    model,
-    max_tokens: 6000,
-    thinking: { type: "adaptive" },
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `A learner studying "${courseTitle}" is weak on these concepts: ${weakConcepts
-          .map((c) => `"${c}"`)
-          .join(", ")}.\n\nCourse material:\n\n${sourceText.slice(0, 30000)}\n\nWrite 6 brand-new quiz questions (mix of multiple choice, true/false, fill-in-the-blank) that test exactly these weak concepts from fresh angles. Tag each question's "concept" field with the matching concept string from the list above.`,
-      },
-    ],
-    output_config: { format: zodOutputFormat(PracticeQuiz) },
-  });
-  const parsed = resp.parsed_output;
-  if (!parsed) throw new Error("Practice generation returned no parsable output.");
-  return parsed.cards.filter((c) => Card.safeParse(c).success) as Card[];
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const resp = await client.messages.parse({
+        model,
+        max_tokens: 6000,
+        thinking: { type: "adaptive" },
+        system: SYSTEM,
+        messages: [
+          {
+            role: "user",
+            content: `A learner studying "${courseTitle}" is weak on these concepts: ${weakConcepts
+              .map((c) => `"${c}"`)
+              .join(", ")}.\n\nCourse material:\n\n${sourceText.slice(0, 30000)}\n\nWrite 6 brand-new two-choice quiz questions using only: (1) multiple choice with exactly 2 options, one correct and one plausible distractor, or (2) true/false. Never use fill-in, typing, or drag interactions. Avoid trick wording. Test exactly these weak concepts from fresh angles and tag each question's "concept" field with the matching concept string from the list above.`,
+          },
+        ],
+        output_config: { format: zodOutputFormat(PracticeQuiz) },
+      });
+      const parsed = resp.parsed_output;
+      if (!parsed) throw new Error("Practice generation returned no parsable output.");
+      return parsed.cards.filter((c) => Card.safeParse(c).success) as Card[];
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
+  throw new Error("Practice generation returned no parsable output.");
 }
 
 async function generateModuleLessons(
@@ -302,7 +310,7 @@ async function generateModuleLessons(
     messages: [
       {
         role: "user",
-        content: `Source material for the module "${moduleTitle}":\n\n${sourceText}\n\nCreate 2-4 lessons teaching this material. Each lesson: 8-14 cards, at least 40% quiz cards, starting with concept cards, quizzes interleaved after every 1-2 concepts, ending with a recap card. Cover the important ideas of the source — skip filler.`,
+        content: `Source material for the module "${moduleTitle}":\n\n${sourceText}\n\nCreate 2-4 lessons teaching this material. Each lesson: 8-14 cards, at least 40% quiz cards, starting with concept cards, quizzes interleaved after every 1-2 concepts, ending with a recap card. Use only multiple choice with exactly 2 options (one clearly correct and one plausible distractor) or true/false. Never create fill-in, typing, or drag interactions. Avoid trick wording. Cover the important ideas of the source — skip filler.`,
       },
     ],
     output_config: { format: zodOutputFormat(ModuleLessons) },

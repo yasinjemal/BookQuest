@@ -109,7 +109,7 @@ export function lessonCardTitle(card: Card) {
   if (card.type === "concept" || card.type === "example" || card.type === "recap" || card.type === "story" || card.type === "audio_video" || card.type === "practical_task" || card.type === "survey") return card.title;
   if (card.type === "quiz_mcq") return card.question;
   if (card.type === "quiz_truefalse") return card.statement;
-  if (card.type === "quiz_fillblank") return "Complete the thought";
+  if (card.type === "quiz_fillblank") return "Choose the missing idea";
   if (card.type === "flashcard") return card.front;
   if (card.type === "scenario") return card.decisionPrompt;
   if (card.type === "discussion") return card.prompt;

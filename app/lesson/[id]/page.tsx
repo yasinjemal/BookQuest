@@ -163,6 +163,7 @@ export default function LessonPage() {
         </div>
       </header>
       <QuizInterlude
+        key={`${lesson.id}:${quizEntry.cardIndex}`}
         card={quizEntry.card}
         result={results[quizEntry.cardIndex]}
         appearance={appearance}

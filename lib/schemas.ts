@@ -56,6 +56,21 @@ export const QuizTrueFalseCard = z.object({
   explanation: z.string().describe("One sentence explanation"),
 });
 
+/** Strict shape for newly generated questions. The wider QuizMcqCard remains
+ * compatible with imported and already-published courses. */
+export const GeneratedQuizMcqCard = QuizMcqCard.extend({
+  options: z
+    .array(z.string().trim().min(1))
+    .length(2)
+    .describe("Exactly 2 concise options: one correct answer and one plausible distractor"),
+  correct_index: z
+    .number()
+    .int()
+    .min(0)
+    .max(1)
+    .describe("0-based index of the correct option; must be 0 or 1"),
+});
+
 export const QuizFillBlankCard = z.object({
   ...blockPresentationFields,
   type: z.literal("quiz_fillblank"),
@@ -100,6 +115,25 @@ export const Card = z.union([
 ]);
 export type Card = z.infer<typeof Card>;
 
+/** Cards AI course generation may create. Fill-in remains readable and
+ * gradeable through Card, but new generations use only two-choice checks. */
+export const GeneratedLessonCard = z.union([
+  ConceptCard,
+  ExampleCard,
+  GeneratedQuizMcqCard,
+  QuizTrueFalseCard,
+  RecapCard,
+  BLOCK_SCHEMAS.image.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.audio_video.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.story.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.flashcard.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.scenario.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.practical_task.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.discussion.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.survey.extend(blockPresentationFields),
+  BLOCK_SCHEMAS.attestation.extend(blockPresentationFields),
+]);
+
 // ---------- Generation output shapes ----------
 
 export const CourseOutline = z.object({
@@ -128,8 +162,8 @@ export type CourseOutline = z.infer<typeof CourseOutline>;
 /** Output shape for AI-generated fresh practice questions. */
 export const PracticeQuiz = z.object({
   cards: z
-    .array(z.discriminatedUnion("type", [QuizMcqCard, QuizTrueFalseCard, QuizFillBlankCard]))
-    .describe("6 quiz cards. Each must test one of the requested weak concepts, tagged with that exact concept string. Never repeat a question the learner has seen — invent new angles."),
+    .array(z.discriminatedUnion("type", [GeneratedQuizMcqCard, QuizTrueFalseCard]))
+    .describe("6 two-choice quiz cards: exactly 2-option multiple choice or true/false. Each must test one requested weak concept, tagged with that exact concept string. Never repeat a question the learner has seen — invent new angles."),
 });
 export type PracticeQuiz = z.infer<typeof PracticeQuiz>;
 
@@ -139,9 +173,9 @@ export const ModuleLessons = z.object({
       z.object({
         title: z.string().describe("Lesson title, max 8 words"),
         cards: z
-          .array(Card)
+          .array(GeneratedLessonCard)
           .describe(
-            "8-14 cards. At least 40% must be quiz cards (quiz_mcq, quiz_truefalse, quiz_fillblank). Start with concept cards, interleave quizzes after each 1-2 concepts, end with a recap card."
+            "8-14 cards. At least 40% must be two-choice quiz cards (quiz_mcq with exactly 2 options, or quiz_truefalse). Never generate quiz_fillblank. Start with concept cards, interleave quizzes after each 1-2 concepts, end with a recap card."
           ),
       })
     )

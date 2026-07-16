@@ -43,6 +43,23 @@ describe("Course Studio block registry", () => {
     ).toMatchObject({ valid: false });
   });
 
+  it("rejects a correct answer index outside the available options", () => {
+    expect(validateBlockContent("multiple_choice", {
+      type: "multiple_choice",
+      question: "Choose one",
+      options: ["A", "B"],
+      correctIndex: 2,
+      explanation: "B is correct.",
+    })).toMatchObject({ valid: false });
+    expect(validateBlockContent("multiple_choice", {
+      type: "quiz_mcq",
+      question: "Choose one",
+      options: ["A", "B"],
+      correct_index: 2,
+      explanation: "B is correct.",
+    })).toMatchObject({ valid: false });
+  });
+
   it("declares channel support and non-executable fallbacks", () => {
     expect(BLOCK_CHANNELS.image).toEqual({
       offline: true,
