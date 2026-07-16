@@ -29,16 +29,35 @@ const INTERNAL_GENERATE_PATH = "/api/internal/generate";
 
 /** Absolute base URL for internal self-calls, working in dev and on Vercel. */
 export function resolveBaseUrl(req: NextRequest): string {
-  // VERCEL_URL is system-controlled and points to this exact deployment. It
-  // must win over APP_URL so a stale canonical URL cannot route workers to an
-  // older deployment. Never trust a production request Host with the internal
-  // secret: proxies can permit spoofed hosts unless explicitly constrained.
+  // Vercel's generated deployment URL can be protected even when the public
+  // production domain is reachable. On production, use the system-controlled
+  // project URL so internal handoffs do not stop at Deployment Protection.
+  const targetEnvironment = process.env.VERCEL_TARGET_ENV || process.env.VERCEL_ENV;
+  if (targetEnvironment === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  // Preview workers stay on their exact deployment. Protected previews are
+  // authenticated by internalGenerationHeaders below.
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
   if (process.env.NODE_ENV !== "production") {
     return req.nextUrl.origin.replace(/\/$/, "");
   }
   throw new Error("A trusted generation worker origin is not configured");
+}
+
+/** Headers shared by course and summary self-invocations. Vercel exposes the
+ * automation secret when Protection Bypass is configured for the project. */
+export function internalGenerationHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-generation-secret": process.env.GENERATION_SECRET ?? "",
+  };
+  const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (protectionBypass) {
+    headers["x-vercel-protection-bypass"] = protectionBypass;
+  }
+  return headers;
 }
 
 /** Guard for the internal endpoint. Open in dev when no secret is configured. */
@@ -61,10 +80,7 @@ export async function kickGeneration(
   try {
     const response = await fetch(`${baseUrl}${INTERNAL_GENERATE_PATH}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-generation-secret": process.env.GENERATION_SECRET ?? "",
-      },
+      headers: internalGenerationHeaders(),
       body: JSON.stringify({ courseId, generationRunId }),
       cache: "no-store",
     });

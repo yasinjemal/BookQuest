@@ -18,6 +18,7 @@ type StoredReadingProgress = {
 };
 
 const deepReadAppearance = COURSE_APPEARANCE_TEMPLATES.find((item) => item.id === "quiet-library")?.appearance ?? DEFAULT_COURSE_APPEARANCE;
+const MANUAL_RESUME_AFTER_MS = 4 * 60 * 1000;
 
 function progressKey(id: string | number) {
   return `bookquest.summary.${id}.reading`;
@@ -287,6 +288,21 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
   if (!summary) return <div className={styles.loadingPage} aria-label="Opening Deep Read"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>;
 
   const statusCopy = readingStatusCopy(summary);
+  const readingIsReady = isSummaryReady(summary.status);
+  const generationProgress = summary.section_count > 0
+    ? (summary.ready_section_count / summary.section_count) * 100
+    : 0;
+  const visibleProgress = readingIsReady ? readingProgress : generationProgress;
+  const progressLabel = readingIsReady
+    ? `Reading progress through ${summary.title}`
+    : `Generation progress for ${summary.title}`;
+  const progressMeta = readingIsReady
+    ? `${Math.round(readingProgress)}% read · ${summaryStatusLabel(summary.status)}`
+    : `${summary.ready_section_count} of ${summary.section_count} ready · ${summaryStatusLabel(summary.status)}`;
+  const canResumeGeneration = summary.status === "error" || (
+    !readingIsReady &&
+    Date.now() - Date.parse(summary.created_at) >= MANUAL_RESUME_AFTER_MS
+  );
 
   return (
     <CourseAppearanceFrame appearance={deepReadAppearance} className={styles.themeFrame}>
@@ -295,13 +311,13 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
         <header className={styles.topbar}>
           <div className={styles.topbarInner}>
             <Link href="/summaries" className={styles.backLink} aria-label="Return to Deep Reads"><span aria-hidden="true">←</span><span>Deep Reads</span></Link>
-            <div className={styles.titleLockup}><strong>{summary.title}</strong><span>{Math.round(readingProgress)}% read · {summaryStatusLabel(summary.status)}</span></div>
+            <div className={styles.titleLockup}><strong>{summary.title}</strong><span>{progressMeta}</span></div>
             <div className={styles.controls}>
               <button type="button" onClick={() => setTocOpen(true)} className={styles.mobileTocButton} aria-label="Open table of contents" aria-expanded={tocOpen}><AppIcon name="layers" className="h-4 w-4" /><span>Contents</span></button>
               <div className={styles.fontControls} aria-label="Text size controls"><button type="button" onClick={() => setFontSize((value) => Math.max(16, value - 1))} disabled={fontSize <= 16} aria-label="Decrease text size">A−</button><span aria-hidden="true">{fontSize}</span><button type="button" onClick={() => setFontSize((value) => Math.min(24, value + 1))} disabled={fontSize >= 24} aria-label="Increase text size">A+</button></div>
             </div>
           </div>
-          <div className={styles.headerProgress} role="progressbar" aria-label={`Reading progress through ${summary.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(readingProgress)}><span style={{ width: `${readingProgress}%` }} /></div>
+          <div className={styles.headerProgress} role="progressbar" aria-label={progressLabel} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(visibleProgress)}><span style={{ width: `${visibleProgress}%` }} /></div>
         </header>
 
         <div className={styles.layout}>
@@ -324,7 +340,7 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
               <div className={styles.mobileSource}><SourceRail summary={summary} /></div>
             </section>
 
-            {statusCopy && <div className={`${styles.statusNotice} ${summary.status === "error" ? styles.statusError : ""}`} role={summary.status === "error" ? "alert" : "status"}><span><AppIcon name={summary.status === "error" ? "compass" : "spark"} className="h-5 w-5" /></span><div><strong>{summary.status === "error" ? "This draft needs attention" : summaryStatusLabel(summary.status)}</strong><p>{statusCopy}</p>{summary.status === "error" && <button type="button" onClick={() => void retryGeneration()} disabled={retrying} className="quiet-button mt-3 text-xs">{retrying ? "Restarting…" : "Retry this Deep Read"}</button>}</div></div>}
+            {statusCopy && <div className={`${styles.statusNotice} ${summary.status === "error" ? styles.statusError : ""}`} role={summary.status === "error" ? "alert" : "status"}><span><AppIcon name={summary.status === "error" ? "compass" : "spark"} className="h-5 w-5" /></span><div><strong>{summary.status === "error" ? "This draft needs attention" : summaryStatusLabel(summary.status)}</strong><p>{statusCopy}</p>{canResumeGeneration && <button type="button" onClick={() => void retryGeneration()} disabled={retrying} className="quiet-button mt-3 text-xs">{retrying ? "Restarting…" : summary.status === "error" ? "Retry this Deep Read" : "Resume generation now"}</button>}</div></div>}
 
             {loadError && <p role="alert" className={styles.inlineError}>{loadError} <button type="button" onClick={() => void load()}>Try again</button></p>}
 

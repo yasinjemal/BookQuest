@@ -22,6 +22,20 @@ describe("Deep Summary resilience contracts", () => {
     expect(detail).toContain("kickSummaryGeneration(");
   });
 
+  it("does not loop forever when protected worker handoffs fail", () => {
+    const generation = source("lib/generation.ts");
+    const summaryGeneration = source("lib/summary-generation.ts");
+    const db = source("lib/summary-db.ts");
+    const reader = source("components/SummaryReader.tsx");
+
+    expect(generation).toContain("VERCEL_PROJECT_PRODUCTION_URL");
+    expect(generation).toContain("x-vercel-protection-bypass");
+    expect(summaryGeneration).toContain("MAX_SUMMARY_TRIGGER_FAILURES");
+    expect(summaryGeneration).toContain("recordSummaryGenerationTriggerFailure");
+    expect(db).toContain("generation_trigger_failures = generation_trigger_failures + 1");
+    expect(reader).toContain("Resume generation now");
+  });
+
   it("checks retry prerequisites and preserves completed sections", () => {
     const retry = source("app/api/summaries/[id]/retry/route.ts");
     const db = source("lib/summary-db.ts");

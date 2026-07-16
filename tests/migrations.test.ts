@@ -54,6 +54,12 @@ describe("migration list", () => {
     expect(migration?.sql).toContain("course_id INTEGER REFERENCES courses");
   });
 
+  it("bounds failed Deep Summary worker handoffs", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "summary_generation_recovery");
+    expect(migration).toMatchObject({ id: 25 });
+    expect(migration?.sql).toContain("generation_trigger_failures");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },

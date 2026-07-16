@@ -1,6 +1,13 @@
-import { GENERATION_STEP_BUDGET_MS } from "./generation";
+import {
+  GENERATION_STEP_BUDGET_MS,
+  internalGenerationHeaders,
+} from "./generation";
 import { runSummaryGenerationUntilBudget } from "./summary-generator";
-import { StaleSummaryGenerationError } from "./summary-db";
+import {
+  recordSummaryGenerationTriggerFailure,
+  resetSummaryGenerationTriggerFailures,
+  StaleSummaryGenerationError,
+} from "./summary-db";
 import { withSummaryGenerationLock } from "./pg";
 import {
   operationalSubject,
@@ -9,21 +16,29 @@ import {
 
 const INTERNAL_GENERATE_SUMMARY_PATH = "/api/internal/generate-summary";
 
-export const SUMMARY_GENERATION_STALE_MS = 180_000;
+export const SUMMARY_GENERATION_STALE_MS = 210_000;
+export const MAX_SUMMARY_TRIGGER_FAILURES = 3;
+
+function triggerFailureMessage(status: number | null): string {
+  if (status === 401 || status === 403) {
+    return "The summary worker could not restart because deployment automation access is blocked. Check deployment protection, then retry this Deep Read.";
+  }
+  if (status === 429) {
+    return "The summary worker was repeatedly rate limited. Wait a moment, then retry this Deep Read.";
+  }
+  return "The summary worker could not restart after several attempts. Retry this Deep Read to continue from the completed work.";
+}
 
 export async function kickSummaryGeneration(
   summaryId: number,
   generationRunId: string,
   baseUrl: string
-): Promise<void> {
+): Promise<boolean> {
   let responseStatus: number | null = null;
   try {
     const response = await fetch(`${baseUrl}${INTERNAL_GENERATE_SUMMARY_PATH}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-generation-secret": process.env.GENERATION_SECRET ?? "",
-      },
+      headers: internalGenerationHeaders(),
       body: JSON.stringify({ summaryId, generationRunId }),
       cache: "no-store",
     });
@@ -31,6 +46,8 @@ export async function kickSummaryGeneration(
     if (!response.ok) {
       throw new Error(`Summary generation trigger returned ${response.status}`);
     }
+    await resetSummaryGenerationTriggerFailures(summaryId, generationRunId);
+    return true;
   } catch (error) {
     console.error(`Failed to kick generation for summary ${summaryId}:`, error);
     await recordOperationalError({
@@ -40,6 +57,19 @@ export async function kickSummaryGeneration(
       subjectKey: operationalSubject("summary", summaryId),
       metadata: { http_status: responseStatus },
     });
+    try {
+      await recordSummaryGenerationTriggerFailure(
+        summaryId,
+        generationRunId,
+        MAX_SUMMARY_TRIGGER_FAILURES,
+        triggerFailureMessage(responseStatus)
+      );
+    } catch (recordError) {
+      if (!(recordError instanceof StaleSummaryGenerationError)) {
+        console.error(`Failed to record generation trigger failure for summary ${summaryId}:`, recordError);
+      }
+    }
+    return false;
   }
 }
 

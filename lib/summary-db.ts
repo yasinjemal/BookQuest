@@ -27,6 +27,7 @@ export interface SummaryRow {
   generation_run_id: string;
   generation_heartbeat: string | null;
   generation_attempts: number;
+  generation_trigger_failures: number;
   generator_model: string | null;
   prompt_version: string | null;
   created_at: string;
@@ -176,7 +177,8 @@ export async function prepareSummaryRetry(
     await client.query(
       `UPDATE summaries
        SET status = $3, error = NULL, generation_heartbeat = NULL,
-           generation_attempts = 0, updated_at = $4
+           generation_attempts = 0, generation_trigger_failures = 0,
+           updated_at = $4
        WHERE id = $1 AND owner_id = $2 AND status = 'error'`,
       [summaryId, ownerId, sectionCount > 0 ? "generating" : "outlining", nowIso()]
     );
@@ -344,6 +346,56 @@ export async function bumpSummaryGenerationAttempts(
   );
   if (!row) throw new StaleSummaryGenerationError();
   return Number(row.generation_attempts);
+}
+
+export async function resetSummaryGenerationTriggerFailures(
+  summaryId: number,
+  generationRunId: string
+) {
+  const result = await q(
+    `UPDATE summaries
+     SET generation_trigger_failures = 0, updated_at = $1
+     WHERE id = $2 AND generation_run_id = $3`,
+    [nowIso(), summaryId, generationRunId]
+  );
+  if (result.rowCount !== 1) throw new StaleSummaryGenerationError();
+}
+
+/** Persist failed serverless handoffs so a protected or misconfigured worker
+ * becomes a visible retryable error instead of refreshing its lease forever. */
+export async function recordSummaryGenerationTriggerFailure(
+  summaryId: number,
+  generationRunId: string,
+  maxFailures: number,
+  terminalMessage: string
+): Promise<{ failures: number; terminal: boolean } | undefined> {
+  const row = await one<{ generation_trigger_failures: number; terminal: boolean }>(
+    `UPDATE summaries
+     SET generation_trigger_failures = generation_trigger_failures + 1,
+         status = CASE
+           WHEN generation_trigger_failures + 1 >= $3 THEN 'error'
+           ELSE status
+         END,
+         error = CASE
+           WHEN generation_trigger_failures + 1 >= $3 THEN $4
+           ELSE error
+         END,
+         generation_heartbeat = CASE
+           WHEN generation_trigger_failures + 1 >= $3 THEN NULL
+           ELSE generation_heartbeat
+         END,
+         updated_at = $5
+     WHERE id = $1 AND generation_run_id = $2
+       AND status IN ('extracting','outlining','generating')
+     RETURNING generation_trigger_failures,
+       status = 'error' AS terminal`,
+    [summaryId, generationRunId, Math.max(1, maxFailures), terminalMessage, nowIso()]
+  );
+  if (!row) return undefined;
+  return {
+    failures: Number(row.generation_trigger_failures),
+    terminal: Boolean(row.terminal),
+  };
 }
 
 export async function countSummarySections(

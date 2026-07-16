@@ -56,14 +56,19 @@ export async function POST(
       { status: 409 }
     );
   }
-  const generationRunId = await prepareSummaryRetry(summaryId, user.id);
+  const active = new Set(["extracting", "outlining", "generating"]);
+  const generationRunId = summary.status === "error"
+    ? await prepareSummaryRetry(summaryId, user.id)
+    : active.has(summary.status)
+      ? summary.generation_run_id
+      : undefined;
   if (!generationRunId) {
     return NextResponse.json(
-      { error: "This summary is not ready to retry." },
+      { error: "This summary is not ready to resume." },
       { status: 409 }
     );
   }
   const baseUrl = resolveBaseUrl(req);
   after(() => runSummaryAndChain(summaryId, generationRunId, baseUrl));
-  return NextResponse.json({ ok: true, summaryId });
+  return NextResponse.json({ ok: true, summaryId, resumed: summary.status !== "error" });
 }

@@ -3156,6 +3156,12 @@ CREATE INDEX summary_sections_claim
   ON summary_sections(summary_id, generation_run_id, status, position);
 `;
 
+const SUMMARY_GENERATION_RECOVERY_SQL = `
+ALTER TABLE summaries
+  ADD COLUMN IF NOT EXISTS generation_trigger_failures INTEGER NOT NULL DEFAULT 0
+    CHECK (generation_trigger_failures >= 0);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -3185,6 +3191,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 22, name: "learning_genome_foundation", sql: LEARNING_GENOME_FOUNDATION_SQL },
   { id: 23, name: "multi_channel_offline_foundation", sql: MULTI_CHANNEL_OFFLINE_FOUNDATION_SQL },
   { id: 24, name: "deep_summaries_foundation", sql: DEEP_SUMMARIES_FOUNDATION_SQL },
+  { id: 25, name: "summary_generation_recovery", sql: SUMMARY_GENERATION_RECOVERY_SQL },
 ];
 
 /**

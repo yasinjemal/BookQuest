@@ -36,9 +36,11 @@ export const SUMMARY_PROMPT_VERSION = "deep-summary-section-v1";
  * groups chapters near this size; the source builder also hard-caps each call. */
 export const SUMMARY_SECTION_SOURCE_MAX_CHARS = 78_000;
 export const SUMMARY_SECTION_MAX_CHAPTERS = 40;
+export const SUMMARY_AI_REQUEST_TIMEOUT_MS = 175_000;
 
 const OUTLINE_SOURCE_MAX_CHARS = 72_000;
 const MAX_CITATION_EXCERPT_CHARS = 280;
+const SUMMARY_STEP_START_HEADROOM_MS = 15_000;
 
 const SYSTEM = `You create faithful, deeply useful guided summaries of books and long documents.
 
@@ -168,19 +170,22 @@ function validateSectionSourceBudgets(
 async function generateOutline(chapters: Chapter[]): Promise<SummaryOutlineValue> {
   const { client, model } = createAiProvider();
   const sourceMap = outlineSourceText(chapters);
-  const response = await client.messages.parse({
-    model,
-    max_tokens: 8000,
-    thinking: { type: "adaptive" },
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `Create the outline for a deep, guided summary from this complete chapter map. The number in parentheses is each chapter's source size.\n\n${sourceMap}\n\nRequirements:\n- Cover the whole document in reading order.\n- Assign every chapter index to exactly one section: no missing, duplicate, or invented indexes.\n- Group adjacent chapters into coherent sections whose combined source is usually 45,000-78,000 characters. Never exceed 78,000 characters or 40 chapter/page units per section. A short document or final section may be smaller.\n- Preserve long-range reasoning or narrative threads rather than producing isolated bullet points.\n- Classify the source as nonfiction, narrative, technical, research, policy, or other.\n- Estimate a realistic 20-60 minute reading time for a long-book summary.\n- The thesis must state the source's central argument, story, or purpose without outside knowledge.`,
-      },
-    ],
-    output_config: { format: zodOutputFormat(SummaryOutline) },
-  });
+  const response = await client.messages.parse(
+    {
+      model,
+      max_tokens: 8000,
+      thinking: { type: "adaptive" },
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Create the outline for a deep, guided summary from this complete chapter map. The number in parentheses is each chapter's source size.\n\n${sourceMap}\n\nRequirements:\n- Cover the whole document in reading order.\n- Assign every chapter index to exactly one section: no missing, duplicate, or invented indexes.\n- Group adjacent chapters into coherent sections whose combined source is usually 45,000-78,000 characters. Never exceed 78,000 characters or 40 chapter/page units per section. A short document or final section may be smaller.\n- Preserve long-range reasoning or narrative threads rather than producing isolated bullet points.\n- Classify the source as nonfiction, narrative, technical, research, policy, or other.\n- Estimate a realistic 20-60 minute reading time for a long-book summary.\n- The thesis must state the source's central argument, story, or purpose without outside knowledge.`,
+        },
+      ],
+      output_config: { format: zodOutputFormat(SummaryOutline) },
+    },
+    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS, maxRetries: 0 }
+  );
   if (!response.parsed_output) {
     throw new Error("Summary outline generation returned no parsable output.");
   }
@@ -257,6 +262,59 @@ function normalizeEvidence(value: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLocaleLowerCase("en");
+}
+
+type EvidenceToken = { value: string; start: number; end: number };
+
+function evidenceTokens(value: string): EvidenceToken[] {
+  return Array.from(value.matchAll(/[\p{L}\p{N}]+/gu), (match) => ({
+    value: match[0].normalize("NFKC").toLocaleLowerCase("en"),
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length,
+  }));
+}
+
+/** If the model copied the right words but changed punctuation or spacing,
+ * replace its version with the unique exact source slice. Paraphrases and
+ * ambiguous matches still fail closed in the grounding validator. */
+function findCanonicalSourceExcerpt(source: string, proposed: string): string | undefined {
+  if (normalizeEvidence(source).includes(normalizeEvidence(proposed))) return proposed;
+  const sourceTokens = evidenceTokens(source);
+  const proposedTokens = evidenceTokens(proposed);
+  if (proposedTokens.length < 5 || proposedTokens.length > sourceTokens.length) return undefined;
+
+  const matches: Array<{ start: number; end: number }> = [];
+  for (let start = 0; start <= sourceTokens.length - proposedTokens.length; start += 1) {
+    const same = proposedTokens.every(
+      (token, offset) => sourceTokens[start + offset].value === token.value
+    );
+    if (!same) continue;
+    const end = sourceTokens[start + proposedTokens.length - 1].end;
+    const sourceStart = sourceTokens[start].start;
+    if (end - sourceStart <= MAX_CITATION_EXCERPT_CHARS) {
+      matches.push({ start: sourceStart, end });
+    }
+    if (matches.length > 1) return undefined;
+  }
+  const match = matches[0];
+  return match ? source.slice(match.start, match.end) : undefined;
+}
+
+export function repairSummaryCitationExcerpts(
+  content: SummarySectionContentValue,
+  chapters: Chapter[]
+): SummarySectionContentValue {
+  return {
+    ...content,
+    citations: content.citations.map((citation) => {
+      const source = chapters[citation.chapter_index]?.text;
+      if (!source) return citation;
+      const canonical = findCanonicalSourceExcerpt(source, citation.supporting_excerpt);
+      return canonical
+        ? { ...citation, supporting_excerpt: canonical }
+        : citation;
+    }),
+  };
 }
 
 function referencedCitationIds(content: SummarySectionContentValue): string[] {
@@ -392,23 +450,29 @@ async function generateSection(
   const chapterRequirements = chapterIndexes
     .map((index) => `[${index}] ${chapters[index].title}`)
     .join("\n");
-  const response = await client.messages.parse({
-    model,
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `Write one rich but easy-to-read section of a deep summary.\n\nSection title: ${sectionTitle}\nSection hook: ${sectionHook}\n\nAssigned source chapters:\n${chapterRequirements}\n\nSource material:\n\n${sourceText}\n\nRequirements:\n- Build a connected explanation, not disconnected notes. Preserve the source's causal, argumentative, or narrative thread.\n- Include 3-7 key ideas when the source supports them, its most useful examples or evidence, real tensions or qualifications, and grounded practical implications.\n- Use only facts and interpretations supported by the provided source material.\n- Paraphrase in original language. Do not reproduce the author's prose in the body.\n- Every key idea, source example, nuance, application, and chapter recap must reference at least one citation ID.\n- Every assigned chapter must appear exactly once in chapter_recap and must have at least one citation.\n- Each citation supporting_excerpt must be one short, exact, contiguous excerpt copied from its cited source chapter, at most ${MAX_CITATION_EXCERPT_CHARS} characters. Never invent or silently repair an excerpt.\n- Citation IDs must be unique and every referenced ID must exist in citations.\n- source_chapter and locator should use the source chapter title shown above.`,
-      },
-    ],
-    output_config: { format: zodOutputFormat(SummarySectionContent) },
-  });
+  const response = await client.messages.parse(
+    {
+      model,
+      max_tokens: 12000,
+      thinking: { type: "adaptive" },
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Write one rich but easy-to-read section of a deep summary.\n\nSection title: ${sectionTitle}\nSection hook: ${sectionHook}\n\nAssigned source chapters:\n${chapterRequirements}\n\nSource material:\n\n${sourceText}\n\nRequirements:\n- Build a connected explanation, not disconnected notes. Preserve the source's causal, argumentative, or narrative thread.\n- Include 3-7 key ideas when the source supports them, its most useful examples or evidence, real tensions or qualifications, and grounded practical implications.\n- Use only facts and interpretations supported by the provided source material.\n- Paraphrase in original language. Do not reproduce the author's prose in the body.\n- Every key idea, source example, nuance, application, and chapter recap must reference at least one citation ID.\n- Every assigned chapter must appear exactly once in chapter_recap and must have at least one citation.\n- Each citation supporting_excerpt must be one short, exact, contiguous excerpt copied from its cited source chapter, at most ${MAX_CITATION_EXCERPT_CHARS} characters. Never invent or silently repair an excerpt.\n- Citation IDs must be unique and every referenced ID must exist in citations.\n- source_chapter and locator should use the source chapter title shown above.`,
+        },
+      ],
+      output_config: { format: zodOutputFormat(SummarySectionContent) },
+    },
+    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS, maxRetries: 0 }
+  );
   if (!response.parsed_output) {
     throw new Error("Summary section generation returned no parsable output.");
   }
-  const content = SummarySectionContent.parse(response.parsed_output);
+  const content = repairSummaryCitationExcerpts(
+    SummarySectionContent.parse(response.parsed_output),
+    chapters
+  );
   validateSummarySectionGrounding(content, chapters, chapterIndexes);
   return { content, model };
 }
@@ -431,7 +495,15 @@ export async function runSummaryGenerationStep(
   ) {
     return "done";
   }
-  if (!summary.source_json) return "done";
+  if (!summary.source_json) {
+    await setSummaryStatus(
+      summaryId,
+      "error",
+      "This Deep Read no longer has a readable source. Upload the document again to continue.",
+      generationRunId
+    );
+    return "done";
+  }
 
   const ai = getAiAvailability();
   if (!ai.enabled) {
@@ -572,7 +644,9 @@ export async function runSummaryGenerationUntilBudget(
     throw error;
   }
 
-  while (Date.now() < deadlineMs) {
+  const latestSafeStepStart =
+    deadlineMs - SUMMARY_AI_REQUEST_TIMEOUT_MS - SUMMARY_STEP_START_HEADROOM_MS;
+  while (Date.now() <= latestSafeStepStart) {
     const step = await runSummaryGenerationStep(summaryId, generationRunId);
     if (step === "done") return true;
   }

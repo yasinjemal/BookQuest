@@ -24,8 +24,10 @@ vi.mock("../lib/summary-db", () => ({
   StaleSummaryGenerationError: class StaleSummaryGenerationError extends Error {},
 }));
 import {
+  SUMMARY_AI_REQUEST_TIMEOUT_MS,
   SUMMARY_PROMPT_VERSION,
   SUMMARY_SECTION_SOURCE_MAX_CHARS,
+  repairSummaryCitationExcerpts,
   runSummaryGenerationStep,
   validateSummaryChapterCoverage,
   validateSummarySectionGrounding,
@@ -162,6 +164,21 @@ describe("deep summary generation contract", () => {
     );
   });
 
+  it("repairs only a unique punctuation-level citation mismatch from the source", () => {
+    const content = sectionContent();
+    content.citations[0].supporting_excerpt = "The problem however begins right here";
+    const chapters = [
+      { title: "Opening", text: "The problem, however, begins right here." },
+      { title: "Response", text: "The response follows." },
+    ];
+
+    const repaired = repairSummaryCitationExcerpts(content, chapters);
+    expect(repaired.citations[0].supporting_excerpt).toBe(
+      "The problem, however, begins right here"
+    );
+    expect(() => validateSummarySectionGrounding(repaired, chapters, [0, 1])).not.toThrow();
+  });
+
   it("commits the whole outline as one durable database step", async () => {
     const source = [
       { title: "Opening", text: "The problem begins here." },
@@ -220,12 +237,13 @@ describe("deep summary generation contract", () => {
       mode: "enabled",
       message: null,
     });
+    const parse = vi.fn().mockResolvedValue({ parsed_output: sectionContent() });
     vi.mocked(aiProvider.createAiProvider).mockReturnValue({
       model: "test-model",
       provider: "anthropic",
       client: {
         messages: {
-          parse: vi.fn().mockResolvedValue({ parsed_output: sectionContent() }),
+          parse,
         },
       },
     } as never);
@@ -259,6 +277,27 @@ describe("deep summary generation contract", () => {
     expect(summaryDb.setSummarySectionStatus).not.toHaveBeenCalled();
     expect(summaryDb.touchSummaryGenerationHeartbeat).toHaveBeenCalledTimes(2);
     expect(summaryDb.countUnfinishedSummarySections).not.toHaveBeenCalled();
+    expect(parse).toHaveBeenCalledWith(
+      expect.any(Object),
+      { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS, maxRetries: 0 }
+    );
+  });
+
+  it("turns a missing stored source into an explicit retryable error", async () => {
+    vi.mocked(summaryDb.getGenerationSummary).mockResolvedValue({
+      id: 7,
+      status: "extracting",
+      source_json: null,
+      generation_run_id: "run-1",
+    });
+
+    await expect(runSummaryGenerationStep(7, "run-1")).resolves.toBe("done");
+    expect(summaryDb.setSummaryStatus).toHaveBeenCalledWith(
+      7,
+      "error",
+      expect.stringContaining("readable source"),
+      "run-1"
+    );
   });
 
   it("does not present a summary with failed sections as complete", async () => {
