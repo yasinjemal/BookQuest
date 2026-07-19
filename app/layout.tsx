@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, Manrope } from "next/font/google";
+import { Instrument_Serif, Literata, Manrope } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
 import SWRegister from "@/components/SWRegister";
@@ -20,6 +20,16 @@ const manrope = Manrope({
   weight: "variable",
   variable: "--font-manrope",
   display: "swap",
+});
+
+const reader = Literata({
+  subsets: ["latin"],
+  weight: "variable",
+  style: ["normal", "italic"],
+  axes: ["opsz"],
+  variable: "--font-reader",
+  display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -75,7 +85,7 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en" className={`${editorial.variable} ${manrope.variable}`}>
+  return <html lang="en" className={`${editorial.variable} ${manrope.variable} ${reader.variable}`}>
     <body className="min-h-dvh">
       <JsonLd data={[
         { "@context": "https://schema.org", "@type": "Organization", "@id": `${absoluteUrl("/")}#organization`, name: SITE_NAME, url: absoluteUrl("/"), logo: absoluteUrl("/icon.svg"), description: SITE_DESCRIPTION },

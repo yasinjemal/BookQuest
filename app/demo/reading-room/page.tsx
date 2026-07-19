@@ -4,8 +4,8 @@ import type { ReadingEditionMetadata, ReadingUnit } from "@/lib/reading-types";
 import { publicMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = publicMetadata({
-  title: "Full-book Reading Room Demo",
-  description: "Try BookQuest's zero-AI full-book Reading Edition with an automatically matched atmosphere, focused typography, search, and saved progress.",
+  title: "Lumen Living Reader Demo",
+  description: "Experience Lumen: BookQuest's passage-aware full-book reader with a living focus light, visual Book Atlas, local passage resume, and no AI credits while reading.",
   path: "/demo/reading-room",
 });
 

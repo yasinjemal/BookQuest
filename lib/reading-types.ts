@@ -42,6 +42,8 @@ export interface ReadingProgress {
   unitProgress: number;
   overallProgress: number;
   updatedAt: string;
+  /** Deterministic local anchor; older servers safely ignore this field. */
+  passageId?: string;
 }
 
 export interface ReadingEditionListItem {

@@ -61,6 +61,37 @@ describe("Reading Room product contract", () => {
     expect(shell).toContain('"/book/"');
   });
 
+  it("ships the passage-aware Lumen experience as progressive enhancement", () => {
+    const reader = source("components/ReadingEditionReader.tsx");
+    const readerStyles = source("components/ReadingEditionReader.module.css");
+    const contentModel = source("lib/reading-content.ts");
+    const publicDemo = source("app/demo/reading-room/page.tsx");
+
+    expect(reader).toContain("parseReadingDisplayBlocks");
+    expect(reader).toContain("IntersectionObserver");
+    expect(reader).toContain("LumenField");
+    expect(reader).toContain("ReadingSpine");
+    expect(reader).toContain("passageId");
+    expect(reader).toContain("focusMode");
+    expect(reader).toContain("positionReady");
+    expect(reader).toContain("saveQueue");
+    expect(reader).toContain("pendingHeadingFocus");
+    expect(reader).toMatch(/lumenMode\s*&&\s*<LumenField/);
+    expect(reader).not.toContain('id="main-content"');
+    expect(reader).not.toContain('event.key === "ArrowLeft"');
+    expect(reader).not.toContain('event.key === "ArrowRight"');
+    expect(contentModel).toContain("stableReadingHash");
+    expect(contentModel).toContain("boundedProseBlocks");
+    expect(contentModel).toContain("readingUnitProgress");
+    expect(contentModel).toContain("readingBookProgress");
+    expect(readerStyles).toContain(".pageHeader");
+    expect(readerStyles).toContain(".focusMode");
+    expect(readerStyles).toContain("overflow-wrap: anywhere");
+    expect(readerStyles).toContain("prefers-reduced-motion");
+    expect(readerStyles).toContain("forced-colors");
+    expect(publicDemo).toContain("Lumen Living Reader Demo");
+  });
+
   it("offers full-book creation with explicit zero-AI copy and a book destination", () => {
     const create = source("app/create/page.tsx");
     const upload = source("app/api/upload/route.ts");

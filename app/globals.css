@@ -39,6 +39,7 @@
   /* --- Typography --- */
   --font-display: var(--font-editorial), Georgia, serif;
   --font-reading: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-longform: var(--font-reader), Georgia, serif;
 
   /* --- Elevation (warm, ink-tinted so it reads on cream) --- */
   --shadow-card: 0 1px 1px rgba(24, 48, 41, 0.04), 0 12px 34px rgba(24, 48, 41, 0.065);
