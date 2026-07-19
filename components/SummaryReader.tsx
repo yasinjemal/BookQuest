@@ -18,8 +18,6 @@ type StoredReadingProgress = {
 };
 
 const deepReadAppearance = COURSE_APPEARANCE_TEMPLATES.find((item) => item.id === "quiet-library")?.appearance ?? DEFAULT_COURSE_APPEARANCE;
-const MANUAL_RESUME_AFTER_MS = 4 * 60 * 1000;
-
 function progressKey(id: string | number) {
   return `bookquest.summary.${id}.reading`;
 }
@@ -29,6 +27,9 @@ function proseParagraphs(value: string) {
 }
 
 function readingStatusCopy(summary: SummaryDetail) {
+  if (summary.generation_stalled) {
+    return "Generation is paused. Every completed section is saved; resume only when you want to use today's AI budget for the unfinished work.";
+  }
   if (summary.status === "extracting") return "Opening the source and finding its natural sections.";
   if (summary.status === "outlining") return "Mapping the full document before any summary section is written.";
   if (summary.status === "generating") return `${summary.ready_section_count} of ${summary.section_count} sections are ready. New sections will appear here as they pass coverage checks.`;
@@ -207,7 +208,12 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
   }, [load, summaryId]);
 
   useEffect(() => {
-    if (!summary || isSummaryReady(summary.status) || isSummaryFailed(summary.status)) return;
+    if (
+      !summary ||
+      isSummaryReady(summary.status) ||
+      isSummaryFailed(summary.status) ||
+      summary.generation_stalled
+    ) return;
     const timer = window.setInterval(() => void load(true), 5000);
     return () => window.clearInterval(timer);
   }, [load, summary]);
@@ -299,10 +305,7 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
   const progressMeta = readingIsReady
     ? `${Math.round(readingProgress)}% read · ${summaryStatusLabel(summary.status)}`
     : `${summary.ready_section_count} of ${summary.section_count} ready · ${summaryStatusLabel(summary.status)}`;
-  const canResumeGeneration = summary.status === "error" || (
-    !readingIsReady &&
-    Date.now() - Date.parse(summary.created_at) >= MANUAL_RESUME_AFTER_MS
-  );
+  const canResumeGeneration = summary.status === "error" || summary.generation_stalled;
 
   return (
     <CourseAppearanceFrame appearance={deepReadAppearance} className={styles.themeFrame}>
@@ -340,7 +343,7 @@ export default function SummaryReader({ summaryId }: { summaryId: string | numbe
               <div className={styles.mobileSource}><SourceRail summary={summary} /></div>
             </section>
 
-            {statusCopy && <div className={`${styles.statusNotice} ${summary.status === "error" ? styles.statusError : ""}`} role={summary.status === "error" ? "alert" : "status"}><span><AppIcon name={summary.status === "error" ? "compass" : "spark"} className="h-5 w-5" /></span><div><strong>{summary.status === "error" ? "This draft needs attention" : summaryStatusLabel(summary.status)}</strong><p>{statusCopy}</p>{canResumeGeneration && <button type="button" onClick={() => void retryGeneration()} disabled={retrying} className="quiet-button mt-3 text-xs">{retrying ? "Restarting…" : summary.status === "error" ? "Retry this Deep Read" : "Resume generation now"}</button>}</div></div>}
+            {statusCopy && <div className={`${styles.statusNotice} ${summary.status === "error" ? styles.statusError : ""}`} role={summary.status === "error" ? "alert" : "status"}><span><AppIcon name={summary.status === "error" ? "compass" : "spark"} className="h-5 w-5" /></span><div><strong>{summary.status === "error" ? "This draft needs attention" : summary.generation_stalled ? "Generation paused" : summaryStatusLabel(summary.status)}</strong><p>{statusCopy}</p>{canResumeGeneration && <><button type="button" onClick={() => void retryGeneration()} disabled={retrying} className="quiet-button mt-3 text-xs">{retrying ? "Restarting…" : "Use AI budget and resume"}</button><p className="mt-2 text-xs">Ready sections will not be regenerated. BookQuest stops provider calls at the daily $5 safety limit.</p></>}</div></div>}
 
             {loadError && <p role="alert" className={styles.inlineError}>{loadError} <button type="button" onClick={() => void load()}>Try again</button></p>}
 

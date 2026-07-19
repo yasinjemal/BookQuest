@@ -6,6 +6,7 @@ import type {
   SummaryListItem,
   SummaryStatus,
 } from "./summary-types";
+import { isSummaryGenerationStalled } from "./summary-types";
 
 const nowIso = () => new Date().toISOString();
 
@@ -119,11 +120,15 @@ export async function getOwnedSummary(
 }
 
 export async function listOwnedSummaries(ownerId: number): Promise<SummaryListItem[]> {
-  const rows = await many<SummaryListItem>(
+  const rows = await many<SummaryListItem & {
+    generation_heartbeat: string | null;
+    updated_at: string;
+  }>(
     `SELECT summary.id, summary.title, summary.description,
        summary.source_filename, summary.status, summary.error,
        summary.document_kind, summary.estimated_minutes,
        summary.source_chapter_count, summary.course_id, summary.created_at,
+       summary.generation_heartbeat, summary.updated_at,
        COUNT(section.id)::int AS section_count,
        COUNT(section.id) FILTER (WHERE section.status = 'ready')::int AS ready_section_count
      FROM summaries summary
@@ -134,15 +139,24 @@ export async function listOwnedSummaries(ownerId: number): Promise<SummaryListIt
      ORDER BY summary.created_at DESC`,
     [ownerId]
   );
-  return rows.map((row) => ({
-    ...row,
-    id: Number(row.id),
-    course_id: row.course_id === null ? null : Number(row.course_id),
-    estimated_minutes: Number(row.estimated_minutes),
-    section_count: Number(row.section_count),
-    ready_section_count: Number(row.ready_section_count),
-    source_chapter_count: Number(row.source_chapter_count),
-  }));
+  return rows.map((row) => {
+    const { generation_heartbeat, updated_at, ...item } = row;
+    return {
+      ...item,
+      id: Number(row.id),
+      course_id: row.course_id === null ? null : Number(row.course_id),
+      estimated_minutes: Number(row.estimated_minutes),
+      section_count: Number(row.section_count),
+      ready_section_count: Number(row.ready_section_count),
+      source_chapter_count: Number(row.source_chapter_count),
+      generation_stalled: isSummaryGenerationStalled({
+        status: row.status,
+        generation_heartbeat,
+        updated_at,
+        created_at: row.created_at,
+      }),
+    };
+  });
 }
 
 export async function deleteSummary(summaryId: number, ownerId: number) {

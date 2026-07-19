@@ -7,13 +7,14 @@
   --color-parchment: #f4f0e6;
   --color-ivory: #fbf8f1;
   --color-moss: #6e8b72;
-  --color-teal: #248c8d;
+  --color-teal: #176b6d;
   --color-signal: #d8ff63;
   --color-amber: #f0b35a;
   --color-rose: #c98c83;
   --color-dusk: #526a8c;
   --color-ink: #183029;
-  --color-ink-soft: #6e776f;
+  --color-ink-soft: #59645c;
+  --color-focus: #0f5f61;
 
   /* Compatibility aliases keep every existing workflow stable while the
      surfaces move onto the new semantic palette. */
@@ -21,15 +22,15 @@
   --color-card: #fbf8f1;
   --color-sidebar: #0a211b;
   --color-hover: #e9e3d7;
-  --color-primary: #248c8d;
-  --color-primary-deep: #176b6d;
+  --color-primary: #176b6d;
+  --color-primary-deep: #0f5759;
   --color-go: #47795f;
   --color-go-deep: #315c46;
   --color-go-soft: #e5eee6;
   --color-no: #b45346;
   --color-no-deep: #8f3e34;
   --color-no-soft: #f7e9e5;
-  --color-teal-deep: #176b6d;
+  --color-teal-deep: #0f5759;
   --color-line: #ded7c9;
   --color-line-deep: #c8bead;
   --color-coral: #c98c83;
@@ -106,9 +107,10 @@ h3 {
 /* --- Accessibility: a single, consistent focus ring everywhere --- */
 @layer base {
   :focus-visible {
-    outline: 3px solid color-mix(in srgb, var(--color-teal) 78%, white);
+    outline: 3px solid var(--color-focus);
     outline-offset: 3px;
     border-radius: 6px;
+    box-shadow: 0 0 0 6px rgb(255 255 255 / 0.9);
   }
   /* Tailwind v4 Preflight no longer sets this; keep clickable affordance. */
   button:not(:disabled),
@@ -144,6 +146,7 @@ h3 {
     @apply inline-flex items-center justify-center gap-2 rounded-full font-semibold
       py-3 px-5 transition-all duration-200
       disabled:opacity-40 disabled:pointer-events-none select-none cursor-pointer;
+    min-height: 2.75rem;
   }
   .btn-primary {
     @apply bg-ink text-white shadow-[0_10px_28px_rgba(24,48,41,0.18)] hover:-translate-y-0.5 hover:bg-sidebar hover:shadow-[0_16px_36px_rgba(24,48,41,0.22)];
@@ -199,6 +202,7 @@ h3 {
   }
   .quiet-button {
     @apply inline-flex items-center justify-center rounded-full border border-line bg-card/80 px-4 py-2.5 text-sm font-semibold text-ink backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-card hover:shadow-card;
+    min-height: 2.75rem;
   }
   .field {
     min-height: 3rem;
@@ -206,6 +210,27 @@ h3 {
   }
   .skip-link {
     @apply fixed left-3 top-3 z-50 -translate-y-20 rounded-md bg-ink px-3 py-2 text-sm font-semibold text-white focus:translate-y-0;
+  }
+  .field-label {
+    @apply block text-sm font-semibold text-ink;
+  }
+  .field-hint {
+    @apply mt-1.5 block text-xs leading-5 text-ink-soft;
+  }
+  .field-error {
+    @apply mt-4 rounded-xl border border-no/25 bg-no-soft px-4 py-3 text-sm font-semibold leading-6 text-no-deep;
+  }
+  .field-success {
+    @apply mt-4 rounded-xl border border-go/25 bg-go-soft px-4 py-3 text-sm font-semibold leading-6 text-go-deep;
+  }
+  .icon-button {
+    @apply inline-grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line-deep bg-card text-ink transition-colors hover:bg-paper;
+  }
+  .nav-popover > summary {
+    list-style: none;
+  }
+  .nav-popover > summary::-webkit-details-marker {
+    display: none;
   }
 }
 

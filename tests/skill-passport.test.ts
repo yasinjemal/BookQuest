@@ -390,7 +390,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(storedKey?.private_key_ciphertext).not.toContain("PRIVATE KEY");
     const accountExport = await privacy.createAccountExport(learnerId);
     expect(accountExport).toMatchObject({
-      schemaVersion: 10,
+      schemaVersion: 11,
       skillPassport: {
         competencyAlignments: [expect.objectContaining({
           claim_version_id: learnerClaimVersionId,
@@ -530,7 +530,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     expect(await unknownResponse.json()).toEqual({ error: "Shared passport not found" });
     const exported = await privacy.createAccountExport(learnerId);
     expect(exported).toMatchObject({
-      schemaVersion: 10,
+      schemaVersion: 11,
       skillPassport: { claims: [{ claim_version_id: learnerClaimVersionId }] },
     });
     expect(JSON.stringify(exported)).not.toContain("token_hash");
@@ -572,7 +572,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
       learnerNameDisclosed: false,
     });
     const exportAfterAccess = await privacy.createAccountExport(learnerId);
-    expect(exportAfterAccess.schemaVersion).toBe(10);
+    expect(exportAfterAccess.schemaVersion).toBe(11);
     expect(exportAfterAccess.skillPassport?.verificationHistory).toEqual(expect.arrayContaining([
       expect.objectContaining({ share_id: share.id, claim_count: 1, learner_name_disclosed: 0 }),
     ]));
@@ -724,7 +724,7 @@ describe.skipIf(!TEST_DB)("Phase 4 private Skill Passport", () => {
     ]));
     const privateExport = await privacy.createAccountExport(learnerId);
     expect(privateExport).toMatchObject({
-      schemaVersion: 10,
+      schemaVersion: 11,
       skillPassport: {
         disputes: expect.arrayContaining([
           expect.objectContaining({ id: dispute.id, statement: expect.stringContaining("assignment record") }),

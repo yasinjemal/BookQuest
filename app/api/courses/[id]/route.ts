@@ -14,6 +14,7 @@ import { requireUser } from "@/lib/auth";
 import { authorizeCourseAction } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
 import { parseCourseAppearance } from "@/lib/course-appearance";
+import { isCourseGenerationStalled } from "@/lib/generation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,7 @@ export async function GET(
     course: {
       ...course,
       isOwner,
+      generation_stalled: isCourseGenerationStalled(course),
       appearance: parseCourseAppearance(await getCourseAppearanceJson(course.id, isOwner)),
     },
     modules,

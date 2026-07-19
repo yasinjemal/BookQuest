@@ -172,14 +172,14 @@ export const COURSE_ACCENT_HEX: Record<CourseAccent, string> = {
 export const COURSE_ACCENT_CONTRAST: Record<CourseAccent, string> = {
   lime: "#183029",
   amber: "#183029",
-  teal: "#FFFFFF",
+  teal: "#04130F",
   rose: "#183029",
   dusk: "#FFFFFF",
-  moss: "#FFFFFF",
-  crimson: "#160B0F",
+  moss: "#04130F",
+  crimson: "#04130F",
   gold: "#15271F",
-  emerald: "#FFFFFF",
-  jade: "#FFFFFF",
+  emerald: "#04130F",
+  jade: "#04130F",
   cyan: "#082631",
 };
 

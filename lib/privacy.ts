@@ -7,7 +7,7 @@ export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 10;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 11;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -142,6 +142,36 @@ export async function createAccountExport(userId: number) {
             WHERE summary_id = ANY($1::int[])
             ORDER BY summary_id, position`,
           [summaryIds]
+        )
+      : [];
+    const readingEditions = await rows(
+      client,
+      `SELECT id, owning_space_id, title, source_filename,
+              chapter_outline_json, source_chapter_count, word_count,
+              estimated_minutes, unit_kind, vibe_id, profile_json,
+              created_at, updated_at
+         FROM reading_editions WHERE owner_id = $1 ORDER BY id`,
+      [userId]
+    );
+    const readingEditionIds = readingEditions.map((edition) => Number(edition.id));
+    const readingEditionUnits = readingEditionIds.length
+      ? await rows(
+          client,
+          `SELECT id, edition_id, position, title, source_text, word_count
+             FROM reading_edition_units
+            WHERE edition_id = ANY($1::int[])
+            ORDER BY edition_id, position`,
+          [readingEditionIds]
+        )
+      : [];
+    const readingProgress = readingEditionIds.length
+      ? await rows(
+          client,
+          `SELECT edition_id, unit_index, unit_progress, overall_progress, updated_at
+             FROM reading_progress
+            WHERE user_id = $1 AND edition_id = ANY($2::int[])
+            ORDER BY edition_id`,
+          [userId, readingEditionIds]
         )
       : [];
     const personalSpaces = await rows(
@@ -296,6 +326,9 @@ export async function createAccountExport(userId: number) {
         courses: ownedCourses,
         summaries,
         summarySections,
+        readingEditions,
+        readingEditionUnits,
+        readingProgress,
         modules,
         lessons,
         authoring: {
@@ -546,6 +579,7 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
     [erasedAt, userId]
   );
   await client.query("DELETE FROM summaries WHERE owner_id = $1", [userId]);
+  await client.query("DELETE FROM reading_editions WHERE owner_id = $1", [userId]);
   await client.query("DELETE FROM courses WHERE owner_id = $1", [userId]);
   await client.query("DELETE FROM classrooms WHERE owner_id = $1", [userId]);
   for (const table of [

@@ -19,6 +19,7 @@ describe("Phase 5 sovereign deployment surface", () => {
 
   it("blocks AI jobs before credits or retry state while preserving manual course upload", () => {
     const upload = source("app/api/upload/route.ts");
+    const creationOutput = source("lib/creation-output.ts");
     const retry = source("app/api/courses/[id]/retry/route.ts");
     const regenerate = source("app/api/studio/courses/[id]/regenerate/route.ts");
     const practice = source("app/api/practice/session/route.ts");
@@ -26,10 +27,14 @@ describe("Phase 5 sovereign deployment surface", () => {
       upload.indexOf("consumeCredits(user.id, creditsRequired)")
     );
     expect(upload).toContain('form.get("generate") !== "false"');
-    expect(upload).toContain('type OutputMode = "course" | "summary" | "both"');
+    expect(creationOutput).toContain('type OutputMode = "book" | "course" | "summary" | "both"');
+    expect(creationOutput).toContain("requiresAi");
     expect(upload).toContain("courseUsesAi");
     expect(retry.indexOf("const ai = getAiAvailability()")).toBeLessThan(
-      retry.indexOf("const generationRunId = await prepareCourseRetry")
+      retry.indexOf("let generationRunId: string | undefined")
+    );
+    expect(retry.indexOf("assertAiBudgetAvailable(ai.model!)")).toBeLessThan(
+      retry.indexOf("prepareCourseRetry(course.id)")
     );
     expect(regenerate).toContain("aiUnavailablePayload(ai)");
     expect(practice).toContain("aiUnavailablePayload(ai)");

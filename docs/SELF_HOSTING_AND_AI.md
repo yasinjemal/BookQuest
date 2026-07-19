@@ -48,8 +48,8 @@ production payment substitute.
 
 | Value | Additional variables | Behavior |
 |---|---|---|
-| `anthropic` (default) | `ANTHROPIC_API_KEY` or `BOOKQUEST_AI_API_KEY`; optional `BOOKQUEST_AI_MODEL` | Uses Anthropic's hosted API. |
-| `anthropic-compatible` | `BOOKQUEST_AI_BASE_URL`, `BOOKQUEST_AI_MODEL`, `BOOKQUEST_AI_API_KEY` | Uses an operator-selected endpoint implementing the Anthropic Messages/structured-output contract. |
+| `anthropic` (default) | `ANTHROPIC_API_KEY` or `BOOKQUEST_AI_API_KEY`; optional `BOOKQUEST_AI_MODEL` | Uses Anthropic's hosted API. The default model is `claude-sonnet-4-6`. |
+| `anthropic-compatible` | `BOOKQUEST_AI_BASE_URL`, `BOOKQUEST_AI_MODEL`, `BOOKQUEST_AI_API_KEY`, explicit pricing variables | Uses an operator-selected endpoint implementing the Anthropic Messages/structured-output contract. |
 | `disabled` | none | Disables generation, rewrite and fresh-AI practice. |
 
 Unknown modes, credential-bearing base URLs, missing compatible-provider
@@ -66,6 +66,42 @@ When AI is disabled, creators can still:
 
 AI-disabled mode does not silently send content to another provider and does
 not consume a generation credit or create an AI job.
+
+## AI cost safety
+
+BookQuest applies a hard installation-wide provider budget before every paid
+message. The default is **USD 5 per day**, reset at midnight in
+`Africa/Johannesburg`. Configure it with:
+
+```text
+BOOKQUEST_AI_DAILY_BUDGET_USD=5
+BOOKQUEST_AI_BUDGET_TIME_ZONE=Africa/Johannesburg
+```
+
+Each request first uses the provider's token-count endpoint, then atomically
+reserves its maximum input/output charge in PostgreSQL. Concurrent workers take
+one transaction advisory lock, so two jobs cannot both spend the same remaining
+budget. Successful calls settle to returned token usage; timeouts and ambiguous
+failures retain their full reservation for the day. The ledger stores costs,
+operation names, models, artifact identifiers, and token counts, but never
+prompts or source text.
+
+The built-in pricing registry covers `claude-sonnet-4-6`, `claude-opus-4-8`,
+and `claude-haiku-4-5`. A different or Anthropic-compatible model fails closed
+unless both rates are supplied:
+
+```text
+BOOKQUEST_AI_INPUT_USD_PER_MILLION=3
+BOOKQUEST_AI_OUTPUT_USD_PER_MILLION=15
+```
+
+SDK retries are disabled. BookQuest permits at most one bounded retry for a
+clearly transient provider failure, and stalled generation resumes only after
+an explicit creator action. Normal GET requests never start paid work.
+
+This guard covers calls made by this BookQuest deployment only. It cannot cap
+other applications sharing the same provider key, so production should use a
+dedicated key and an account-level provider spend limit as a second control.
 
 ## Install and start
 

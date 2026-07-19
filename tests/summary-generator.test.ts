@@ -4,6 +4,16 @@ vi.mock("../lib/ai-provider", () => ({
   DEFAULT_AI_MODEL: "test-model",
   createAiProvider: vi.fn(),
   getAiAvailability: vi.fn(),
+  isRetryableAiError: vi.fn(() => false),
+}));
+
+vi.mock("../lib/ai-budget", () => ({
+  AiBudgetConfigurationError: class AiBudgetConfigurationError extends Error {},
+  AiBudgetExceededError: class AiBudgetExceededError extends Error {},
+  createBudgetedMessage: vi.fn(
+    (client, _context, params, options) =>
+      client.messages.parse(params, { ...options, maxRetries: 0 })
+  ),
 }));
 
 vi.mock("../lib/summary-db", () => ({
@@ -218,7 +228,7 @@ describe("deep summary generation contract", () => {
       [expect.objectContaining({ title: "Part 1", chapterIndexes: [0, 1] })],
       expect.objectContaining({
         generatorModel: "test-model",
-        promptVersion: "deep-summary-outline-v1",
+        promptVersion: "deep-summary-outline-v2",
         generationRunId: "run-1",
       })
     );

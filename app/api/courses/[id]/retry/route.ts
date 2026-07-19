@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { getCourse, getCourseSource, prepareCourseRetry } from "@/lib/db";
+import {
+  claimStalledCourse,
+  getCourse,
+  getCourseSource,
+  prepareCourseRetry,
+} from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { resolveBaseUrl, runAndChain } from "@/lib/generation";
+import {
+  GENERATION_STALE_MS,
+  resolveBaseUrl,
+  runAndChain,
+} from "@/lib/generation";
 import {
   consumeRateLimit,
   RATE_LIMITS,
@@ -12,6 +21,13 @@ import {
 import { authorizeCourseAction } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
 import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
+import {
+  AiBudgetConfigurationError,
+  AiBudgetExceededError,
+  aiBudgetErrorPayload,
+  aiBudgetRetryAfterSeconds,
+  assertAiBudgetAvailable,
+} from "@/lib/ai-budget";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -60,8 +76,47 @@ export async function POST(
     );
   }
 
-  // Retrying a failed generation is free — the credit was already spent.
-  const generationRunId = await prepareCourseRetry(course.id);
+  try {
+    await assertAiBudgetAvailable(ai.model!);
+  } catch (error) {
+    if (error instanceof AiBudgetExceededError) {
+      return NextResponse.json(aiBudgetErrorPayload(error), {
+        status: 429,
+        headers: { "Retry-After": String(aiBudgetRetryAfterSeconds(error)) },
+      });
+    }
+    if (error instanceof AiBudgetConfigurationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
+
+  // A retry does not consume another product credit, but every provider call
+  // still passes through the installation's daily AI safety budget.
+  let generationRunId: string | undefined;
+  if (course.status === "error") {
+    generationRunId = await prepareCourseRetry(course.id);
+  } else if (["extracting", "outlining", "generating"].includes(course.status)) {
+    const claimedAt = new Date();
+    const stalled = await claimStalledCourse(
+      course.id,
+      new Date(claimedAt.getTime() - GENERATION_STALE_MS).toISOString(),
+      claimedAt.toISOString()
+    );
+    generationRunId = stalled?.generation_run_id;
+    if (!generationRunId) {
+      return NextResponse.json(
+        {
+          error: "Generation is still active. Wait for the current unit to finish before resuming.",
+          code: "generation_active",
+        },
+        { status: 409 }
+      );
+    }
+  }
   if (!generationRunId) {
     return NextResponse.json(
       { error: "This course is already being generated." },
@@ -71,5 +126,8 @@ export async function POST(
 
   const baseUrl = resolveBaseUrl(req);
   after(() => runAndChain(course.id, generationRunId, baseUrl));
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(
+    { ok: true, resumed: course.status !== "error" },
+    { status: 202 }
+  );
 }

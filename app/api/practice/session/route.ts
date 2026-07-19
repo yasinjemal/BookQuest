@@ -15,6 +15,11 @@ import {
   PRACTICE_PROMPT_VERSION,
 } from "@/lib/generator";
 import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
+import {
+  AiBudgetExceededError,
+  aiBudgetErrorPayload,
+  aiBudgetRetryAfterSeconds,
+} from "@/lib/ai-budget";
 import type { Card } from "@/lib/schemas";
 import type { QuizCard } from "@/lib/learning-types";
 import {
@@ -122,6 +127,7 @@ export async function POST(req: NextRequest) {
         metadata: { model: generatorModel, prompt_version: PRACTICE_PROMPT_VERSION },
       });
       const cards = await generatePracticeQuiz(
+        course.id,
         course.title,
         concepts,
         conceptTexts.join("\n")
@@ -158,6 +164,12 @@ export async function POST(req: NextRequest) {
         subjectKey: operationalSubject("user", user.id),
         metadata: { model: generatorModel },
       });
+      if (err instanceof AiBudgetExceededError) {
+        return NextResponse.json(aiBudgetErrorPayload(err), {
+          status: 429,
+          headers: { "Retry-After": String(aiBudgetRetryAfterSeconds(err)) },
+        });
+      }
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Generation failed" },
         { status: 502 }

@@ -25,6 +25,19 @@ export const GENERATION_STEP_BUDGET_MS = 240_000;
 // A course whose heartbeat is older than this is treated as stalled and resumed.
 export const GENERATION_STALE_MS = 180_000;
 
+export function isCourseGenerationStalled(
+  course: {
+    status: string;
+    generation_heartbeat: string | null;
+    created_at: string;
+  },
+  nowMs: number = Date.now()
+): boolean {
+  if (!["extracting", "outlining", "generating"].includes(course.status)) return false;
+  const lastActive = Date.parse(course.generation_heartbeat || course.created_at);
+  return !Number.isFinite(lastActive) || nowMs - lastActive >= GENERATION_STALE_MS;
+}
+
 const INTERNAL_GENERATE_PATH = "/api/internal/generate";
 
 /** Absolute base URL for internal self-calls, working in dev and on Vercel. */

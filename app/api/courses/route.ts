@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { after } from "next/server";
 import {
   getCompletedLessonIds,
   listEnrolledCourses,
   listLessons,
   listModules,
   listOwnedCourses,
-  claimStalledCourses,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import type { PlatformCourseCols } from "@/lib/db";
 import type { CourseRow } from "@/lib/schemas";
-import {
-  GENERATION_STALE_MS,
-  kickGeneration,
-  resolveBaseUrl,
-} from "@/lib/generation";
+import { isCourseGenerationStalled } from "@/lib/generation";
 import { parseCourseAppearance } from "@/lib/course-appearance";
 
 export const runtime = "nodejs";
@@ -46,6 +40,7 @@ async function withProgress(
         doneLessons,
         nextLessonId,
         moduleCount: modules.length,
+        generation_stalled: isCourseGenerationStalled(c),
       };
     })
   );
@@ -63,26 +58,6 @@ export async function GET(req: NextRequest) {
     withProgress(ownedCourses, completed),
     withProgress(enrolledCourses, completed),
   ]);
-
-  // Self-heal: if a course's generation chain died (heartbeat gone stale),
-  // resume it in the background whenever the owner views their courses.
-  const recoveryClaimedAt = new Date();
-  const staleBefore = new Date(
-    recoveryClaimedAt.getTime() - GENERATION_STALE_MS
-  ).toISOString();
-  const stalled = await claimStalledCourses(
-    user.id,
-    staleBefore,
-    recoveryClaimedAt.toISOString()
-  );
-  if (stalled.length > 0) {
-    const baseUrl = resolveBaseUrl(req);
-    after(() =>
-      Promise.all(
-        stalled.map((c) => kickGeneration(c.id, c.generation_run_id, baseUrl))
-      )
-    );
-  }
 
   return NextResponse.json({ owned, enrolled });
 }

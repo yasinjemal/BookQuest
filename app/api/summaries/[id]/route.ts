@@ -1,18 +1,15 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import type { Chapter } from "@/lib/extract";
-import { resolveBaseUrl } from "@/lib/generation";
 import {
-  claimStalledSummary,
   deleteSummary,
   getOwnedSummary,
   getSummarySections,
 } from "@/lib/summary-db";
 import {
-  kickSummaryGeneration,
-  SUMMARY_GENERATION_STALE_MS,
-} from "@/lib/summary-generation";
-import { SummarySectionContent } from "@/lib/summary-types";
+  isSummaryGenerationStalled,
+  SummarySectionContent,
+} from "@/lib/summary-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,17 +43,6 @@ export async function GET(
   const summary = await getOwnedSummary(summaryId, user.id);
   if (!summary) {
     return NextResponse.json({ error: "Summary not found" }, { status: 404 });
-  }
-  const claimedAt = new Date();
-  const stalled = await claimStalledSummary(
-    summaryId,
-    user.id,
-    new Date(claimedAt.getTime() - SUMMARY_GENERATION_STALE_MS).toISOString(),
-    claimedAt.toISOString()
-  );
-  if (stalled) {
-    const baseUrl = resolveBaseUrl(req);
-    after(() => kickSummaryGeneration(stalled.id, stalled.generation_run_id, baseUrl));
   }
   const sectionRows = await getSummarySections(summaryId);
   const source = chaptersFrom(summary.source_json);
@@ -100,6 +86,7 @@ export async function GET(
     source_chapter_count: summary.source_chapter_count,
     course_id: summary.course_id,
     created_at: summary.created_at,
+    generation_stalled: isSummaryGenerationStalled(summary),
     sections,
   }, { headers: { "Cache-Control": "no-store" } });
 }

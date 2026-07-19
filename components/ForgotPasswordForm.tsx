@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import AuthShell from "@/components/AuthShell";
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
@@ -13,6 +14,7 @@ export default function ForgotPasswordForm() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
+    setMessage(null);
     setError(null);
     setPreviewUrl(null);
     try {
@@ -36,45 +38,17 @@ export default function ForgotPasswordForm() {
   }
 
   return (
-    <div className="px-6 pt-14">
-      <div className="text-4xl">🔐</div>
-      <h1 className="text-2xl font-extrabold mt-2">Reset your password</h1>
-      <p className="text-sm text-ink-soft mt-1">
-        Enter your email and we’ll send a secure reset link.
-      </p>
-      <form onSubmit={submit} className="mt-6 space-y-3">
-        <input
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="Email"
-          className="w-full rounded-xl border-2 border-line bg-card px-4 py-3 font-medium outline-none focus:border-primary"
-        />
-        {message && <p className="text-sm font-medium text-go">{message}</p>}
-        {error && <p className="text-sm font-medium text-no">{error}</p>}
-        {previewUrl && (
-          <a
-            href={previewUrl}
-            className="block text-sm font-bold text-primary-deep underline"
-          >
-            Open local development reset link
-          </a>
-        )}
-        <button
-          type="submit"
-          disabled={busy || !email}
-          className="w-full rounded-2xl bg-primary text-white font-bold py-3.5 border-b-4 border-primary-deep disabled:opacity-50"
-        >
-          {busy ? "Sending…" : "Send reset link"}
-        </button>
+    <AuthShell eyebrow="Account recovery" title="Reset your password" description="Enter the email for your BookQuest account. We’ll send a secure, time-limited reset link.">
+      <form onSubmit={submit} className="space-y-4" aria-describedby={error ? "recovery-error" : message ? "recovery-status" : undefined}>
+        <label htmlFor="recovery-email" className="field-label">Email address
+          <input id="recovery-email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required className="field mt-2" />
+        </label>
+        {message && <p id="recovery-status" role="status" className="field-success">{message}</p>}
+        {error && <p id="recovery-error" role="alert" className="field-error">{error}</p>}
+        {previewUrl && <a href={previewUrl} className="quiet-button w-full text-center text-sm">Open local development reset link</a>}
+        <button type="submit" disabled={busy || !email} className="btn-primary w-full">{busy ? "Sending reset link…" : "Send reset link"}</button>
       </form>
-      <p className="text-sm text-center mt-5">
-        <Link href="/login" className="font-bold text-primary-deep">
-          Back to sign in
-        </Link>
-      </p>
-    </div>
+      <p className="mt-6 text-center text-sm text-ink-soft"><Link href="/login" className="font-bold text-primary-deep hover:underline">Back to sign in</Link></p>
+    </AuthShell>
   );
 }

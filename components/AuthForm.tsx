@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { setAnswerOutboxAccount } from "@/lib/answer-outbox";
+import AuthShell from "@/components/AuthShell";
+import PasswordField from "@/components/PasswordField";
 
 export default function AuthForm({ mode, nextPath }: { mode: "login" | "register"; nextPath?: string }) {
   const router = useRouter();
@@ -79,125 +81,70 @@ export default function AuthForm({ mode, nextPath }: { mode: "login" | "register
   }
 
   return (
-    <div className="min-h-dvh bg-sidebar p-3 sm:p-5">
-      <div className="mx-auto grid min-h-[calc(100dvh-1.5rem)] max-w-6xl overflow-hidden rounded-[2rem] bg-paper shadow-pop sm:min-h-[calc(100dvh-2.5rem)] lg:grid-cols-[.9fr_1.1fr]">
-        <aside className="premium-panel relative m-3 hidden rounded-[1.5rem] p-10 lg:flex lg:flex-col lg:justify-between">
-          <Link href="/" className="relative z-10 flex items-center gap-3 font-semibold text-white"><span className="brand-mark text-white" aria-hidden="true" />BookQuest</Link>
-          <div className="relative z-10">
-            <span className="eyebrow text-signal">Learning, with proof</span>
-            <p className="display mt-7 text-[clamp(3.25rem,5vw,4.5rem)] leading-[0.9] text-white">Make useful knowledge <em className="text-signal">last.</em></p>
-            <p className="mt-6 max-w-sm text-sm leading-6 text-white/75">A beautifully clear home for trusted training, deliberate learning, and evidence that holds up.</p>
-          </div>
-          <p className="relative z-10 text-[10px] font-bold uppercase tracking-[0.18em] text-white/65">BookQuest · South Africa</p>
-        </aside>
-        <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-14 sm:px-10 lg:py-16">
-      <Link href="/" className="mb-12 flex items-center gap-3 font-semibold lg:hidden"><span className="brand-mark text-ink" aria-hidden="true" />BookQuest</Link>
-      <p className="section-label mb-4">{mode === "login" ? "Welcome back" : "Your workspace awaits"}</p>
-        <h1 className="display text-[clamp(2.75rem,12vw,3.75rem)] leading-[0.95]">
-        {mode === "login" ? "Welcome back" : "Create your account"}
-      </h1>
-      <p className="mt-4 text-sm leading-6 text-ink-soft">
-        {mode === "login"
-          ? "Sign in to continue your work."
-          : "Create a workspace and start with your first document."}
-      </p>
-
-      {mfaChallenge ? <form onSubmit={completeMfa} className="mt-6 space-y-3">
-        <p className="text-sm text-ink-soft">Enter the 6-digit code from your authenticator, or one unused recovery code.</p>
-        <input
-          aria-label="Authenticator or recovery code"
-          value={mfaCode}
-          onChange={(e) => setMfaCode(e.target.value)}
-          placeholder="Authenticator or recovery code"
-          autoComplete="one-time-code"
-          autoFocus
-          className="field"
-        />
-        {error && <p className="text-sm font-medium text-no">{error}</p>}
-        <button type="submit" disabled={busy || !mfaCode.trim()} className="btn-primary w-full">
-          {busy ? "Verifying..." : "Verify and sign in"}
-        </button>
-        <button type="button" onClick={() => { setMfaChallenge(null); setMfaCode(""); }} className="w-full text-sm font-semibold text-primary-deep">Use a different account</button>
-      </form> : <form onSubmit={submit} className="mt-6 space-y-3">
-        {mode === "register" && (
-          <input
-            aria-label="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            autoComplete="name"
-            className="field"
-          />
-        )}
-        <input
-          aria-label="Email address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          type="email"
-          autoComplete="email"
-          className="field"
-        />
-        {mode === "register" && (
-          <label className="flex items-start gap-2 text-xs text-ink-soft">
+    <AuthShell
+      eyebrow={mfaChallenge ? "Secure sign in" : mode === "login" ? "Welcome back" : "Your workspace awaits"}
+      title={mfaChallenge ? "Confirm it’s you" : mode === "login" ? "Welcome back" : "Create your account"}
+      description={mfaChallenge
+        ? "Use the current code from your authenticator, or one unused recovery code."
+        : mode === "login"
+          ? "Sign in to continue your courses, sources, and saved progress."
+          : "Create a private workspace and start with your first trusted document."}
+    >
+      {mfaChallenge ? (
+        <form onSubmit={completeMfa} className="space-y-4" aria-describedby={error ? "auth-error" : undefined}>
+          <label htmlFor="mfa-code" className="field-label">Authenticator or recovery code
             <input
-              type="checkbox"
-              checked={acceptedServiceTerms}
-              onChange={(e) => setAcceptedServiceTerms(e.target.checked)}
-              className="mt-0.5 h-4 w-4"
+              id="mfa-code"
+              name="mfa-code"
+              value={mfaCode}
+              onChange={(event) => setMfaCode(event.target.value)}
+              autoComplete="one-time-code"
+              autoCapitalize="off"
+              spellCheck={false}
+              autoFocus
+              required
+              className="field mt-2"
             />
-            <span>
-              I accept the service terms and privacy notice. Required learning
-              evidence is kept pseudonymously; optional analytics and research
-              consent can be changed from my profile.
-            </span>
           </label>
-        )}
-        {mode === "login" && (
-          <div className="text-right">
-            <Link href="/forgot-password" className="text-sm font-semibold text-primary-deep">
-              Forgot password?
-            </Link>
-          </div>
-        )}
-        <input
-          aria-label="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === "register" ? "Password (min 8 characters)" : "Password"}
-          type="password"
-          autoComplete={mode === "register" ? "new-password" : "current-password"}
-          className="field"
-        />
-        {error && <p className="text-sm font-medium text-no">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="btn-primary w-full"
-        >
-          {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
-        </button>
-      </form>}
+          {error && <p id="auth-error" role="alert" className="field-error">{error}</p>}
+          <button type="submit" disabled={busy || !mfaCode.trim()} className="btn-primary w-full">
+            {busy ? "Verifying…" : "Verify and sign in"}
+          </button>
+          <button type="button" onClick={() => { setMfaChallenge(null); setMfaCode(""); setError(null); }} className="quiet-button w-full">Use a different account</button>
+        </form>
+      ) : (
+        <form onSubmit={submit} className="space-y-4" aria-describedby={error ? "auth-error" : undefined}>
+          {mode === "register" && <label htmlFor="name" className="field-label">Your name
+            <input id="name" name="name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required className="field mt-2" />
+          </label>}
+          <label htmlFor="email" className="field-label">Email address
+            <input id="email" name="email" value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required className="field mt-2" />
+          </label>
+          <PasswordField
+            id="password"
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            minLength={mode === "register" ? 8 : undefined}
+            hint={mode === "register" ? "Use at least 8 characters. A longer, unique passphrase is safer." : undefined}
+          />
+          {mode === "login" && <div className="text-right"><Link href="/forgot-password" className="inline-flex min-h-11 items-center text-sm font-semibold text-primary-deep hover:underline">Forgot password?</Link></div>}
+          {mode === "register" && <label className="flex min-h-11 items-start gap-3 rounded-xl border border-line bg-card/60 p-4 text-xs leading-5 text-ink-soft">
+            <input type="checkbox" checked={acceptedServiceTerms} onChange={(event) => setAcceptedServiceTerms(event.target.checked)} required className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-primary)]" />
+            <span>I accept the service terms and privacy notice. Required learning evidence is kept pseudonymously; optional analytics and research consent can be changed from my profile.</span>
+          </label>}
+          {error && <p id="auth-error" role="alert" className="field-error">{error}</p>}
+          <button type="submit" disabled={busy} className="btn-primary w-full">
+            {busy ? (mode === "login" ? "Signing in…" : "Creating your workspace…") : mode === "login" ? "Sign in" : "Create account"}
+          </button>
+        </form>
+      )}
 
-      <p className="text-sm text-ink-soft mt-5 text-center">
-        {mode === "login" ? (
-          <>
-            New here?{" "}
-            <Link href="/register" className="font-bold text-primary-deep">
-              Create an account
-            </Link>
-          </>
-        ) : (
-          <>
-            Already have an account?{" "}
-            <Link href="/login" className="font-bold text-primary-deep">
-              Sign in
-            </Link>
-          </>
-        )}
+      {mode === "register" && !mfaChallenge && <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-semibold text-ink-soft" aria-label="Account benefits"><span>Private by default</span><span>Human reviewed</span><span>No card required</span></div>}
+      <p className="mt-6 text-center text-sm text-ink-soft">
+        {mode === "login" ? <>New here? <Link href="/register" className="font-bold text-primary-deep hover:underline">Create an account</Link></> : <>Already have an account? <Link href="/login" className="font-bold text-primary-deep hover:underline">Sign in</Link></>}
       </p>
-        </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }

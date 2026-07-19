@@ -48,16 +48,16 @@ type SurfaceTokens = {
 };
 
 export const COURSE_SURFACE_TOKENS: Record<CourseSurface, SurfaceTokens> = {
-  parchment: { page: "#F4F0E6", canvas: "#FBF8F1", raised: "#FFFDF8", line: "#DED7C9", lineDeep: "#C8BEAD", ink: "#183029", inkSoft: "#6E776F" },
-  ivory: { page: "#F7F4ED", canvas: "#FFFDF8", raised: "#FFFFFF", line: "#E1DBD0", lineDeep: "#CCC4B7", ink: "#21332C", inkSoft: "#6E776F" },
-  mist: { page: "#E8EFED", canvas: "#F9FBF9", raised: "#FFFFFF", line: "#CAD8D3", lineDeep: "#AABDB7", ink: "#183029", inkSoft: "#66756F" },
-  herbarium: { page: "#E7ECE2", canvas: "#FAF8EF", raised: "#FFFDF7", line: "#CAD2C2", lineDeep: "#ADB9A6", ink: "#183029", inkSoft: "#69736B" },
-  rose: { page: "#F4E9E6", canvas: "#FFF9F5", raised: "#FFFFFF", line: "#DECBC6", lineDeep: "#C9ADA6", ink: "#322426", inkSoft: "#7C696B" },
+  parchment: { page: "#F4F0E6", canvas: "#FBF8F1", raised: "#FFFDF8", line: "#DED7C9", lineDeep: "#C8BEAD", ink: "#183029", inkSoft: "#59645C" },
+  ivory: { page: "#F7F4ED", canvas: "#FFFDF8", raised: "#FFFFFF", line: "#E1DBD0", lineDeep: "#CCC4B7", ink: "#21332C", inkSoft: "#59645C" },
+  mist: { page: "#E8EFED", canvas: "#F9FBF9", raised: "#FFFFFF", line: "#CAD8D3", lineDeep: "#AABDB7", ink: "#183029", inkSoft: "#59645C" },
+  herbarium: { page: "#E7ECE2", canvas: "#FAF8EF", raised: "#FFFDF7", line: "#CAD2C2", lineDeep: "#ADB9A6", ink: "#183029", inkSoft: "#59645C" },
+  rose: { page: "#F4E9E6", canvas: "#FFF9F5", raised: "#FFFFFF", line: "#DECBC6", lineDeep: "#C9ADA6", ink: "#322426", inkSoft: "#6B5659" },
   noir: { page: "#09090C", canvas: "#141216", raised: "#1B171C", line: "#39272E", lineDeep: "#5A3541", ink: "#F3EDEF", inkSoft: "#B6A7AC" },
   evergreen: { page: "#061812", canvas: "#0D241B", raised: "#123027", line: "#29483B", lineDeep: "#4B6B59", ink: "#F5F0DF", inkSoft: "#B8B29F" },
-  sand: { page: "#E9E2D4", canvas: "#F7F3E9", raised: "#FFFCF5", line: "#D5CCBC", lineDeep: "#B8A993", ink: "#18372F", inkSoft: "#65746C" },
-  pearl: { page: "#F0F1EA", canvas: "#FCFBF4", raised: "#FFFFFF", line: "#D7D9CC", lineDeep: "#B8BDAE", ink: "#15372F", inkSoft: "#64746D" },
-  frost: { page: "#E8F0F3", canvas: "#F7FBFC", raised: "#FFFFFF", line: "#C8D9DF", lineDeep: "#9FBBC5", ink: "#102F3C", inkSoft: "#607985" },
+  sand: { page: "#E9E2D4", canvas: "#F7F3E9", raised: "#FFFCF5", line: "#D5CCBC", lineDeep: "#B8A993", ink: "#18372F", inkSoft: "#59645C" },
+  pearl: { page: "#F0F1EA", canvas: "#FCFBF4", raised: "#FFFFFF", line: "#D7D9CC", lineDeep: "#B8BDAE", ink: "#15372F", inkSoft: "#59645C" },
+  frost: { page: "#E8F0F3", canvas: "#F7FBFC", raised: "#FFFFFF", line: "#C8D9DF", lineDeep: "#9FBBC5", ink: "#102F3C", inkSoft: "#526B76" },
 };
 
 const requestedPresetIds = [
@@ -222,7 +222,7 @@ export function courseThemeVariables(value?: CourseAppearance | null): CSSProper
     "--course-on-error-surface": "#7B3028",
     "--course-locked-surface": `color-mix(in srgb, ${theme.colors.primary} 88%, ${surface.canvas})`,
     "--course-on-locked": theme.colors.onPrimary,
-    "--course-focus-ring": accent,
+    "--course-focus-ring": surface.ink,
     "--course-card-radius": cardRadius[theme.cardStyle],
     "--course-card-shadow": cardShadow[theme.cardStyle],
   } as CSSProperties;

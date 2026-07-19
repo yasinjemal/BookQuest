@@ -64,7 +64,7 @@ export default function SummariesPage() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (!summaries?.some((summary) => !isSummaryReady(summary.status) && !isSummaryFailed(summary.status))) return;
+    if (!summaries?.some((summary) => !isSummaryReady(summary.status) && !isSummaryFailed(summary.status) && !summary.generation_stalled)) return;
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
   }, [load, summaries]);
@@ -97,7 +97,8 @@ export default function SummariesPage() {
   const continueSummary = summaries
     ?.filter((summary) => isSummaryReady(summary.status) && (progress[String(summary.id)] ?? 0) > 0 && (progress[String(summary.id)] ?? 0) < 99)
     .sort((first, second) => (progress[String(second.id)] ?? 0) - (progress[String(first.id)] ?? 0))[0];
-  const buildingCount = summaries?.filter((summary) => !isSummaryReady(summary.status) && !isSummaryFailed(summary.status)).length ?? 0;
+  const buildingCount = summaries?.filter((summary) => !isSummaryReady(summary.status) && !isSummaryFailed(summary.status) && !summary.generation_stalled).length ?? 0;
+  const pausedCount = summaries?.filter((summary) => summary.generation_stalled).length ?? 0;
 
   return (
     <div className="page-wrap">
@@ -131,6 +132,7 @@ export default function SummariesPage() {
         </section>}
 
         {buildingCount > 0 && <div role="status" className="mt-8 flex items-start gap-3 rounded-[1.2rem] border border-dusk/20 bg-sky/55 p-4 text-sm"><span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-dusk text-white"><AppIcon name="spark" className="h-4 w-4" /></span><div><strong>{buildingCount} Deep Read{buildingCount === 1 ? " is" : "s are"} being prepared.</strong><p className="mt-1 text-xs leading-5 text-ink-soft">You can leave this page. Ready sections appear here as the source is mapped and checked.</p></div></div>}
+        {pausedCount > 0 && <div role="status" className="mt-4 rounded-[1.2rem] border border-line-deep bg-card p-4 text-sm"><strong>{pausedCount} Deep Read{pausedCount === 1 ? " is" : "s are"} paused.</strong><p className="mt-1 text-xs leading-5 text-ink-soft">Open it to review completed sections and explicitly resume unfinished work within the daily AI budget.</p></div>}
 
         <section className="mt-10" aria-labelledby="deep-read-shelf-heading">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">

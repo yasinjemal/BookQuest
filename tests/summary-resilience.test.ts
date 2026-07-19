@@ -14,12 +14,17 @@ describe("Deep Summary resilience contracts", () => {
     expect(extract).toContain("remaining.length > MAX_CHAPTER_CHARS");
   });
 
-  it("recovers a lost initial worker from both the shelf and reader", () => {
-    const db = source("lib/summary-db.ts");
+  it("keeps reads side-effect free and resumes only through explicit POST", () => {
+    const shelf = source("app/api/summaries/route.ts");
     const detail = source("app/api/summaries/[id]/route.ts");
-    expect(db).toContain("status IN ('extracting','outlining','generating')");
-    expect(detail).toContain("claimStalledSummary(");
-    expect(detail).toContain("kickSummaryGeneration(");
+    const retry = source("app/api/summaries/[id]/retry/route.ts");
+    for (const readRoute of [shelf, detail]) {
+      expect(readRoute).not.toContain("claimStalled");
+      expect(readRoute).not.toContain("kickSummaryGeneration");
+      expect(readRoute).not.toContain("after(");
+    }
+    expect(retry).toContain("claimStalledSummary(");
+    expect(retry).toContain("runSummaryAndChain(");
   });
 
   it("does not loop forever when protected worker handoffs fail", () => {
@@ -33,7 +38,7 @@ describe("Deep Summary resilience contracts", () => {
     expect(summaryGeneration).toContain("MAX_SUMMARY_TRIGGER_FAILURES");
     expect(summaryGeneration).toContain("recordSummaryGenerationTriggerFailure");
     expect(db).toContain("generation_trigger_failures = generation_trigger_failures + 1");
-    expect(reader).toContain("Resume generation now");
+    expect(reader).toContain("Use AI budget and resume");
   });
 
   it("checks retry prerequisites and preserves completed sections", () => {

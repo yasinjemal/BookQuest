@@ -35,6 +35,7 @@ export default function SummaryGalleryCard({
 }) {
   const ready = isSummaryReady(summary.status);
   const failed = isSummaryFailed(summary.status);
+  const stalled = summary.generation_stalled;
   const safeReadingProgress = Math.min(100, Math.max(0, Math.round(readingProgress)));
   const totalSections = Math.max(0, Number(summary.section_count) || 0);
   const readySections = Math.min(totalSections, Math.max(0, Number(summary.ready_section_count) || 0));
@@ -61,7 +62,7 @@ export default function SummaryGalleryCard({
         <div className="relative z-10 flex h-full min-h-46 flex-col pl-5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] backdrop-blur-sm">Deep Read</span>
-            <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${statusTone}`}>{summaryStatusLabel(summary.status)}</span>
+            <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${statusTone}`}>{stalled ? "Paused" : summaryStatusLabel(summary.status)}</span>
           </div>
           <div className="mt-auto max-w-[19rem] pb-1">
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-signal">Distilled from {Number(summary.source_chapter_count) || 0} source section{Number(summary.source_chapter_count) === 1 ? "" : "s"}</p>
@@ -80,7 +81,7 @@ export default function SummaryGalleryCard({
 
         <div className="mt-auto pt-5">
           <div className="mb-2 flex items-center justify-between gap-4 text-xs font-semibold text-ink-soft">
-            <span>{failed ? "Generation stopped" : ready ? (progress >= 99 ? "Finished" : progress > 0 ? "Reading progress" : "Ready to begin") : `${readySections} of ${totalSections || "?"} sections ready`}</span>
+            <span>{failed ? "Generation stopped" : stalled ? "Generation paused" : ready ? (progress >= 99 ? "Finished" : progress > 0 ? "Reading progress" : "Ready to begin") : `${readySections} of ${totalSections || "?"} sections ready`}</span>
             {!failed && <span>{progress}%</span>}
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-label={ready ? `Reading progress through ${summary.title}` : `Generation progress for ${summary.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>

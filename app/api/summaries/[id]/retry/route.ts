@@ -1,6 +1,13 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
+import {
+  AiBudgetConfigurationError,
+  AiBudgetExceededError,
+  aiBudgetErrorPayload,
+  aiBudgetRetryAfterSeconds,
+  assertAiBudgetAvailable,
+} from "@/lib/ai-budget";
 import { resolveBaseUrl } from "@/lib/generation";
 import {
   consumeRateLimit,
@@ -8,8 +15,13 @@ import {
   rateLimitSubject,
   tooManyRequests,
 } from "@/lib/rate-limit";
-import { getOwnedSummary, prepareSummaryRetry } from "@/lib/summary-db";
+import {
+  claimStalledSummary,
+  getOwnedSummary,
+  prepareSummaryRetry,
+} from "@/lib/summary-db";
 import { runSummaryAndChain } from "@/lib/summary-generation";
+import { SUMMARY_GENERATION_STALE_MS } from "@/lib/summary-types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -56,12 +68,46 @@ export async function POST(
       { status: 409 }
     );
   }
+  try {
+    await assertAiBudgetAvailable(ai.model!);
+  } catch (error) {
+    if (error instanceof AiBudgetExceededError) {
+      return NextResponse.json(aiBudgetErrorPayload(error), {
+        status: 429,
+        headers: { "Retry-After": String(aiBudgetRetryAfterSeconds(error)) },
+      });
+    }
+    if (error instanceof AiBudgetConfigurationError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
   const active = new Set(["extracting", "outlining", "generating"]);
-  const generationRunId = summary.status === "error"
-    ? await prepareSummaryRetry(summaryId, user.id)
-    : active.has(summary.status)
-      ? summary.generation_run_id
-      : undefined;
+  let generationRunId: string | undefined;
+  if (summary.status === "error") {
+    generationRunId = await prepareSummaryRetry(summaryId, user.id);
+  } else if (active.has(summary.status)) {
+    const claimedAt = new Date();
+    const stalled = await claimStalledSummary(
+      summaryId,
+      user.id,
+      new Date(claimedAt.getTime() - SUMMARY_GENERATION_STALE_MS).toISOString(),
+      claimedAt.toISOString()
+    );
+    generationRunId = stalled?.generation_run_id;
+    if (!generationRunId) {
+      return NextResponse.json(
+        {
+          error: "Generation is still active. Wait for the current section to finish before resuming.",
+          code: "generation_active",
+        },
+        { status: 409 }
+      );
+    }
+  }
   if (!generationRunId) {
     return NextResponse.json(
       { error: "This summary is not ready to resume." },
@@ -70,5 +116,8 @@ export async function POST(
   }
   const baseUrl = resolveBaseUrl(req);
   after(() => runSummaryAndChain(summaryId, generationRunId, baseUrl));
-  return NextResponse.json({ ok: true, summaryId, resumed: summary.status !== "error" });
+  return NextResponse.json(
+    { ok: true, summaryId, resumed: summary.status !== "error" },
+    { status: 202 }
+  );
 }

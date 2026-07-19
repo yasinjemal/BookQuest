@@ -161,6 +161,12 @@ still complete).
      `anthropic-compatible`, or `disabled`; see
      [`SELF_HOSTING_AND_AI.md`](SELF_HOSTING_AND_AI.md).
    - `ANTHROPIC_API_KEY` — your Claude API key when using the default provider.
+   - `BOOKQUEST_AI_MODEL` — optional model override; defaults to
+     `claude-sonnet-4-6`.
+   - `BOOKQUEST_AI_DAILY_BUDGET_USD` — hard installation-wide daily provider
+     limit; defaults to `5`.
+   - `BOOKQUEST_AI_BUDGET_TIME_ZONE` — IANA time zone for the daily reset;
+     defaults to `Africa/Johannesburg`.
    - `GENERATION_SECRET` — any random string; guards the internal generation
      worker so only the app can trigger it (see "Durable course generation").
      Recommended in production.

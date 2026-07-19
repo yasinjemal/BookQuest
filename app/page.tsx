@@ -28,6 +28,7 @@ interface CourseSummary {
   doneLessons: number;
   nextLessonId?: number | null;
   moduleCount?: number;
+  generation_stalled: boolean;
   appearance?: CourseAppearance;
 }
 
@@ -163,6 +164,7 @@ export default function HomePage() {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [aiCapability, setAiCapability] = useState<AiCapability | null>(null);
+  const [generationNotice, setGenerationNotice] = useState("");
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -209,7 +211,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!owned.some((course) => ["extracting", "outlining", "generating"].includes(course.status))) return;
+    if (!owned.some((course) => ["extracting", "outlining", "generating"].includes(course.status) && !course.generation_stalled)) return;
     const timer = setInterval(load, 4000);
     return () => clearInterval(timer);
   }, [owned, load]);
@@ -248,8 +250,9 @@ export default function HomePage() {
         </section>
 
         <section className="mt-10" aria-labelledby="creator-shelf-heading"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><h2 id="creator-shelf-heading" className="text-lg font-bold tracking-tight">Courses you are creating</h2><span className="text-xs font-semibold text-ink-soft">{me.role === "admin" ? "Creator access" : `${me.credits} creation credit${me.credits === 1 ? "" : "s"}`}</span></div>
+          {generationNotice && <p role="alert" className="mb-4 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{generationNotice}</p>}
           <Link href="/create" className="group flex min-h-36 items-center gap-5 rounded-[1.4rem] border border-dashed border-line-deep bg-card/60 p-6 transition-colors hover:border-teal hover:bg-card"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong className="display block text-2xl font-normal">Start from one document</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">Choose the output before uploading so a summary never gets mixed into a course.</span></span><AppIcon name="arrow" className="h-5 w-5 shrink-0 text-teal transition-transform group-hover:translate-x-1" /></Link>
-          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing here yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={displayTitle(course)} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Open</Link>}{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit in Studio</Link>}{course.status === "error" && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Try generation again</button>)}{course.status !== "ready" && course.status !== "error" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link>}</div>} />)}</div>}
+          {owned.length === 0 ? <p className="py-8 text-center text-sm text-ink-soft">Nothing here yet. Your first draft will appear here.</p> : <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{owned.map((course) => <CourseGalleryCard key={course.id} id={course.id} title={displayTitle(course)} description={course.description} category={course.category} totalLessons={course.totalLessons} progress={progressFor(course)} status={course.status === "ready" ? (course.published ? "Published" : "Draft") : course.generation_stalled ? "Paused" : course.status} appearance={course.appearance} action={<div className="flex flex-wrap gap-2">{course.status === "ready" && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white">Open</Link>}{course.status === "ready" && <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit in Studio</Link>}{(course.status === "error" || course.generation_stalled) && (aiCapability?.enabled === false ? <Link href={`/studio/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Edit manually</Link> : <button onClick={async () => { setGenerationNotice(""); const response = await fetch(`/api/courses/${course.id}/retry`, { method: "POST" }); const result = await response.json().catch(() => ({})) as { error?: string }; if (!response.ok) setGenerationNotice(result.error || "Generation could not resume."); await load(); }} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-no/40 px-4 py-2 text-sm font-semibold text-no">Use AI budget and resume</button>)}{course.status !== "ready" && course.status !== "error" && !course.generation_stalled && <Link href={`/course/${course.id}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-full border border-line-deep px-4 py-2 text-sm font-semibold">Open</Link>}</div>} />)}</div>}
         </section>
       </div>
     </div>

@@ -57,12 +57,12 @@ export const RATE_LIMITS = {
   uploadIp: { scope: "course.upload.ip", limit: 30, windowSeconds: 60 * 60 },
   courseRetryUser: {
     scope: "course.retry.user",
-    limit: 20,
+    limit: 5,
     windowSeconds: 60 * 60,
   },
   summaryRetryUser: {
     scope: "summary.retry.user",
-    limit: 20,
+    limit: 5,
     windowSeconds: 60 * 60,
   },
   freshPracticeUser: {

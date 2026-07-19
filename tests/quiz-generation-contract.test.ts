@@ -52,10 +52,11 @@ describe("two-choice generation contract", () => {
   it("instructs AI and Studio creation to use the same simple formats", () => {
     const generator = readFileSync(new URL("../lib/generator.ts", import.meta.url), "utf8");
     const studio = readFileSync(new URL("../app/studio/[id]/page.tsx", import.meta.url), "utf8");
-    expect(generator).toContain('COURSE_LESSON_PROMPT_VERSION = "course-lessons-v2-two-choice"');
+    expect(generator).toContain('COURSE_LESSON_PROMPT_VERSION = "course-lessons-v3-cost-safe"');
     expect(generator).toContain("multiple choice with exactly 2");
     expect(generator).toContain("Never create fill-in");
-    expect(generator).toContain("attempt <= 2");
+    expect(generator).toContain("createBudgetedMessage(");
+    expect(generator).not.toContain('thinking: { type: "adaptive" }');
     expect(studio).toContain('const CREATION_BLOCKS = BLOCKS.filter((item) => item.type !== "fill_in")');
     expect(studio).toContain('options: ["Correct option", "Plausible alternative"]');
   });

@@ -3,7 +3,13 @@ import {
   createAiProvider,
   DEFAULT_AI_MODEL,
   getAiAvailability,
+  isRetryableAiError,
 } from "./ai-provider";
+import {
+  AiBudgetConfigurationError,
+  AiBudgetExceededError,
+  createBudgetedMessage,
+} from "./ai-budget";
 import type { Chapter } from "./extract";
 import {
   bumpSummaryGenerationAttempts,
@@ -27,15 +33,15 @@ import {
   type SummarySectionContent as SummarySectionContentValue,
 } from "./summary-types";
 
-export const MAX_SUMMARY_SECTION_ATTEMPTS = 3;
-export const MAX_SUMMARY_OUTLINE_ATTEMPTS = 3;
-export const SUMMARY_OUTLINE_PROMPT_VERSION = "deep-summary-outline-v1";
-export const SUMMARY_PROMPT_VERSION = "deep-summary-section-v1";
+export const MAX_SUMMARY_SECTION_ATTEMPTS = 2;
+export const MAX_SUMMARY_OUTLINE_ATTEMPTS = 2;
+export const SUMMARY_OUTLINE_PROMPT_VERSION = "deep-summary-outline-v2";
+export const SUMMARY_PROMPT_VERSION = "deep-summary-section-v2";
 
 /** Section calls stay inside a predictable long-document window. The outline
  * groups chapters near this size; the source builder also hard-caps each call. */
 export const SUMMARY_SECTION_SOURCE_MAX_CHARS = 78_000;
-export const SUMMARY_SECTION_MAX_CHAPTERS = 40;
+export const SUMMARY_SECTION_MAX_CHAPTERS = 12;
 export const SUMMARY_AI_REQUEST_TIMEOUT_MS = 175_000;
 
 const OUTLINE_SOURCE_MAX_CHARS = 72_000;
@@ -167,14 +173,26 @@ function validateSectionSourceBudgets(
   }
 }
 
-async function generateOutline(chapters: Chapter[]): Promise<SummaryOutlineValue> {
-  const { client, model } = createAiProvider();
+async function generateOutline(
+  summaryId: number,
+  generationRunId: string,
+  chapters: Chapter[]
+): Promise<SummaryOutlineValue> {
+  const { client, model, provider } = createAiProvider();
   const sourceMap = outlineSourceText(chapters);
-  const response = await client.messages.parse(
+  const response = await createBudgetedMessage(
+    client,
+    {
+      provider,
+      model,
+      operation: "summary.outline",
+      subjectType: "summary",
+      subjectId: summaryId,
+      generationRunId,
+    },
     {
       model,
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
+      max_tokens: 4000,
       system: SYSTEM,
       messages: [
         {
@@ -184,7 +202,7 @@ async function generateOutline(chapters: Chapter[]): Promise<SummaryOutlineValue
       ],
       output_config: { format: zodOutputFormat(SummaryOutline) },
     },
-    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS, maxRetries: 0 }
+    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS }
   );
   if (!response.parsed_output) {
     throw new Error("Summary outline generation returned no parsable output.");
@@ -440,21 +458,31 @@ export function validateSummarySectionGrounding(
 }
 
 async function generateSection(
+  summaryId: number,
+  generationRunId: string,
   sectionTitle: string,
   sectionHook: string,
   chapters: Chapter[],
   chapterIndexes: number[]
 ): Promise<{ content: SummarySectionContentValue; model: string }> {
-  const { client, model } = createAiProvider();
+  const { client, model, provider } = createAiProvider();
   const sourceText = sectionSourceText(chapters, chapterIndexes);
   const chapterRequirements = chapterIndexes
     .map((index) => `[${index}] ${chapters[index].title}`)
     .join("\n");
-  const response = await client.messages.parse(
+  const response = await createBudgetedMessage(
+    client,
+    {
+      provider,
+      model,
+      operation: "summary.section",
+      subjectType: "summary",
+      subjectId: summaryId,
+      generationRunId,
+    },
     {
       model,
-      max_tokens: 12000,
-      thinking: { type: "adaptive" },
+      max_tokens: 10000,
       system: SYSTEM,
       messages: [
         {
@@ -464,7 +492,7 @@ async function generateSection(
       ],
       output_config: { format: zodOutputFormat(SummarySectionContent) },
     },
-    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS, maxRetries: 0 }
+    { timeout: SUMMARY_AI_REQUEST_TIMEOUT_MS }
   );
   if (!response.parsed_output) {
     throw new Error("Summary section generation returned no parsable output.");
@@ -536,7 +564,7 @@ export async function runSummaryGenerationStep(
   if ((await countSummarySections(summaryId, generationRunId)) === 0) {
     try {
       await setSummaryStatus(summaryId, "outlining", undefined, generationRunId);
-      const outline = await generateOutline(chapters);
+      const outline = await generateOutline(summaryId, generationRunId, chapters);
       await commitSummaryOutline(
         summaryId,
         {
@@ -561,8 +589,15 @@ export async function runSummaryGenerationStep(
     } catch (error) {
       if (error instanceof StaleSummaryGenerationError) return "done";
       console.error(`Summary ${summaryId} outline failed:`, error);
+      if (
+        error instanceof AiBudgetExceededError ||
+        error instanceof AiBudgetConfigurationError
+      ) {
+        await setSummaryStatus(summaryId, "error", error.message, generationRunId);
+        return "done";
+      }
       const attempts = await bumpSummaryGenerationAttempts(summaryId, generationRunId);
-      if (attempts >= MAX_SUMMARY_OUTLINE_ATTEMPTS) {
+      if (!isRetryableAiError(error) || attempts >= MAX_SUMMARY_OUTLINE_ATTEMPTS) {
         await setSummaryStatus(
           summaryId,
           "error",
@@ -584,6 +619,8 @@ export async function runSummaryGenerationStep(
   if (claimed) {
     try {
       const generated = await generateSection(
+        summaryId,
+        generationRunId,
         claimed.title,
         claimed.hook,
         chapters,
@@ -597,9 +634,24 @@ export async function runSummaryGenerationStep(
     } catch (error) {
       if (error instanceof StaleSummaryGenerationError) return "done";
       console.error(`Summary section ${claimed.id} generation failed:`, error);
+      if (
+        error instanceof AiBudgetExceededError ||
+        error instanceof AiBudgetConfigurationError
+      ) {
+        await setSummarySectionStatus(
+          claimed.id,
+          "pending",
+          generationRunId,
+          error.message
+        );
+        await setSummaryStatus(summaryId, "error", error.message, generationRunId);
+        return "done";
+      }
       await setSummarySectionStatus(
         claimed.id,
-        claimed.attempts >= MAX_SUMMARY_SECTION_ATTEMPTS ? "error" : "pending",
+        !isRetryableAiError(error) || claimed.attempts >= MAX_SUMMARY_SECTION_ATTEMPTS
+          ? "error"
+          : "pending",
         generationRunId,
         apiKeyMessage(error instanceof Error ? error.message : String(error))
       );

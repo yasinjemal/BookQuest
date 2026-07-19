@@ -39,6 +39,7 @@ interface CourseData {
     description: string;
     status: string;
     error: string | null;
+    generation_stalled: boolean;
     isOwner: boolean;
     published: number;
     category: string;
@@ -56,6 +57,8 @@ export default function CoursePathPage() {
   const [notFound, setNotFound] = useState(false);
   const [category, setCategory] = useState<string>("General");
   const [publishing, setPublishing] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const [generationError, setGenerationError] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/courses/${id}`);
@@ -85,12 +88,27 @@ export default function CoursePathPage() {
     void load();
   }
 
+  async function resumeGeneration() {
+    setResuming(true);
+    setGenerationError("");
+    try {
+      const response = await fetch(`/api/courses/${id}/retry`, { method: "POST" });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Generation could not resume.");
+      await load();
+    } catch (error) {
+      setGenerationError(error instanceof Error ? error.message : "Generation could not resume.");
+    } finally {
+      setResuming(false);
+    }
+  }
+
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     if (!data) return;
     const busy = ["extracting", "outlining", "generating"].includes(data.course.status);
-    if (!busy) return;
+    if (!busy || data.course.generation_stalled) return;
     const timer = setInterval(() => void load(), 4000);
     return () => clearInterval(timer);
   }, [data, load]);
@@ -126,7 +144,9 @@ export default function CoursePathPage() {
           nextLessonId={firstIncomplete?.id}
         />
 
-        {busy && <div className={styles.generationNotice}><span />Still shaping this world — new lessons appear as they finish.</div>}
+        {busy && !data.course.generation_stalled && <div className={styles.generationNotice}><span />Still shaping this world — new lessons appear as they finish.</div>}
+
+        {data.course.isOwner && (data.course.generation_stalled || data.course.status === "error") && <div role={data.course.status === "error" ? "alert" : "status"} className="rounded-[1.2rem] border border-line-deep bg-card p-5 shadow-card"><strong>{data.course.generation_stalled ? "Generation paused" : "This draft needs attention"}</strong><p className="mt-2 text-sm leading-6 text-ink-soft">{data.course.error || "Completed lessons are saved. Resume only when you want to use today's AI budget for the unfinished work."}</p><button type="button" onClick={() => void resumeGeneration()} disabled={resuming} className="quiet-button mt-4">{resuming ? "Restarting…" : "Use AI budget and resume"}</button><p className="mt-2 text-xs text-ink-soft">BookQuest stops provider calls at the daily $5 safety limit.</p>{generationError && <p role="alert" className="mt-3 text-sm font-semibold text-no">{generationError}</p>}</div>}
 
         <section id="course-journey" className={styles.journeySection} aria-labelledby="journey-heading">
           <header className={styles.journeyHeading}>

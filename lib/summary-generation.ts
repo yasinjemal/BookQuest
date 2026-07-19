@@ -16,7 +16,6 @@ import {
 
 const INTERNAL_GENERATE_SUMMARY_PATH = "/api/internal/generate-summary";
 
-export const SUMMARY_GENERATION_STALE_MS = 210_000;
 export const MAX_SUMMARY_TRIGGER_FAILURES = 3;
 
 function triggerFailureMessage(status: number | null): string {

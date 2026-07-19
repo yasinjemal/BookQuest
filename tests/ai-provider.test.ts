@@ -10,10 +10,11 @@ describe("installation AI provider policy", () => {
   it("preserves Anthropic as the compatible default", () => {
     expect(resolveAiConfiguration({ ANTHROPIC_API_KEY: "test-key" })).toEqual({
       provider: "anthropic",
-      model: "claude-opus-4-8",
+      model: "claude-sonnet-4-6",
       baseUrl: null,
     });
     expect(getAiAvailability({ ANTHROPIC_API_KEY: "test-key" }).enabled).toBe(true);
+    expect(createAiProvider({ ANTHROPIC_API_KEY: "test-key" }).client.maxRetries).toBe(0);
   });
 
   it("supports an explicitly configured Anthropic-compatible endpoint", () => {

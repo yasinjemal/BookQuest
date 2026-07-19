@@ -60,6 +60,22 @@ describe("migration list", () => {
     expect(migration?.sql).toContain("generation_trigger_failures");
   });
 
+  it("adds an atomic AI cost reservation ledger as a forward migration", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "ai_daily_budget");
+    expect(migration).toMatchObject({ id: 26 });
+    expect(migration?.sql).toContain("CREATE TABLE ai_usage_events");
+    expect(migration?.sql).toContain("reserved_cost_micros");
+    expect(migration?.sql).toContain("actual_cost_micros");
+  });
+
+  it("adds normalized zero-AI Reading Editions and synced positions", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "reading_editions");
+    expect(migration).toMatchObject({ id: 27 });
+    expect(migration?.sql).toContain("CREATE TABLE reading_editions");
+    expect(migration?.sql).toContain("CREATE TABLE reading_edition_units");
+    expect(migration?.sql).toContain("CREATE TABLE reading_progress");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },

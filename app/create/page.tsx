@@ -4,9 +4,9 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AppIcon, { type AppIconName } from "@/components/AppIcon";
 import CourseWorld from "@/components/CourseWorld";
+import type { OutputMode } from "@/lib/creation-output";
 
 type CreationMode = "ai" | "manual" | "sources" | "recipe";
-type OutputMode = "course" | "summary" | "both";
 interface SpaceOption { space: { id: string; name: string; type: string }; membership: { role: string } }
 interface SourceOption { id: string; title: string; kind: string; source_version_id: string }
 interface RecipeOption { id: string; title: string; recipe_version_id: string; status: string }
@@ -47,6 +47,14 @@ const outputChoices: Array<{
   icon: AppIconName;
 }> = [
   {
+    id: "book",
+    eyebrow: "Keep every word",
+    title: "Full book",
+    description: "Read the complete text in an automatically matched atmosphere.",
+    detail: "Instant after extraction · no AI · no creation credit",
+    icon: "bookmark",
+  },
+  {
     id: "summary",
     eyebrow: "Best for long books",
     title: "Deep summary",
@@ -72,6 +80,14 @@ const outputChoices: Array<{
   },
 ];
 
+const HOSTED_UPLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
+const SUPPORTED_UPLOAD_EXTENSIONS = ["pdf", "docx", "pptx", "md", "markdown", "txt"];
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function CreatePage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,6 +108,7 @@ export default function CreatePage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [generateWithAi, setGenerateWithAi] = useState(true);
   const [aiCapability, setAiCapability] = useState<AiCapability | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -174,6 +191,27 @@ export default function CreatePage() {
     return () => { cancelled = true; };
   }, [loadRecipes, loadSources, router]);
 
+  function prepareFile(file: File) {
+    setError("");
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!SUPPORTED_UPLOAD_EXTENSIONS.includes(extension)) {
+      setPendingFile(null);
+      setError("Choose a PDF, DOCX, PPTX, Markdown, or text document.");
+      return;
+    }
+    if (file.size > HOSTED_UPLOAD_LIMIT_BYTES) {
+      setPendingFile(null);
+      setError(`This file is ${formatFileSize(file.size)}. Hosted uploads are limited to 4 MB; choose a smaller file or split the source first.`);
+      return;
+    }
+    if (file.size === 0) {
+      setPendingFile(null);
+      setError("This file is empty. Choose a document that contains readable text.");
+      return;
+    }
+    setPendingFile(file);
+  }
+
   async function uploadFile(file: File) {
     if (!file) return;
     setBusy(true);
@@ -189,11 +227,11 @@ export default function CreatePage() {
       if (data.destinationUrl) router.push(data.destinationUrl);
       else if (data.studioUrl) router.push(data.studioUrl);
       else if (data.courseId) router.push(`/studio/${data.courseId}`);
+      else throw new Error("BookQuest created the source but did not return a destination.");
     } catch {
       setError("The upload did not finish. Check your connection and try again.");
     } finally {
       setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -338,8 +376,10 @@ export default function CreatePage() {
   const selectedSpace = spaces.find(({ space }) => space.id === spaceId)?.space;
   const selectedRecipe = recipes.find((recipe) => recipe.recipe_version_id === recipeVersionId);
   const selectedOutput = outputChoices.find((choice) => choice.id === outputMode)!;
-  const outputRequiresAi = outputMode !== "course";
-  const busyLabel = outputMode === "summary"
+  const outputRequiresAi = outputMode === "summary" || outputMode === "both";
+  const busyLabel = outputMode === "book"
+    ? "Opening your Reading Edition…"
+    : outputMode === "summary"
     ? "Beginning your Deep Summary…"
     : outputMode === "both"
       ? "Creating two separate experiences…"
@@ -348,34 +388,35 @@ export default function CreatePage() {
   return (
     <div className="page-wrap">
       <div className="content-measure">
-        {welcome && <section className="mb-5 rounded-[1.35rem] border border-teal/20 bg-teal/8 p-5" aria-label="First creation onboarding"><p className="text-sm font-bold text-teal-deep">Welcome to BookQuest. Let’s make your first reading experience.</p><ol className="mt-3 grid gap-2 text-xs text-ink-soft sm:grid-cols-3"><li><strong className="text-ink">1. Choose</strong> summary, course, or both</li><li><strong className="text-ink">2. Upload</strong> one trusted source</li><li><strong className="text-ink">3. Review</strong> the private result</li></ol></section>}
+        {welcome && <section className="mb-5 rounded-[1.35rem] border border-teal/20 bg-teal/8 p-5" aria-label="First creation onboarding"><p className="text-sm font-bold text-teal-deep">Welcome to BookQuest. Let’s make your first reading experience.</p><ol className="mt-3 grid gap-2 text-xs text-ink-soft sm:grid-cols-3"><li><strong className="text-ink">1. Choose</strong> full book, summary, course, or both</li><li><strong className="text-ink">2. Upload</strong> one trusted source</li><li><strong className="text-ink">3. Review</strong> the private result</li></ol></section>}
 
         <header className="grid overflow-hidden rounded-[1.75rem] bg-pine text-white shadow-pop lg:grid-cols-[1.06fr_.94fr]">
-          <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">One trusted source · your choice</p><h1 className="display mt-3 text-[clamp(3rem,10vw,5.7rem)] leading-[0.9]">Choose how this document becomes useful.</h1><p className="mt-5 max-w-xl text-base leading-7 text-white/75">Upload a book, PDF, notes, or training document. Create a deep guided summary, an interactive course, or both as separate experiences.</p><div className="mt-7 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/55"><span>Private by default</span><span>Source grounded</span><span>Nothing publishes automatically</span></div></div>
+          <div className="flex flex-col justify-center p-7 sm:p-10 lg:p-12"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-signal">One trusted source · your choice</p><h1 className="display mt-3 text-[clamp(3rem,10vw,5.7rem)] leading-[0.9]">Choose how this document becomes useful.</h1><p className="mt-5 max-w-xl text-base leading-7 text-white/75">Upload a book, PDF, notes, or training document. Keep the complete text for relaxed reading, create a guided summary, build an interactive course, or make both AI experiences separately.</p><div className="mt-7 flex flex-wrap gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-white/55"><span>Private by default</span><span>Source grounded</span><span>Nothing publishes automatically</span></div></div>
           <CourseWorld seed="creator-workshop" theme="workshop" progress={12} className="min-h-64 lg:min-h-[28rem]" />
         </header>
 
         <section className="relative z-10 mx-auto -mt-5 max-w-3xl rounded-[1.6rem] border border-line bg-card p-5 shadow-pop sm:-mt-8 sm:p-8" aria-labelledby="quick-create-heading">
-          <div className="max-w-2xl"><p className="section-label">Start with the destination</p><h2 id="quick-create-heading" className="display mt-2 text-4xl">What should this document become?</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Choose before uploading. A summary and a course remain separate, even when you create both.</p></div>
+          <div className="max-w-2xl"><p className="section-label">Start with the destination</p><h2 id="quick-create-heading" className="display mt-2 text-4xl">What should this document become?</h2><p className="mt-3 text-sm leading-6 text-ink-soft">Choose before uploading. Full books, summaries, and courses each keep their own reading or learning experience.</p></div>
           <fieldset className="mt-6">
             <legend className="screen-reader-text">Choose what to create from this document</legend>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {outputChoices.map((choice) => {
                 const active = outputMode === choice.id;
-                return <label key={choice.id} className={`relative flex min-h-56 cursor-pointer flex-col rounded-[1.25rem] border p-5 transition-all hover:-translate-y-0.5 ${active ? "border-ink bg-ink text-white shadow-pop" : "border-line bg-paper/55 text-ink hover:border-line-deep"}`}>
+                return <label key={choice.id} className={`relative flex min-h-56 cursor-pointer flex-col rounded-[1.25rem] border p-5 transition-all hover:-translate-y-0.5 focus-within:ring-4 focus-within:ring-teal/20 ${active ? "border-ink bg-ink text-white shadow-pop" : "border-line bg-paper/55 text-ink hover:border-line-deep"}`}>
                   <input type="radio" name="output-mode" value={choice.id} checked={active} onChange={() => setOutputMode(choice.id)} className="screen-reader-text" />
                   <span className={`grid h-10 w-10 place-items-center rounded-full ${active ? "bg-signal text-ink" : "bg-card text-teal shadow-card"}`}><AppIcon name={choice.icon} className="h-5 w-5" /></span>
-                  <span className={`mt-5 text-[9px] font-bold uppercase tracking-[0.15em] ${active ? "text-signal" : "text-teal-deep"}`}>{choice.eyebrow}</span>
+                  <span className={`mt-5 text-xs font-bold uppercase tracking-[0.15em] ${active ? "text-signal" : "text-teal-deep"}`}>{choice.eyebrow}</span>
                   <strong className="mt-2 text-base">{choice.title}</strong>
                   <span className={`mt-2 text-xs leading-5 ${active ? "text-white/70" : "text-ink-soft"}`}>{choice.description}</span>
-                  <span className={`mt-auto pt-4 text-[10px] leading-4 ${active ? "text-white/55" : "text-ink-soft"}`}>{choice.detail}</span>
+                  <span className={`mt-auto pt-4 text-xs leading-5 ${active ? "text-white/70" : "text-ink-soft"}`}>{choice.detail}</span>
                 </label>;
               })}
             </div>
           </fieldset>
-          <div className="mt-5 rounded-[1.25rem] border border-line bg-sky/25 p-4 sm:p-5"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-deep">Selected · {selectedOutput.title}</p><p className="mt-2 text-sm leading-6 text-ink-soft">{outputMode === "summary" ? "BookQuest builds a 20–35 minute guided reading edition: the central thread, connected sections, examples, nuance, and visible chapter coverage." : outputMode === "both" ? "The Deep Summary opens in its own reader. The course opens in Studio. They share the upload, not the experience." : "BookQuest creates an editable course draft with lessons and retrieval practice."}</p></div>
-          <label onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); const file = event.dataTransfer.files[0]; if (file) void uploadFile(file); }} className={`relative mt-5 flex min-h-60 cursor-pointer flex-col items-center justify-center rounded-[1.4rem] border border-dashed p-6 text-center transition-colors focus-within:ring-4 focus-within:ring-teal/15 ${dragging ? "border-teal bg-teal/5" : "border-line-deep bg-paper/45 hover:border-teal"}`}><input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadFile(file); }} aria-label={`Choose a document to create ${selectedOutput.title.toLowerCase()}`} className="absolute inset-0 cursor-pointer opacity-0" /><span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-6 w-6" /></span><strong className="display mt-5 text-3xl font-normal">{busy ? busyLabel : "Drop your document here"}</strong><span className="mt-2 text-xs text-ink-soft">or tap to choose PDF, DOCX, PPTX, Markdown, or text</span></label>
-          <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">{outputRequiresAi ? "AI-assisted source-grounded generation" : "AI-assisted editable course draft"}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message}${outputRequiresAi ? " Deep summaries require AI generation." : " Source-only course upload remains available."}` : outputRequiresAi ? `${outputMode === "both" ? "Two" : "One"} creation credit${outputMode === "both" ? "s" : ""} · private draft${outputMode === "both" ? "s" : ""}` : generateWithAi ? "On · uses one creation credit" : "Off · source-only course draft, no credit used"}</span></div>{outputRequiresAi ? <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold"><AppIcon name="spark" className="h-4 w-4 text-teal" />Required</span> : <label className={`inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold ${aiCapability && !aiCapability.enabled ? "opacity-60" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label>}</div>
+          <div className="mt-5 rounded-[1.25rem] border border-line bg-sky/25 p-4 sm:p-5"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-deep">Selected · {selectedOutput.title}</p><p className="mt-2 text-sm leading-6 text-ink-soft">{outputMode === "book" ? "BookQuest preserves the complete extracted text, matches a beautiful reading atmosphere with deterministic rules, and opens it immediately. No AI model is called." : outputMode === "summary" ? "BookQuest builds a 20–35 minute guided reading edition: the central thread, connected sections, examples, nuance, and visible chapter coverage." : outputMode === "both" ? "The Deep Summary opens in its own reader. The course opens in Studio. They share the upload, not the experience." : "BookQuest creates an editable course draft with lessons and retrieval practice."}</p></div>
+          <label aria-disabled={busy} onDragEnter={(event) => { event.preventDefault(); if (!busy) setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); if (busy) return; const file = event.dataTransfer.files[0]; if (file) prepareFile(file); }} className={`relative mt-5 flex min-h-60 flex-col items-center justify-center rounded-[1.4rem] border border-dashed p-6 text-center transition-colors focus-within:ring-4 focus-within:ring-teal/20 ${busy ? "cursor-wait border-line bg-paper/35 opacity-70" : dragging ? "cursor-copy border-teal bg-teal/5" : "cursor-pointer border-line-deep bg-paper/45 hover:border-teal"}`}><input ref={fileRef} type="file" accept=".pdf,.docx,.pptx,.md,.txt,.markdown" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) prepareFile(file); }} aria-label={`Choose a document to create ${selectedOutput.title.toLowerCase()}`} aria-describedby="upload-requirements" className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-wait" /><span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AppIcon name="source" className="h-6 w-6" /></span><strong className="display mt-5 max-w-full truncate text-3xl font-normal">{busy ? busyLabel : pendingFile ? pendingFile.name : "Drop your document here"}</strong><span id="upload-requirements" className="mt-2 text-xs leading-5 text-ink-soft">{pendingFile ? `${formatFileSize(pendingFile.size)} · tap or drop to replace` : "PDF, DOCX, PPTX, Markdown, or text · up to 4 MB"}</span></label>
+          {pendingFile && <div className="mt-4 rounded-[1.25rem] border border-line bg-card p-4 shadow-card" role="status"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-deep">Ready to create</p><p className="mt-1 truncate text-sm font-semibold">{pendingFile.name}</p><p className="mt-1 text-xs leading-5 text-ink-soft">{selectedOutput.title} · {outputMode === "book" ? "no credit" : outputMode === "both" ? "2 credits" : outputMode === "summary" || generateWithAi ? "1 credit" : "no credit"} · private by default</p></div><button type="button" disabled={busy} onClick={() => { setPendingFile(null); if (fileRef.current) fileRef.current.value = ""; }} className="quiet-button shrink-0 text-xs">Remove file</button></div><button type="button" onClick={() => void uploadFile(pendingFile)} disabled={busy || (outputRequiresAi && aiCapability?.enabled === false)} className="btn-primary mt-4 w-full">{busy ? busyLabel : `Create ${selectedOutput.title.toLowerCase()}`}</button><p className="mt-3 text-xs leading-5 text-ink-soft">BookQuest checks the file before creating anything. Nothing is published automatically.</p></div>}
+          {outputMode === "book" ? <div className="mt-4 flex flex-col gap-3 rounded-xl bg-go-soft p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm text-go-deep">Deterministic Reading Edition</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">No AI model, API budget, or creation credit. The full extracted text opens as soon as the upload is processed.</span></div><span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-go/30 bg-card px-4 text-sm font-semibold text-go-deep"><AppIcon name="check" className="h-4 w-4" />No AI</span></div> : <div className="mt-4 flex flex-col gap-3 rounded-xl bg-sky/35 p-4 sm:flex-row sm:items-center sm:justify-between"><div><strong className="block text-sm">{outputRequiresAi ? "AI-assisted source-grounded generation" : "AI-assisted editable course draft"}</strong><span className="mt-1 block text-xs leading-5 text-ink-soft">{aiCapability && !aiCapability.enabled ? `${aiCapability.message}${outputRequiresAi ? " Deep summaries require AI generation." : " Source-only course upload remains available."}` : outputRequiresAi ? `${outputMode === "both" ? "Two" : "One"} creation credit${outputMode === "both" ? "s" : ""} · private draft${outputMode === "both" ? "s" : ""}` : generateWithAi ? "On · uses one creation credit" : "Off · source-only course draft, no credit used"}</span></div>{outputRequiresAi ? <span className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold"><AppIcon name="spark" className="h-4 w-4 text-teal" />Required</span> : <label className={`inline-flex min-h-11 items-center gap-3 rounded-full border border-line-deep bg-card px-4 text-sm font-semibold ${aiCapability && !aiCapability.enabled ? "opacity-60" : ""}`}><input type="checkbox" checked={generateWithAi} disabled={aiCapability?.enabled === false} onChange={(event) => setGenerateWithAi(event.target.checked)} className="h-4 w-4" />{generateWithAi ? "On" : "Off"}</label>}</div>}
           {error && <p role="alert" className="mt-5 rounded-xl bg-no-soft px-4 py-3 text-sm font-semibold text-no">{error}</p>}
         </section>
 

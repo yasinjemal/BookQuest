@@ -3162,6 +3162,96 @@ ALTER TABLE summaries
     CHECK (generation_trigger_failures >= 0);
 `;
 
+const AI_DAILY_BUDGET_SQL = `
+CREATE TABLE ai_usage_events (
+  id BIGSERIAL PRIMARY KEY,
+  budget_day TEXT NOT NULL CHECK (budget_day ~ '^\\d{4}-\\d{2}-\\d{2}$'),
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  subject_type TEXT,
+  subject_id TEXT,
+  generation_run_id TEXT,
+  status TEXT NOT NULL DEFAULT 'reserved'
+    CHECK (status IN ('reserved','settled','uncertain')),
+  reserved_cost_micros BIGINT NOT NULL CHECK (reserved_cost_micros >= 0),
+  actual_cost_micros BIGINT CHECK (actual_cost_micros IS NULL OR actual_cost_micros >= 0),
+  estimated_input_tokens BIGINT NOT NULL CHECK (estimated_input_tokens >= 0),
+  max_output_tokens INTEGER NOT NULL CHECK (max_output_tokens > 0),
+  input_tokens BIGINT CHECK (input_tokens IS NULL OR input_tokens >= 0),
+  output_tokens BIGINT CHECK (output_tokens IS NULL OR output_tokens >= 0),
+  cache_creation_input_tokens BIGINT
+    CHECK (cache_creation_input_tokens IS NULL OR cache_creation_input_tokens >= 0),
+  cache_read_input_tokens BIGINT
+    CHECK (cache_read_input_tokens IS NULL OR cache_read_input_tokens >= 0),
+  input_price_usd_per_million NUMERIC(12,6) NOT NULL
+    CHECK (input_price_usd_per_million >= 0),
+  output_price_usd_per_million NUMERIC(12,6) NOT NULL
+    CHECK (output_price_usd_per_million >= 0),
+  provider_request_id TEXT,
+  error_code TEXT,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  completed_at TEXT,
+  CHECK (status <> 'settled' OR actual_cost_micros IS NOT NULL)
+);
+CREATE INDEX ai_usage_events_budget_day_status
+  ON ai_usage_events(budget_day, status);
+CREATE INDEX ai_usage_events_subject
+  ON ai_usage_events(subject_type, subject_id, created_at DESC);
+`;
+
+const READING_EDITIONS_SQL = `
+CREATE TABLE reading_editions (
+  id SERIAL PRIMARY KEY,
+  owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  owning_space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE RESTRICT,
+  title TEXT NOT NULL,
+  source_filename TEXT NOT NULL,
+  chapter_outline_json TEXT NOT NULL DEFAULT '[]',
+  source_chapter_count INTEGER NOT NULL CHECK (source_chapter_count > 0),
+  word_count INTEGER NOT NULL CHECK (word_count >= 0),
+  estimated_minutes INTEGER NOT NULL CHECK (estimated_minutes >= 0),
+  unit_kind TEXT NOT NULL CHECK (unit_kind IN ('page','chapter','section')),
+  vibe_id TEXT NOT NULL CHECK (vibe_id IN (
+    'archive-glow','clear-day','garden-notes','modern-atlas',
+    'night-ink','story-path','cosmic-margin'
+  )),
+  profile_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+CREATE INDEX reading_editions_owner_time
+  ON reading_editions(owner_id, created_at DESC);
+CREATE INDEX reading_editions_space_time
+  ON reading_editions(owning_space_id, created_at DESC);
+
+CREATE TABLE reading_edition_units (
+  id BIGSERIAL PRIMARY KEY,
+  edition_id INTEGER NOT NULL REFERENCES reading_editions(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position >= 0),
+  title TEXT NOT NULL,
+  source_text TEXT NOT NULL,
+  word_count INTEGER NOT NULL CHECK (word_count >= 0),
+  UNIQUE (edition_id, position)
+);
+CREATE INDEX reading_edition_units_edition_position
+  ON reading_edition_units(edition_id, position);
+
+CREATE TABLE reading_progress (
+  edition_id INTEGER NOT NULL REFERENCES reading_editions(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  unit_index INTEGER NOT NULL CHECK (unit_index >= 0),
+  unit_progress NUMERIC(5,2) NOT NULL DEFAULT 0
+    CHECK (unit_progress >= 0 AND unit_progress <= 100),
+  overall_progress NUMERIC(5,2) NOT NULL DEFAULT 0
+    CHECK (overall_progress >= 0 AND overall_progress <= 100),
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  PRIMARY KEY (edition_id, user_id)
+);
+CREATE INDEX reading_progress_user_time
+  ON reading_progress(user_id, updated_at DESC);
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -3192,6 +3282,8 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 23, name: "multi_channel_offline_foundation", sql: MULTI_CHANNEL_OFFLINE_FOUNDATION_SQL },
   { id: 24, name: "deep_summaries_foundation", sql: DEEP_SUMMARIES_FOUNDATION_SQL },
   { id: 25, name: "summary_generation_recovery", sql: SUMMARY_GENERATION_RECOVERY_SQL },
+  { id: 26, name: "ai_daily_budget", sql: AI_DAILY_BUDGET_SQL },
+  { id: 27, name: "reading_editions", sql: READING_EDITIONS_SQL },
 ];
 
 /**

@@ -221,7 +221,7 @@ describe.skipIf(!TEST_DB)("Phase 2 source library and editable blocks", () => {
     const job = await studio.beginScopedRegeneration(ownerId, courseId, {
       type: "block",
       key: recapBlockId,
-    });
+    }, "test-model");
     expect(job.targets).toHaveLength(1);
     const explanation = outlined.blocks.find((block) => block.id === explanationBlockId)!;
     await studio.updateCourseBlock(ownerId, courseId, explanationBlockId, {

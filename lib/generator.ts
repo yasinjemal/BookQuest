@@ -3,8 +3,14 @@ import {
   createAiProvider,
   DEFAULT_AI_MODEL,
   getAiAvailability,
+  isRetryableAiError,
   resolveAiConfiguration,
 } from "./ai-provider";
+import {
+  AiBudgetConfigurationError,
+  AiBudgetExceededError,
+  createBudgetedMessage,
+} from "./ai-budget";
 import {
   claimNextModule,
   countModules,
@@ -29,8 +35,9 @@ import {
   recordOperationalEvent,
 } from "./observability";
 
-export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v2-two-choice";
-export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v2-two-choice";
+export const COURSE_OUTLINE_PROMPT_VERSION = "course-outline-v2-cost-safe";
+export const COURSE_LESSON_PROMPT_VERSION = "course-lessons-v3-cost-safe";
+export const PRACTICE_PROMPT_VERSION = "practice-weak-concepts-v3-cost-safe";
 
 export function getGeneratorModel(): string {
   return resolveAiConfiguration().model || DEFAULT_AI_MODEL;
@@ -38,8 +45,8 @@ export function getGeneratorModel(): string {
 
 /** A module gets this many attempts across the whole durable run before it is
  *  marked failed; the outline gets this many too before the course fails. */
-export const MAX_MODULE_ATTEMPTS = 3;
-export const MAX_OUTLINE_ATTEMPTS = 3;
+export const MAX_MODULE_ATTEMPTS = 2;
+export const MAX_OUTLINE_ATTEMPTS = 2;
 
 function apiKeyMessage(raw: string): string {
   return /authentication|api.?key|x-api-key/i.test(raw)
@@ -67,25 +74,39 @@ Rules for all content you write:
 - Be warm and encouraging, never condescending.`;
 
 /** Outline the whole document into modules (one Claude call). */
-async function generateOutline(chapters: Chapter[]) {
-  const { client, model } = createAiProvider();
+async function generateOutline(
+  courseId: number,
+  generationRunId: string,
+  chapters: Chapter[]
+) {
+  const { client, model, provider } = createAiProvider();
   const chapterList = chapters
     .map((c, i) => `[${i}] ${c.title} — ${c.text.slice(0, 300).replace(/\n+/g, " ")}...`)
     .join("\n");
 
-  const outlineResp = await client.messages.parse({
-    model,
-    max_tokens: 8000,
-    thinking: { type: "adaptive" },
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: `Here are the chapters of a document (index, title, and opening excerpt):\n\n${chapterList}\n\nDesign a course outline that covers this document. Group related chapters into 4-12 modules in reading order. Every chapter index must be assigned to exactly one module.`,
-      },
-    ],
-    output_config: { format: zodOutputFormat(CourseOutline) },
-  });
+  const outlineResp = await createBudgetedMessage(
+    client,
+    {
+      provider,
+      model,
+      operation: "course.outline",
+      subjectType: "course",
+      subjectId: courseId,
+      generationRunId,
+    },
+    {
+      model,
+      max_tokens: 3000,
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `Here are the chapters of a document (index, title, and opening excerpt):\n\n${chapterList}\n\nDesign a course outline that covers this document. Group related chapters into 4-12 modules in reading order. Every chapter index must be assigned to exactly one module.`,
+        },
+      ],
+      output_config: { format: zodOutputFormat(CourseOutline) },
+    }
+  );
 
   const outline = outlineResp.parsed_output;
   if (!outline) throw new Error("Outline generation returned no parsable output.");
@@ -138,9 +159,9 @@ export async function runGenerationStep(
         severity: "info",
         area: "course.outline",
         subjectKey: operationalSubject("course", courseId),
-        metadata: { model: generatorModel, prompt_version: "course-outline-v1" },
+        metadata: { model: generatorModel, prompt_version: COURSE_OUTLINE_PROMPT_VERSION },
       });
-      const outline = await generateOutline(chapters);
+      const outline = await generateOutline(courseId, generationRunId, chapters);
       await setCourseMeta(courseId, outline.title, outline.description, generationRunId);
       for (let i = 0; i < outline.modules.length; i++) {
         const m = outline.modules[i];
@@ -165,8 +186,15 @@ export async function runGenerationStep(
         subjectKey: operationalSubject("course", courseId),
         metadata: { model: generatorModel },
       });
+      if (
+        err instanceof AiBudgetExceededError ||
+        err instanceof AiBudgetConfigurationError
+      ) {
+        await setCourseStatus(courseId, "error", err.message, generationRunId);
+        return "done";
+      }
       const attempts = await bumpCourseGenerationAttempts(courseId, generationRunId);
-      if (attempts >= MAX_OUTLINE_ATTEMPTS) {
+      if (!isRetryableAiError(err) || attempts >= MAX_OUTLINE_ATTEMPTS) {
         await setCourseStatus(
           courseId,
           "error",
@@ -199,6 +227,7 @@ export async function runGenerationStep(
         },
       });
       await generateModuleLessons(
+        courseId,
         claimed.id,
         claimed.title,
         sourceText,
@@ -215,10 +244,20 @@ export async function runGenerationStep(
         subjectKey: operationalSubject("course", courseId),
         metadata: { model: generatorModel },
       });
+      if (
+        err instanceof AiBudgetExceededError ||
+        err instanceof AiBudgetConfigurationError
+      ) {
+        await setModuleStatus(claimed.id, "pending", generationRunId);
+        await setCourseStatus(courseId, "error", err.message, generationRunId);
+        return "done";
+      }
       // Give up on this module after its final attempt; otherwise release it.
       await setModuleStatus(
         claimed.id,
-        claimed.attempts >= MAX_MODULE_ATTEMPTS ? "error" : "pending",
+        !isRetryableAiError(err) || claimed.attempts >= MAX_MODULE_ATTEMPTS
+          ? "error"
+          : "pending",
         generationRunId
       );
     }
@@ -263,58 +302,72 @@ export async function runGenerationUntilBudget(
 /** Fresh, never-seen practice questions targeting a learner's weakest
     concepts — the premium half of the mastery engine. */
 export async function generatePracticeQuiz(
+  courseId: number,
   courseTitle: string,
   weakConcepts: string[],
   sourceText: string
 ): Promise<Card[]> {
-  const { client, model } = createAiProvider();
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const resp = await client.messages.parse({
-        model,
-        max_tokens: 6000,
-        thinking: { type: "adaptive" },
-        system: SYSTEM,
-        messages: [
-          {
-            role: "user",
-            content: `A learner studying "${courseTitle}" is weak on these concepts: ${weakConcepts
-              .map((c) => `"${c}"`)
-              .join(", ")}.\n\nCourse material:\n\n${sourceText.slice(0, 30000)}\n\nWrite 6 brand-new two-choice quiz questions using only: (1) multiple choice with exactly 2 options, one correct and one plausible distractor, or (2) true/false. Never use fill-in, typing, or drag interactions. Avoid trick wording. Test exactly these weak concepts from fresh angles and tag each question's "concept" field with the matching concept string from the list above.`,
-          },
-        ],
-        output_config: { format: zodOutputFormat(PracticeQuiz) },
-      });
-      const parsed = resp.parsed_output;
-      if (!parsed) throw new Error("Practice generation returned no parsable output.");
-      return parsed.cards.filter((c) => Card.safeParse(c).success) as Card[];
-    } catch (error) {
-      if (attempt === 2) throw error;
+  const { client, model, provider } = createAiProvider();
+  const resp = await createBudgetedMessage(
+    client,
+    {
+      provider,
+      model,
+      operation: "practice.fresh",
+      subjectType: "practice",
+      subjectId: courseId,
+    },
+    {
+      model,
+      max_tokens: 2500,
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `A learner studying "${courseTitle}" is weak on these concepts: ${weakConcepts
+            .map((c) => `"${c}"`)
+            .join(", ")}.\n\nCourse material:\n\n${sourceText.slice(0, 30000)}\n\nWrite 6 brand-new two-choice quiz questions using only: (1) multiple choice with exactly 2 options, one correct and one plausible distractor, or (2) true/false. Never use fill-in, typing, or drag interactions. Avoid trick wording. Test exactly these weak concepts from fresh angles and tag each question's "concept" field with the matching concept string from the list above.`,
+        },
+      ],
+      output_config: { format: zodOutputFormat(PracticeQuiz) },
     }
-  }
-  throw new Error("Practice generation returned no parsable output.");
+  );
+  const parsed = resp.parsed_output;
+  if (!parsed) throw new Error("Practice generation returned no parsable output.");
+  return parsed.cards.filter((c) => Card.safeParse(c).success) as Card[];
 }
 
 async function generateModuleLessons(
+  courseId: number,
   moduleId: number,
   moduleTitle: string,
   sourceText: string,
   generationRunId: string
 ) {
-  const { client, model } = createAiProvider();
-  const resp = await client.messages.parse({
-    model,
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
+  const { client, model, provider } = createAiProvider();
+  const resp = await createBudgetedMessage(
+    client,
+    {
+      provider,
+      model,
+      operation: "course.module",
+      subjectType: "course",
+      subjectId: courseId,
+      generationRunId,
+    },
+    {
+      model,
+      max_tokens: 10000,
+      system: SYSTEM,
+      messages: [
+        {
+          role: "user",
         content: `Source material for the module "${moduleTitle}":\n\n${sourceText}\n\nCreate 2-4 lessons teaching this material. Each lesson: 8-14 cards, at least 40% quiz cards, starting with concept cards, quizzes interleaved after every 1-2 concepts, ending with a recap card. Use only multiple choice with exactly 2 options (one clearly correct and one plausible distractor) or true/false. Never create fill-in, typing, or drag interactions. Avoid trick wording. Cover the important ideas of the source — skip filler.`,
-      },
-    ],
-    output_config: { format: zodOutputFormat(ModuleLessons) },
-  });
+        },
+      ],
+      output_config: { format: zodOutputFormat(ModuleLessons) },
+    }
+  );
 
   const parsed = resp.parsed_output;
   if (!parsed) throw new Error("Lesson generation returned no parsable output.");

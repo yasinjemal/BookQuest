@@ -32,6 +32,9 @@ design baseline.
    ```
    BOOKQUEST_AI_PROVIDER=anthropic # anthropic | anthropic-compatible | disabled
    ANTHROPIC_API_KEY=sk-ant-...     # required for default AI generation
+   BOOKQUEST_AI_MODEL=claude-sonnet-4-6
+   BOOKQUEST_AI_DAILY_BUDGET_USD=5 # hard BookQuest-wide daily provider cap
+   BOOKQUEST_AI_BUDGET_TIME_ZONE=Africa/Johannesburg
    FLW_SECRET_KEY=FLWSECK-...       # optional; omit for test-mode billing
    BILLING_CURRENCY=USD             # optional, default USD
    RATE_LIMIT_SALT=random-secret    # recommended; hashes limiter identities
@@ -69,6 +72,8 @@ For production search setup, follow [`docs/SEO_LAUNCH_CHECKLIST.md`](docs/SEO_LA
   retries, and answer submission; identifiers are stored only as keyed hashes
 - Generation-run isolation prevents delayed AI workers from writing into a
   newer retry of the same course
+- A Postgres-backed AI cost ledger atomically reserves every call's maximum
+  charge and stops all BookQuest provider calls at the configured daily limit
 - Privacy-safe operational monitoring for AI volume, failures, abuse signals,
   and server errors, summarized in the admin dashboard
 - Service worker: cached app shell; authenticated APIs stay network-only to

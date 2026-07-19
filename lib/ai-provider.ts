@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-export const DEFAULT_AI_MODEL = "claude-opus-4-8";
+export const DEFAULT_AI_MODEL = "claude-sonnet-4-6";
 export const AI_DISABLED_MESSAGE =
   "AI generation is disabled for this installation. Create a source-only draft or edit/import approved content instead.";
 
@@ -150,9 +150,29 @@ export function createAiProvider(env: AiEnvironment = process.env) {
   return {
     client: new Anthropic({
       apiKey,
+      // Durable BookQuest jobs own retry policy. SDK retries would multiply a
+      // single claimed attempt into several separately billed HTTP requests.
+      maxRetries: 0,
       ...(availability.baseUrl ? { baseURL: availability.baseUrl } : {}),
     }),
     provider: availability.provider,
     model: availability.model,
   };
+}
+
+/** Only provider/network failures may use the job's one bounded retry. Parsing,
+ * grounding, configuration, authentication, and budget failures require an
+ * explicit user action instead of repeating the same paid request. */
+export function isRetryableAiError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === "ai_budget_exhausted" || code === "ai_budget_not_configured") {
+    return false;
+  }
+  const status = (error as { status?: unknown }).status;
+  if (typeof status === "number") {
+    return status === 408 || status === 409 || status === 429 || status >= 500;
+  }
+  const name = String((error as { name?: unknown }).name || "");
+  return /APIConnection|APIConnectionTimeout|TimeoutError/i.test(name);
 }

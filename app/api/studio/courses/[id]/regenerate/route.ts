@@ -4,6 +4,11 @@ import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, tooManyRequests } from
 import { studioApiError } from "@/lib/studio-api";
 import { regenerateStudioScope } from "@/lib/studio-generator";
 import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
+import {
+  AiBudgetExceededError,
+  aiBudgetErrorPayload,
+  aiBudgetRetryAfterSeconds,
+} from "@/lib/ai-budget";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -34,6 +39,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       body.instruction
     ));
   } catch (error) {
+    if (error instanceof AiBudgetExceededError) {
+      return NextResponse.json(aiBudgetErrorPayload(error), {
+        status: 429,
+        headers: { "Retry-After": String(aiBudgetRetryAfterSeconds(error)) },
+      });
+    }
     const response = studioApiError(error);
     if (response) return response;
     const message = error instanceof Error && /api.?key|authentication|provider/i.test(error.message)

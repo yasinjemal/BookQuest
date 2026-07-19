@@ -8,6 +8,7 @@ import AppIcon, { type AppIconName } from "@/components/AppIcon";
 const items: Array<{ href: string; label: string; icon: AppIconName }> = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/explore", label: "Explore courses", icon: "compass" },
+  { href: "/books", label: "Reading Room", icon: "bookmark" },
   { href: "/summaries", label: "Deep Reads", icon: "library" },
   { href: "/review", label: "Practice", icon: "practice" },
   { href: "/passport", label: "Skill Passport", icon: "shield" },
@@ -20,6 +21,14 @@ const mobileItems: Array<{ href: string; label: string; icon: AppIconName }> = [
   { href: "/summaries", label: "Deep Reads", icon: "library" },
   { href: "/create", label: "Create", icon: "create" },
   { href: "/spaces", label: "Spaces", icon: "spaces" },
+];
+
+const moreItems: Array<{ href: string; label: string; icon: AppIconName }> = [
+  { href: "/books", label: "Reading Room", icon: "bookmark" },
+  { href: "/explore", label: "Explore courses", icon: "compass" },
+  { href: "/review", label: "Practice", icon: "practice" },
+  { href: "/passport", label: "Skill Passport", icon: "shield" },
+  { href: "/analytics", label: "Analytics", icon: "trail" },
   { href: "/profile", label: "Account", icon: "account" },
 ];
 
@@ -28,7 +37,12 @@ const barePaths = [
   "/verify-email", "/verify-credential", "/passport/verify", "/accessibility", "/security",
   "/c/", "/creator/", "/pricing", "/demo", "/explore", "/solutions",
   "/how-it-works", "/resources", "/about",
-  "/summary/",
+  "/summary/", "/book/",
+];
+
+const appShellPrefixes = [
+  "/admin", "/analytics", "/books", "/class", "/classes", "/course", "/create", "/lti",
+  "/passport", "/profile", "/review", "/spaces", "/stats", "/studio", "/summaries",
 ];
 
 function activePath(pathname: string, href: string) {
@@ -53,8 +67,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const bare = barePaths.some((path) => pathname.startsWith(path)) ||
     (pathname.startsWith("/course/") && pathname.endsWith("/read")) ||
     pathname.startsWith("/lesson/") || pathname.startsWith("/cert/");
-  if (bare || (pathname === "/" && !signedInHome)) {
-    return <main id="main-content" className="min-h-dvh">{children}</main>;
+  const appShell = pathname === "/"
+    ? signedInHome
+    : appShellPrefixes.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  if (bare || !appShell) {
+    return <>
+      <a href="#main-content" className="skip-link">Skip to content</a>
+      <div id="main-content" tabIndex={-1} className="min-h-dvh">{children}</div>
+    </>;
   }
 
   return <div className="min-h-dvh bg-paper">
@@ -102,7 +122,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main id="main-content" className="app-main relative mx-auto min-h-dvh w-full max-w-[92rem]">{children}</main>
     </div>
 
-    <nav className="mobile-bottom-nav fixed z-30 grid grid-cols-5 overflow-hidden rounded-[1.15rem] border border-white/10 bg-sidebar/95 px-1 text-white shadow-[0_20px_50px_rgba(6,22,16,0.28)] backdrop-blur-xl lg:hidden" aria-label="Primary">
+    <nav className="mobile-bottom-nav fixed z-30 grid grid-cols-5 rounded-[1.15rem] border border-white/10 bg-sidebar/95 px-1 text-white shadow-[0_20px_50px_rgba(6,22,16,0.28)] backdrop-blur-xl lg:hidden" aria-label="Primary">
       {mobileItems.map((item) => {
         const active = activePath(pathname, item.href);
         const create = item.href === "/create";
@@ -112,6 +132,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {active && !create && <span className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-signal" aria-hidden="true" />}
         </Link>;
       })}
+      <details className="nav-popover group relative">
+        <summary aria-label="Open more navigation" aria-current={moreItems.some((item) => activePath(pathname, item.href)) ? "page" : undefined} className={`relative flex min-h-16 min-w-0 flex-col items-center justify-center gap-0.5 text-xs font-semibold ${moreItems.some((item) => activePath(pathname, item.href)) ? "text-white" : "text-white/55"}`}>
+          <span className={`grid h-8 w-10 place-items-center rounded-xl ${moreItems.some((item) => activePath(pathname, item.href)) ? "bg-white/10" : ""}`}><AppIcon name="layers" className="h-[18px] w-[18px]" /></span>
+          <span>More</span>
+          {moreItems.some((item) => activePath(pathname, item.href)) && <span className="absolute bottom-1.5 h-0.5 w-4 rounded-full bg-signal" aria-hidden="true" />}
+        </summary>
+        <div className="absolute bottom-[calc(100%+.75rem)] right-0 w-[min(20rem,calc(100vw-1.5rem))] rounded-[1.25rem] border border-line bg-card p-3 text-ink shadow-pop">
+          <div className="mb-2 flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[0.16em] text-ink-soft">More destinations</p><span className="text-xs text-ink-soft">BookQuest</span></div>
+          <div className="grid gap-1 sm:grid-cols-2">
+            {moreItems.map((item) => <Link key={item.href} href={item.href} aria-current={activePath(pathname, item.href) ? "page" : undefined} className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold ${activePath(pathname, item.href) ? "bg-sky text-ink" : "hover:bg-paper"}`}><AppIcon name={item.icon} className="h-4 w-4 text-teal" />{item.label}</Link>)}
+          </div>
+          <div className="my-2 h-px bg-line" />
+          <div className="flex flex-wrap gap-x-4 gap-y-2 px-2 py-1 text-xs font-semibold text-ink-soft"><Link href="/pricing" className="hover:text-ink">Pricing</Link><Link href="/security" className="hover:text-ink">Security</Link><Link href="/accessibility" className="hover:text-ink">Accessibility</Link></div>
+        </div>
+      </details>
     </nav>
   </div>;
 }

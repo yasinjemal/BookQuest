@@ -10,6 +10,26 @@ export const SUMMARY_STATUSES = [
 
 export type SummaryStatus = (typeof SUMMARY_STATUSES)[number];
 
+export const SUMMARY_GENERATION_STALE_MS = 210_000;
+
+export function isSummaryGenerationStalled(
+  summary: {
+    status: SummaryStatus;
+    generation_heartbeat: string | null;
+    updated_at: string;
+    created_at: string;
+  },
+  nowMs: number = Date.now()
+): boolean {
+  if (!new Set<SummaryStatus>(["extracting", "outlining", "generating"]).has(summary.status)) {
+    return false;
+  }
+  const lastActive = Date.parse(
+    summary.generation_heartbeat || summary.updated_at || summary.created_at
+  );
+  return !Number.isFinite(lastActive) || nowMs - lastActive >= SUMMARY_GENERATION_STALE_MS;
+}
+
 export const SUMMARY_DOCUMENT_KINDS = [
   "nonfiction",
   "narrative",
@@ -74,7 +94,7 @@ export const SummaryOutline = z.object({
   sections: z
     .array(SummaryOutlineSection)
     .min(1)
-    .max(24)
+    .max(48)
     .describe(
       "A reading-order journey through the source; every source chapter must appear exactly once"
     ),
@@ -203,6 +223,7 @@ export interface SummaryListItem {
   source_chapter_count: number;
   course_id: number | null;
   created_at: string;
+  generation_stalled: boolean;
 }
 
 export type SummarySectionStatus = "pending" | "generating" | "ready" | "error";

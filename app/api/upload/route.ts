@@ -23,25 +23,29 @@ import {
 } from "@/lib/observability";
 import { aiUnavailablePayload, getAiAvailability } from "@/lib/ai-provider";
 import {
+  AiBudgetConfigurationError,
+  AiBudgetExceededError,
+  aiBudgetErrorPayload,
+  aiBudgetRetryAfterSeconds,
+  assertAiBudgetAvailable,
+} from "@/lib/ai-budget";
+import {
   createSummary,
   deleteSummary,
   setSummarySource,
   setSummaryStatus,
 } from "@/lib/summary-db";
 import { runSummaryAndChain } from "@/lib/summary-generation";
+import { resolveCreationOutput } from "@/lib/creation-output";
+import {
+  createReadingEdition,
+  deleteReadingEdition,
+} from "@/lib/reading-editions";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const ALLOWED = new Set(["pdf", "docx", "pptx", "md", "txt", "markdown"]);
-type OutputMode = "course" | "summary" | "both";
-
-function outputMode(value: FormDataEntryValue | null): OutputMode | null {
-  if (value === null) return "course";
-  return value === "course" || value === "summary" || value === "both"
-    ? value
-    : null;
-}
 
 export async function POST(req: NextRequest) {
   const [user, unauth] = await requireUser(req);
@@ -59,19 +63,45 @@ export async function POST(req: NextRequest) {
   if (!ipLimit.allowed) return tooManyRequests(ipLimit);
 
   const form = await req.formData();
-  const output = outputMode(form.get("output"));
-  if (!output) {
-    return NextResponse.json({ error: "Choose course, summary, or both." }, { status: 400 });
-  }
   const generateRequested = form.get("generate") !== "false";
-  const wantsCourse = output === "course" || output === "both";
-  const wantsSummary = output === "summary" || output === "both";
-  const courseUsesAi = wantsCourse && (output === "both" || generateRequested);
-  const requiresAi = wantsSummary || courseUsesAi;
-  const creditsRequired = (wantsSummary ? 1 : 0) + (courseUsesAi ? 1 : 0);
+  const plan = resolveCreationOutput(form.get("output"), generateRequested);
+  if (!plan) {
+    return NextResponse.json(
+      { error: "Choose full book, course, summary, or both." },
+      { status: 400 }
+    );
+  }
+  const {
+    output,
+    wantsBook,
+    wantsCourse,
+    wantsSummary,
+    courseUsesAi,
+    requiresAi,
+    creditsRequired,
+  } = plan;
   const ai = getAiAvailability();
   if (requiresAi && !ai.enabled) {
     return NextResponse.json(aiUnavailablePayload(ai), { status: 503 });
+  }
+  if (requiresAi) {
+    try {
+      await assertAiBudgetAvailable(ai.model!);
+    } catch (error) {
+      if (error instanceof AiBudgetExceededError) {
+        return NextResponse.json(aiBudgetErrorPayload(error), {
+          status: 429,
+          headers: { "Retry-After": String(aiBudgetRetryAfterSeconds(error)) },
+        });
+      }
+      if (error instanceof AiBudgetConfigurationError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code },
+          { status: 503 }
+        );
+      }
+      throw error;
+    }
   }
 
   const isAdmin = user.role === "admin";
@@ -136,8 +166,12 @@ export async function POST(req: NextRequest) {
 
   let createdCourse: Awaited<ReturnType<typeof createCourse>> | undefined;
   let createdSummary: Awaited<ReturnType<typeof createSummary>> | undefined;
+  let createdReadingEdition: Awaited<ReturnType<typeof createReadingEdition>> | undefined;
   const sourceJson = JSON.stringify(chapters);
   try {
+    if (wantsBook) {
+      createdReadingEdition = await createReadingEdition(user.id, file.name, chapters);
+    }
     if (wantsCourse) {
       createdCourse = await createCourse(user.id, file.name);
       await setCourseSource(createdCourse.id, sourceJson, {
@@ -175,6 +209,11 @@ export async function POST(req: NextRequest) {
     }
     if (createdCourse) {
       await deleteCourse(createdCourse.id).catch((cleanupError) => {
+        cleanupErrors.push(cleanupError);
+      });
+    }
+    if (createdReadingEdition) {
+      await deleteReadingEdition(createdReadingEdition.id, user.id).catch((cleanupError) => {
         cleanupErrors.push(cleanupError);
       });
     }
@@ -236,9 +275,12 @@ export async function POST(req: NextRequest) {
     ? `/summary/${createdSummary.id}`
     : createdCourse
       ? `/studio/${createdCourse.id}`
-      : "/";
+      : createdReadingEdition
+        ? `/book/${createdReadingEdition.id}`
+        : "/";
   return NextResponse.json({
     mode: output,
+    bookId: createdReadingEdition?.id,
     courseId: createdCourse?.id,
     summaryId: createdSummary?.id,
     chapters: chapters.length,

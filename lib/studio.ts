@@ -1657,7 +1657,8 @@ export interface RegenerationTarget {
 export async function beginScopedRegeneration(
   userId: number,
   courseId: number,
-  scope: RegenerationScope
+  scope: RegenerationScope,
+  model: string
 ) {
   return tx(async (client) => {
     const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
@@ -1689,14 +1690,14 @@ export async function beginScopedRegeneration(
       )
     ).rows;
     if (targets.length === 0) throw new StudioConflictError("Regeneration scope is empty");
-    if (targets.length > 20) throw new StudioConflictError("Regenerate at most 20 blocks at once");
+    if (targets.length > 5) throw new StudioConflictError("Regenerate at most 5 blocks at once");
     const runId = newGenerationRunId();
     const job = (
       await client.query<{ id: string }>(
         `INSERT INTO course_generation_jobs
           (course_version_id, scope_type, scope_key, base_revision, run_id,
            status, model, prompt_version, requested_by_user_id, started_at)
-         VALUES ($1,$2,$3,$4,$5,'running','claude-opus-4-8','studio-scope-v1',$6,$7)
+         VALUES ($1,$2,$3,$4,$5,'running',$6,'studio-scope-v2-cost-safe',$7,$8)
          RETURNING id`,
         [
           course.current_draft_version_id,
@@ -1704,6 +1705,7 @@ export async function beginScopedRegeneration(
           scope.key,
           scope.type === "block" ? targets[0].current_revision : null,
           runId,
+          model,
           userId,
           nowIso(),
         ]
@@ -1721,6 +1723,7 @@ export async function beginScopedRegeneration(
     ).rows;
     return {
       jobId: job.id,
+      generationRunId: runId,
       courseVersionId: course.current_draft_version_id,
       targets: targets.map((target): RegenerationTarget => ({
         id: target.id,

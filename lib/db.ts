@@ -410,6 +410,7 @@ export interface PlatformCourseCols {
   price_cents: number;
   content_version: number;
   generation_run_id: string;
+  generation_heartbeat: string | null;
   authoring_status: string;
   current_draft_version_id: string | null;
   published_version_id: string | null;
@@ -749,9 +750,8 @@ export async function recoverStuckModules(
 /**
  * Atomically lease owned courses whose generation appears stalled.
  *
- * Moving the heartbeat as part of the claim prevents every concurrent course
- * poll from firing the same recovery request. If the trigger fails, the lease
- * naturally expires after the normal stale window and another request retries.
+ * Moving the heartbeat as part of the claim ensures concurrent explicit
+ * recovery actions cannot schedule the same generation run twice.
  */
 export async function claimStalledCourses(
   ownerId: number,
@@ -774,6 +774,26 @@ export async function claimStalledCourses(
      RETURNING course.id, course.generation_run_id`,
     [ownerId, staleBeforeIso, claimedAtIso]
   )) as { id: number; generation_run_id: string }[];
+}
+
+/** Claim one stale active course only after an explicit resume request. */
+export async function claimStalledCourse(
+  courseId: number,
+  staleBeforeIso: string,
+  claimedAtIso: string
+): Promise<{ id: number; generation_run_id: string } | undefined> {
+  return await one<{ id: number; generation_run_id: string }>(
+    `WITH stalled AS (
+       SELECT id FROM courses
+       WHERE id = $1 AND status IN ('extracting','outlining','generating')
+         AND (generation_heartbeat IS NULL OR generation_heartbeat < $2)
+       FOR UPDATE SKIP LOCKED
+     )
+     UPDATE courses course SET generation_heartbeat = $3
+     FROM stalled WHERE course.id = stalled.id
+     RETURNING course.id, course.generation_run_id`,
+    [courseId, staleBeforeIso, claimedAtIso]
+  );
 }
 
 export async function listModules(courseId: number): Promise<ModuleRow[]> {

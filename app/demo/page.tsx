@@ -21,7 +21,7 @@ export default function DemoPage() {
           <p className="text-[10px] font-bold uppercase tracking-[.2em] text-signal">Interactive demo</p>
           <h1 className="display mt-4 text-[clamp(3.5rem,10vw,6.5rem)] leading-[.86]">From shop manual to a course people finish.</h1>
           <p className="mt-6 text-base leading-7 text-white/72">See how a clothing retailer can turn onboarding and shop procedures into a clear journey with practical checks and proof of completion.</p>
-          <Link href="/register" className="mt-8 inline-flex min-h-12 w-fit items-center rounded-full bg-signal px-6 text-sm font-bold text-ink">Build yours free →</Link>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap"><Link href="/register" className="inline-flex min-h-12 w-fit items-center rounded-full bg-signal px-6 text-sm font-bold text-ink">Build yours free →</Link><Link href="/demo/reading-room" className="inline-flex min-h-12 w-fit items-center rounded-full border border-white/20 px-6 text-sm font-bold text-white hover:bg-white/10">Try the full-book reader</Link></div>
         </div>
       </section>
       <section className="mx-auto mt-16 max-w-4xl">
