@@ -27,11 +27,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
   try {
     const coursePackage = await exportCourseArchive(user.id, courseId);
-    return new NextResponse(JSON.stringify(coursePackage, null, 2), {
+    const body = JSON.stringify(coursePackage);
+    return new NextResponse(body, {
       headers: {
         ...privateHeaders,
         "Content-Type": `application/vnd.bookquest.course+json; version=${COURSE_ARCHIVE_SCHEMA_VERSION}; charset=utf-8`,
         "Content-Disposition": `attachment; filename="bookquest-course-${coursePackage.integrity.sha256.slice(0, 12)}.json"`,
+        "Content-Length": String(Buffer.byteLength(body, "utf8")),
         "X-BookQuest-Portable-Profile": `${COURSE_ARCHIVE_FORMAT}-${COURSE_ARCHIVE_SCHEMA_VERSION}`,
         "X-Content-Type-Options": "nosniff",
       },

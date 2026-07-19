@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { analyzeCourseArchive, importCourseArchive, MAX_COURSE_ARCHIVE_BYTES, portabilityApiError, type CourseImportReport } from "@/lib/portability";
-import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, tooManyRequests } from "@/lib/rate-limit";
+import { analyzeCourseArchive, importCourseArchive, MAX_COURSE_IMPORT_REQUEST_BYTES, portabilityApiError, type CourseImportReport } from "@/lib/portability";
+import { consumeRateLimit, RATE_LIMITS, rateLimitSubject, requestIp, tooManyRequests } from "@/lib/rate-limit";
 import { spaceApiError } from "@/lib/space-api";
 
 export const runtime = "nodejs";
@@ -28,14 +28,23 @@ export async function POST(req: NextRequest) {
     unauth.headers.set("Cache-Control", "private, no-store");
     return unauth;
   }
-  const limit = await consumeRateLimit(RATE_LIMITS.studioMutationUser, rateLimitSubject("user", user.id));
-  if (!limit.allowed) {
-    const response = tooManyRequests(limit);
+  const userLimit = await consumeRateLimit(RATE_LIMITS.portableImportUser, rateLimitSubject("user", user.id));
+  if (!userLimit.allowed) {
+    const response = tooManyRequests(userLimit);
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   }
-  const size = Number(req.headers.get("content-length") ?? 0);
-  if (size > MAX_COURSE_ARCHIVE_BYTES) return NextResponse.json({ error: "Course archive exceeds the 10 MB limit" }, { status: 413, headers: privateHeaders });
+  const ipLimit = await consumeRateLimit(RATE_LIMITS.portableImportIp, rateLimitSubject("ip", requestIp(req)));
+  if (!ipLimit.allowed) {
+    const response = tooManyRequests(ipLimit);
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
+  const contentLength = req.headers.get("content-length");
+  if (!contentLength) return NextResponse.json({ error: "A bounded archive size is required" }, { status: 411, headers: privateHeaders });
+  const size = Number(contentLength);
+  if (!Number.isSafeInteger(size) || size <= 0) return NextResponse.json({ error: "Archive request size is invalid" }, { status: 400, headers: privateHeaders });
+  if (size > MAX_COURSE_IMPORT_REQUEST_BYTES) return NextResponse.json({ error: "Course archive request exceeds the 10 MB package limit" }, { status: 413, headers: privateHeaders });
   let body: { mode?: "dry_run" | "import"; targetSpaceId?: string; title?: string; package?: unknown };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Upload a valid BookQuest portable course JSON file" }, { status: 400, headers: privateHeaders }); }

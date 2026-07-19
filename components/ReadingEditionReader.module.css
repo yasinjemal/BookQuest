@@ -61,7 +61,7 @@
 .cover { display: grid; min-height: min(46rem, calc(100dvh - 8rem)); overflow: hidden; border: 1px solid var(--course-line); border-radius: 1.75rem; background: var(--course-canvas); box-shadow: var(--course-card-shadow); grid-template-columns: minmax(0, 1.08fr) minmax(20rem, .92fr); }
 .coverCopy { display: flex; flex-direction: column; justify-content: center; padding: clamp(2rem, 7vw, 5rem); }
 .coverCopy > p:first-child { color: var(--course-accent-ink); font-size: 0.65rem; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
-.coverCopy h1 { max-width: 14ch; margin-top: 1rem; overflow-wrap: normal; font-size: clamp(3.3rem, 6.2vw, 5.4rem); line-height: .88; word-break: keep-all; }
+.coverCopy h1 { max-width: 14ch; margin-top: 1rem; overflow-wrap: anywhere; font-size: clamp(3.3rem, 6.2vw, 5.4rem); line-height: .88; word-break: normal; }
 .vibeNote { max-width: 34rem; margin-top: 1.5rem; color: var(--course-ink-soft); font-size: .82rem; line-height: 1.7; }
 .coverStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 2rem; border-block: 1px solid var(--course-line); }
 .coverStats div { padding: 1rem .8rem 1rem 0; }
@@ -131,6 +131,8 @@
 .settingsBody fieldset { border: 1px solid var(--course-line); border-radius: 1rem; padding: 1rem; }
 .settingsBody legend { padding-inline: .35rem; font-size: .68rem; font-weight: 850; }
 .settingsBody fieldset > small { display: block; margin-top: .7rem; color: var(--course-ink-soft); font-size: .58rem; line-height: 1.55; }
+.coverSettingPreview { position: relative; width: 5.5rem; aspect-ratio: 2 / 3; overflow: hidden; border: 1px solid var(--course-line-deep); border-radius: .75rem; background: var(--course-page); box-shadow: var(--course-card-shadow); }
+.coverSettingPreview .world { min-height: 100%; }
 .modeGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
 .modeGrid label { position: relative; }
 .modeGrid input { position: absolute; opacity: 0; }
@@ -166,7 +168,8 @@
 
 @media (max-width: 48rem) {
   .cover { grid-template-columns: 1fr; }
-  .coverWorld { min-height: 17rem; border-top: 1px solid var(--course-line); border-left: 0; }
+  .coverWorld { grid-row: 1; min-height: 17rem; border-bottom: 1px solid var(--course-line); border-left: 0; }
+  .coverCopy { grid-row: 2; }
   .coverStats { grid-template-columns: 1fr; }
   .coverStats div + div { border-top: 1px solid var(--course-line); border-left: 0; padding-left: 0; }
   .unitFooter { grid-template-columns: 1fr; }

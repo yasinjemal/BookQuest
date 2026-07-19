@@ -53,6 +53,7 @@ export interface ReadingEditionListItem {
   estimatedMinutes: number;
   unitKind: ReadingUnitKind;
   vibeId: ReadingVibeId;
+  coverHash: string | null;
   createdAt: string;
   progress: ReadingProgress | null;
 }

@@ -164,7 +164,7 @@ describe.skipIf(!TEST_DB)("LTI 1.3 secure launch foundation", () => {
     expect(link.subject_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(link.subject_hash).not.toContain("platform-user-42");
     const exported = await privacy.createAccountExport(learnerId);
-    expect(exported.schemaVersion).toBe(11);
+    expect(exported.schemaVersion).toBe(12);
     expect(exported.learning.ltiLinks).toMatchObject([{ registration_id: registration.id, subject_hash: link.subject_hash }]);
   });
 

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import crypto from "node:crypto";
 import type { QuizCard } from "../lib/learning-types";
 
 const TEST_DB = process.env.TEST_DATABASE_URL;
@@ -9,6 +10,7 @@ let pg: typeof import("../lib/pg");
 let userId: number;
 let courseId: number;
 let learnerKey: string;
+let coverHash: string;
 
 const card: QuizCard = {
   type: "quiz_truefalse",
@@ -39,6 +41,16 @@ describe.skipIf(!TEST_DB)("account privacy lifecycle", () => {
     const user = await data.createUser("privacy@example.com", "Private Learner", "hash");
     userId = user.id;
     courseId = (await data.createCourse(userId, "private-source.pdf")).id;
+    const coverBytes = Buffer.from("normalized-private-cover");
+    coverHash = crypto.createHash("sha256").update(coverBytes).digest("hex");
+    await pg.q(
+      `INSERT INTO cover_images
+        (content_hash,image_data,mime_type,width,height,byte_size,
+         thumbnail_data,thumbnail_width,thumbnail_height,thumbnail_byte_size)
+       VALUES ($1,$2,'image/webp',320,480,$3,$2,320,480,$3)`,
+      [coverHash, coverBytes, coverBytes.length]
+    );
+    await pg.q("UPDATE courses SET cover_image_hash=$2 WHERE id=$1", [courseId, coverHash]);
     await data.setCourseSource(courseId, JSON.stringify({ private: "source text" }));
     const moduleId = await data.createModule(courseId, "Privacy", "Choices", 0);
     const lessonId = await data.createLesson(moduleId, "Consent", 0, JSON.stringify([card]));
@@ -85,6 +97,9 @@ describe.skipIf(!TEST_DB)("account privacy lifecycle", () => {
     expect(exported.content.authoring.personalSpaces).toHaveLength(1);
     expect(exported.content.authoring.sourceAssets.length).toBeGreaterThan(0);
     expect(exported.content.authoring.sourceVersions[0].extracted_content_json).toContain("source text");
+    expect(exported.content.coverImages).toEqual([
+      expect.objectContaining({ content_hash: coverHash, mime_type: "image/webp" }),
+    ]);
     expect(exported.learning.events).toHaveLength(1);
     expect(exported.billing).toHaveLength(1);
     const serialized = JSON.stringify(exported);
@@ -116,6 +131,7 @@ describe.skipIf(!TEST_DB)("account privacy lifecycle", () => {
     });
     expect(erased!.email).toBe(`erased-${userId}@deleted.invalid`);
     expect(await data.getCourse(courseId)).toBeUndefined();
+    expect(await pg.one("SELECT content_hash FROM cover_images WHERE content_hash=$1", [coverHash])).toBeUndefined();
     expect(
       await pg.one("SELECT learner_key FROM learning_identities WHERE user_id = $1", [userId])
     ).toEqual({ learner_key: learnerKey });

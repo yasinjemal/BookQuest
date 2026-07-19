@@ -6,10 +6,14 @@ import { newGenerationRunId } from "./generation-run";
 import { pool, tx, type Queryable } from "./pg";
 import type { RecipeDefinition, RecipeVisibility } from "./recipes";
 import { authorizeStoredMembership } from "./spaces";
+import { assertCoverStorageCapacity, insertCoverImage } from "./cover-images";
+import { CoverImageError, validateStoredCoverImage, type ProcessedCoverImage } from "./cover-processing";
 
 export const COURSE_ARCHIVE_FORMAT = "bookquest.course" as const;
-export const COURSE_ARCHIVE_SCHEMA_VERSION = 1 as const;
+export const COURSE_ARCHIVE_SCHEMA_VERSION = 2 as const;
+const LEGACY_COURSE_ARCHIVE_SCHEMA_VERSION = 1 as const;
 export const MAX_COURSE_ARCHIVE_BYTES = 10 * 1024 * 1024;
+export const MAX_COURSE_IMPORT_REQUEST_BYTES = MAX_COURSE_ARCHIVE_BYTES + 64 * 1024;
 export const RECIPE_ARCHIVE_FORMAT = "bookquest.recipe" as const;
 export const RECIPE_ARCHIVE_SCHEMA_VERSION = 1 as const;
 export const MAX_RECIPE_ARCHIVE_BYTES = 2 * 1024 * 1024;
@@ -75,20 +79,48 @@ const RecipeSchema = z.object({
   contentSha256: z.string().regex(/^[0-9a-f]{64}$/),
 });
 
+const CoverSchema = z.object({
+  mimeType: z.literal("image/webp"),
+  width: z.number().int().positive().max(1600),
+  height: z.number().int().positive().max(2400),
+  byteSize: z.number().int().positive().max(1_500_000),
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  dataBase64: z.string().min(1).max(2_100_000),
+});
+
+const PortableCourseSchemaV1 = z.object({
+  title: z.string().min(2).max(120),
+  description: z.string().max(5000),
+  category: z.string().max(120),
+  appearance: CourseAppearanceSchema,
+  sourceVersionNumber: z.number().int().positive(),
+  sourceLifecycle: z.enum(["draft", "review", "approved", "published", "superseded", "archived"]),
+});
+
+const PortableCourseSchema = PortableCourseSchemaV1.extend({
+  cover: CoverSchema.optional(),
+});
+
+const ArchiveCoreSchemaV1 = z.object({
+  format: z.literal(COURSE_ARCHIVE_FORMAT),
+  schemaVersion: z.literal(LEGACY_COURSE_ARCHIVE_SCHEMA_VERSION),
+  archiveId: z.string().min(1).max(240),
+  exportedAt: z.string().datetime({ offset: true }),
+  payload: z.object({
+    course: PortableCourseSchemaV1,
+    sources: z.array(SourceSchema).max(50),
+    recipe: RecipeSchema.nullable(),
+    blocks: z.array(BlockSchema).max(5000),
+  }),
+});
+
 const ArchiveCoreSchema = z.object({
   format: z.literal(COURSE_ARCHIVE_FORMAT),
   schemaVersion: z.literal(COURSE_ARCHIVE_SCHEMA_VERSION),
   archiveId: z.string().min(1).max(240),
   exportedAt: z.string().datetime({ offset: true }),
   payload: z.object({
-    course: z.object({
-      title: z.string().min(2).max(120),
-      description: z.string().max(5000),
-      category: z.string().max(120),
-      appearance: CourseAppearanceSchema,
-      sourceVersionNumber: z.number().int().positive(),
-      sourceLifecycle: z.enum(["draft", "review", "approved", "published", "superseded", "archived"]),
-    }),
+    course: PortableCourseSchema,
     sources: z.array(SourceSchema).max(50),
     recipe: RecipeSchema.nullable(),
     blocks: z.array(BlockSchema).max(5000),
@@ -99,6 +131,15 @@ export const CourseArchiveSchema = ArchiveCoreSchema.extend({
   integrity: z.object({ algorithm: z.literal("sha256"), sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
 });
 export type CourseArchive = z.infer<typeof CourseArchiveSchema>;
+
+const CourseArchiveSchemaV1 = ArchiveCoreSchemaV1.extend({
+  integrity: z.object({ algorithm: z.literal("sha256"), sha256: z.string().regex(/^[0-9a-f]{64}$/) }),
+});
+const AnyCourseArchiveSchema = z.discriminatedUnion("schemaVersion", [
+  CourseArchiveSchemaV1,
+  CourseArchiveSchema,
+]);
+type ParsedCourseArchive = z.infer<typeof AnyCourseArchiveSchema>;
 
 const RecipeArchiveCoreSchema = z.object({
   format: z.literal(RECIPE_ARCHIVE_FORMAT),
@@ -122,7 +163,7 @@ export interface ImportIssue {
 
 export interface CourseImportReport {
   format: typeof COURSE_ARCHIVE_FORMAT;
-  schemaVersion: typeof COURSE_ARCHIVE_SCHEMA_VERSION;
+  schemaVersion: typeof LEGACY_COURSE_ARCHIVE_SCHEMA_VERSION | typeof COURSE_ARCHIVE_SCHEMA_VERSION;
   archiveId: string;
   archiveSha256: string;
   canImport: boolean;
@@ -157,6 +198,44 @@ export function stableJson(value: unknown) {
 
 export function portableSha256(value: unknown) {
   return crypto.createHash("sha256").update(typeof value === "string" ? value : stableJson(value)).digest("hex");
+}
+
+function portableCoverBytes(cover: z.infer<typeof CoverSchema>) {
+  const bytes = Buffer.from(cover.dataBase64, "base64");
+  if (bytes.length !== cover.byteSize || bytes.toString("base64") !== cover.dataBase64) {
+    throw new PortabilityError("Course cover bytes are not valid base64 or do not match their declared size");
+  }
+  if (crypto.createHash("sha256").update(bytes).digest("hex") !== cover.contentHash) {
+    throw new PortabilityError("Course cover integrity check failed");
+  }
+  return bytes;
+}
+
+async function validatePortableCover(
+  archive: ParsedCourseArchive
+): Promise<ProcessedCoverImage | null> {
+  if (archive.schemaVersion !== COURSE_ARCHIVE_SCHEMA_VERSION) return null;
+  const declaration = archive.payload.course.cover;
+  if (!declaration) return null;
+  try {
+    const cover = await validateStoredCoverImage(portableCoverBytes(declaration));
+    if (
+      cover.mimeType !== declaration.mimeType ||
+      cover.width !== declaration.width ||
+      cover.height !== declaration.height ||
+      cover.byteSize !== declaration.byteSize ||
+      cover.contentHash !== declaration.contentHash
+    ) {
+      throw new PortabilityError("Course cover metadata does not match its image bytes", 422);
+    }
+    return cover;
+  } catch (error) {
+    if (error instanceof PortabilityError) throw error;
+    if (error instanceof CoverImageError) {
+      throw new PortabilityError(`Course cover is not restorable: ${error.message}`, 422);
+    }
+    throw error;
+  }
 }
 
 function safeJson(value: string | null | undefined, fallback: unknown) {
@@ -253,7 +332,8 @@ export async function exportCourseArchive(actorUserId: number, courseId: number)
       id: number; owning_space_id: string; title: string; description: string; category: string;
       public_slug: string; current_draft_version_id: string | null; published_version_id: string | null;
     }>(`SELECT id,owning_space_id,title,description,category,public_slug,
-             current_draft_version_id,published_version_id FROM courses WHERE id=$1`, [courseId])).rows[0];
+             current_draft_version_id,published_version_id
+          FROM courses WHERE id=$1 FOR SHARE`, [courseId])).rows[0];
     if (!course) throw new PortabilityError("Course not found", 404);
     await authorizeStoredMembership(actorUserId, course.owning_space_id, "content.update", client);
     const versionId = course.current_draft_version_id ?? course.published_version_id;
@@ -320,30 +400,67 @@ export async function exportCourseArchive(actorUserId: number, courseId: number)
           definition, contentSha256: portableSha256(definition) };
       }
     }
+    let cover: z.infer<typeof CoverSchema> | undefined;
+    if (version.cover_image_hash) {
+      const image = (
+        await client.query<{
+          image_data: Buffer;
+          mime_type: "image/webp";
+          width: number;
+          height: number;
+          byte_size: number;
+          content_hash: string;
+        }>("SELECT image_data, mime_type, width, height, byte_size, content_hash FROM cover_images WHERE content_hash = $1", [version.cover_image_hash])
+      ).rows[0];
+      if (image) {
+        cover = {
+          mimeType: image.mime_type,
+          width: Number(image.width),
+          height: Number(image.height),
+          byteSize: Number(image.byte_size),
+          contentHash: image.content_hash,
+          dataBase64: image.image_data.toString("base64"),
+        };
+      }
+    }
     const core: z.infer<typeof ArchiveCoreSchema> = {
       format: COURSE_ARCHIVE_FORMAT, schemaVersion: COURSE_ARCHIVE_SCHEMA_VERSION,
       archiveId: `urn:bookquest:course:${archiveScope}:v${Number(version.version_number)}`,
       exportedAt: new Date().toISOString(),
       payload: { course: { title: String(version.title), description: String(version.description),
         category: course.category, appearance: parseCourseAppearance(version.appearance_json),
+        ...(cover ? { cover } : {}),
         sourceVersionNumber: Number(version.version_number), sourceLifecycle: version.lifecycle_status as z.infer<typeof ArchiveCoreSchema>["payload"]["course"]["sourceLifecycle"] },
         sources, recipe, blocks },
     };
-    return CourseArchiveSchema.parse({ ...core, integrity: { algorithm: "sha256", sha256: portableSha256(core) } });
+    const archive = CourseArchiveSchema.parse({
+      ...core,
+      integrity: { algorithm: "sha256", sha256: portableSha256(core) },
+    });
+    if (Buffer.byteLength(JSON.stringify(archive), "utf8") > MAX_COURSE_ARCHIVE_BYTES) {
+      throw new PortabilityError(
+        "Course archive exceeds the 10 MB portable limit. Remove unusually large source content or the cover before exporting.",
+        413
+      );
+    }
+    return archive;
   });
 }
 
-export function parseCourseArchive(input: unknown): CourseArchive {
+export function parseCourseArchive(input: unknown): ParsedCourseArchive {
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > MAX_COURSE_ARCHIVE_BYTES) {
     throw new PortabilityError("Course archive exceeds the 10 MB limit", 413);
   }
-  const result = CourseArchiveSchema.safeParse(input);
+  const result = AnyCourseArchiveSchema.safeParse(input);
   if (!result.success) {
     const issue = result.error.issues[0];
     throw new PortabilityError(`Invalid course archive at ${issue?.path.join(".") || "document"}: ${issue?.message || "validation failed"}`);
   }
   const { integrity, ...core } = result.data;
   if (portableSha256(core) !== integrity.sha256) throw new PortabilityError("Course archive integrity check failed");
+  if (result.data.schemaVersion === COURSE_ARCHIVE_SCHEMA_VERSION && result.data.payload.course.cover) {
+    portableCoverBytes(result.data.payload.course.cover);
+  }
   return result.data;
 }
 
@@ -447,7 +564,7 @@ export async function analyzeRecipeArchive(
   return analyzeParsedRecipeArchive(pool, actorUserId, targetSpaceId, parseRecipeArchive(input), titleOverride);
 }
 
-async function analyzeParsedArchive(exec: Queryable, actorUserId: number, targetSpaceId: string, archive: CourseArchive, titleOverride?: string): Promise<CourseImportReport> {
+async function analyzeParsedArchive(exec: Queryable, actorUserId: number, targetSpaceId: string, archive: ParsedCourseArchive, titleOverride?: string): Promise<CourseImportReport> {
   await authorizeStoredMembership(actorUserId, targetSpaceId, "content.create", exec);
   const issues: ImportIssue[] = [];
   const requestedTitle = titleOverride?.trim() || archive.payload.course.title;
@@ -487,7 +604,7 @@ async function analyzeParsedArchive(exec: Queryable, actorUserId: number, target
        WHERE source.owning_space_id=$1 AND version.content_hash=$2 LIMIT 1`, [targetSpaceId, source.contentSha256]);
     if (match.rowCount) issues.push({ severity: "info", code: "source_content_exists", path: `payload.sources.${source.portableId}`, message: "Matching source content exists; import creates an isolated owned copy." });
   }
-  return { format: COURSE_ARCHIVE_FORMAT, schemaVersion: COURSE_ARCHIVE_SCHEMA_VERSION,
+  return { format: COURSE_ARCHIVE_FORMAT, schemaVersion: archive.schemaVersion,
     archiveId: archive.archiveId, archiveSha256: archive.integrity.sha256,
     canImport: !issues.some((issue) => issue.severity === "error"), proposedTitle,
     counts: { sources: archive.payload.sources.length, blocks: archive.payload.blocks.length,
@@ -498,10 +615,12 @@ async function analyzeParsedArchive(exec: Queryable, actorUserId: number, target
 
 export async function analyzeCourseArchive(actorUserId: number, targetSpaceId: string, input: unknown, titleOverride?: string) {
   const archive = parseCourseArchive(input);
-  return analyzeParsedArchive(pool, actorUserId, targetSpaceId, archive, titleOverride);
+  const report = await analyzeParsedArchive(pool, actorUserId, targetSpaceId, archive, titleOverride);
+  if (report.canImport) await validatePortableCover(archive);
+  return report;
 }
 
-function importedContentSnapshot(blocks: CourseArchive["payload"]["blocks"]) {
+function importedContentSnapshot(blocks: ParsedCourseArchive["payload"]["blocks"]) {
   const modules = [...new Map(blocks.map((block) => [block.module.key, block.module])).values()]
     .sort((a, b) => a.position - b.position)
     .map((module) => ({ key: module.key, title: module.title, summary: module.summary, position: module.position,
@@ -510,7 +629,7 @@ function importedContentSnapshot(blocks: CourseArchive["payload"]["blocks"]) {
   return { modules };
 }
 
-async function insertImportedRecipe(exec: Queryable, actorUserId: number, targetSpaceId: string, recipe: NonNullable<CourseArchive["payload"]["recipe"]>) {
+async function insertImportedRecipe(exec: Queryable, actorUserId: number, targetSpaceId: string, recipe: NonNullable<ParsedCourseArchive["payload"]["recipe"]>) {
   const created = (await exec.query<{ id: string }>(
     `INSERT INTO recipes (owning_space_id,title,visibility,created_by_user_id)
      VALUES ($1,$2,'private',$3) RETURNING id`, [targetSpaceId, recipe.title, actorUserId])).rows[0];
@@ -574,20 +693,31 @@ export async function importRecipeArchive(
 
 export async function importCourseArchive(actorUserId: number, targetSpaceId: string, input: unknown, titleOverride?: string) {
   const archive = parseCourseArchive(input);
+  const preflight = await analyzeParsedArchive(pool, actorUserId, targetSpaceId, archive, titleOverride);
+  if (!preflight.canImport) {
+    throw new PortabilityError(
+      preflight.issues.find((issue) => issue.severity === "error")?.message ?? "Archive cannot be imported",
+      409
+    );
+  }
+  const importedCover = await validatePortableCover(archive);
   return tx(async (client) => {
     const report = await analyzeParsedArchive(client, actorUserId, targetSpaceId, archive, titleOverride);
     if (!report.canImport) throw new PortabilityError(report.issues.find((issue) => issue.severity === "error")?.message ?? "Archive cannot be imported", 409);
     const at = new Date().toISOString();
+    if (importedCover) {
+      await insertCoverImage(client, importedCover, at);
+    }
     const recipeVersionId = archive.payload.recipe ? await insertImportedRecipe(client, actorUserId, targetSpaceId, archive.payload.recipe) : null;
     const course = (await client.query<{ id: number }>(
       `INSERT INTO courses
         (owner_id,owning_space_id,title,description,source_filename,status,generation_run_id,
-         authoring_status,category,appearance_json,published)
-       VALUES ($1,$2,$3,$4,$5,'ready',$6,'draft',$7,$8,0) RETURNING id`,
+         authoring_status,category,appearance_json,cover_image_hash,published)
+       VALUES ($1,$2,$3,$4,$5,'ready',$6,'draft',$7,$8,$9,0) RETURNING id`,
       [actorUserId, targetSpaceId, report.proposedTitle, archive.payload.course.description,
        archive.payload.sources[0]?.originalFilename ?? "BookQuest course archive",
        newGenerationRunId(), archive.payload.course.category,
-       serializeCourseAppearance(archive.payload.course.appearance)])).rows[0];
+       serializeCourseAppearance(archive.payload.course.appearance), importedCover?.contentHash ?? null])).rows[0];
     const collection = (await client.query<{ id: string }>(
       `INSERT INTO source_collections (owning_space_id,name,current_version,created_by_user_id,created_at,updated_at)
        VALUES ($1,$2,1,$3,$4,$4) RETURNING id`, [targetSpaceId, `${report.proposedTitle} sources`, actorUserId, at])).rows[0];
@@ -619,11 +749,12 @@ export async function importCourseArchive(actorUserId: number, targetSpaceId: st
       `INSERT INTO course_versions
         (course_id,version_number,lifecycle_status,title,description,source_collection_version_id,
          recipe_version_id,outline_json,content_json,content_hash,appearance_json,
-         created_by_user_id,created_at,updated_at)
-       VALUES ($1,1,'draft',$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$10) RETURNING id`,
+         cover_image_hash,created_by_user_id,created_at,updated_at)
+       VALUES ($1,1,'draft',$2,$3,$4,$5,$6,$6,$7,$8,$9,$10,$11,$11) RETURNING id`,
       [course.id, report.proposedTitle, archive.payload.course.description, collectionVersion.id,
        recipeVersionId, JSON.stringify(snapshot), archive.integrity.sha256,
-       serializeCourseAppearance(archive.payload.course.appearance), actorUserId, at])).rows[0];
+       serializeCourseAppearance(archive.payload.course.appearance), importedCover?.contentHash ?? null,
+       actorUserId, at])).rows[0];
     for (const [position, source] of archive.payload.sources.entries()) {
       await client.query(
         `INSERT INTO course_version_sources (course_version_id,source_version_id,position,coverage_json)
@@ -651,6 +782,12 @@ export async function importCourseArchive(actorUserId: number, targetSpaceId: st
     await client.query(
       `UPDATE courses SET source_collection_id=$2,current_draft_version_id=$3,source_json=$4 WHERE id=$1`,
       [course.id, collection.id, courseVersion.id, stableJson(archive.payload.sources[0]?.content ?? [])]);
+    if (importedCover) {
+      await assertCoverStorageCapacity(
+        client,
+        { ownerId: actorUserId, spaceId: targetSpaceId }
+      );
+    }
     await client.query(
       `INSERT INTO portable_course_imports
         (target_space_id,archive_id,archive_sha256,imported_course_id,imported_by_user_id,report_json,created_at)
@@ -662,5 +799,6 @@ export async function importCourseArchive(actorUserId: number, targetSpaceId: st
 
 export function portabilityApiError(error: unknown) {
   if (error instanceof PortabilityError) return { status: error.status, error: error.message };
+  if (error instanceof CoverImageError) return { status: error.status, error: error.message };
   return undefined;
 }

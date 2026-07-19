@@ -3252,6 +3252,103 @@ CREATE INDEX reading_progress_user_time
   ON reading_progress(user_id, updated_at DESC);
 `;
 
+const ARTIFACT_COVER_IMAGES_SQL = `
+CREATE TABLE cover_images (
+  content_hash TEXT PRIMARY KEY CHECK (content_hash ~ '^[0-9a-f]{64}$'),
+  image_data BYTEA NOT NULL,
+  mime_type TEXT NOT NULL CHECK (mime_type = 'image/webp'),
+  width INTEGER NOT NULL CHECK (width > 0 AND width <= 1600),
+  height INTEGER NOT NULL CHECK (height > 0 AND height <= 2400),
+  byte_size INTEGER NOT NULL CHECK (
+    byte_size > 0 AND byte_size <= 1500000 AND byte_size = octet_length(image_data)
+  ),
+  thumbnail_data BYTEA NOT NULL,
+  thumbnail_width INTEGER NOT NULL CHECK (thumbnail_width > 0 AND thumbnail_width <= 360),
+  thumbnail_height INTEGER NOT NULL CHECK (thumbnail_height > 0 AND thumbnail_height <= 540),
+  thumbnail_byte_size INTEGER NOT NULL CHECK (
+    thumbnail_byte_size > 0 AND thumbnail_byte_size <= 150000
+      AND thumbnail_byte_size = octet_length(thumbnail_data)
+  ),
+  created_at TEXT NOT NULL DEFAULT ${ISO_NOW},
+  updated_at TEXT NOT NULL DEFAULT ${ISO_NOW}
+);
+
+ALTER TABLE courses
+  ADD COLUMN cover_image_hash TEXT REFERENCES cover_images(content_hash) ON DELETE SET NULL;
+ALTER TABLE course_versions
+  ADD COLUMN cover_image_hash TEXT REFERENCES cover_images(content_hash) ON DELETE SET NULL;
+ALTER TABLE reading_editions
+  ADD COLUMN cover_image_hash TEXT REFERENCES cover_images(content_hash) ON DELETE SET NULL;
+
+CREATE INDEX courses_cover_image_hash
+  ON courses(cover_image_hash) WHERE cover_image_hash IS NOT NULL;
+CREATE INDEX course_versions_cover_image_hash
+  ON course_versions(cover_image_hash) WHERE cover_image_hash IS NOT NULL;
+CREATE INDEX reading_editions_cover_image_hash
+  ON reading_editions(cover_image_hash) WHERE cover_image_hash IS NOT NULL;
+
+-- Append-only child history normally rejects every update and delete. Before
+-- a private parent cascade, controlled cleanup removes these leaves while the
+-- parent is still verifiable and only when the transaction names that exact
+-- course; source history and unrelated courses stay immutable.
+CREATE OR REPLACE FUNCTION phase2_immutable_row_block_write() RETURNS trigger AS $$
+DECLARE
+  delete_course_id TEXT;
+  row_course_id TEXT;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    delete_course_id := current_setting('bookquest.private_course_delete', TRUE);
+    IF delete_course_id IS NOT NULL THEN
+      IF TG_TABLE_NAME = 'course_block_revisions' THEN
+        SELECT version.course_id::text INTO row_course_id
+          FROM course_blocks block
+          JOIN course_versions version ON version.id = block.course_version_id
+         WHERE block.id = OLD.block_id;
+      ELSIF TG_TABLE_NAME = 'course_version_reviews' THEN
+        SELECT version.course_id::text INTO row_course_id
+          FROM course_versions version
+         WHERE version.id = OLD.course_version_id;
+      END IF;
+      IF row_course_id = delete_course_id THEN
+        RETURN OLD;
+      END IF;
+    END IF;
+  END IF;
+  RAISE EXCEPTION 'Phase 2 history is append-only';
+END;
+$$ LANGUAGE plpgsql;
+
+-- Published course versions may only move to superseded while every other
+-- current and future column remains byte-for-byte unchanged. Using jsonb here
+-- closes the gap left when later migrations add versioned presentation fields.
+CREATE OR REPLACE FUNCTION phase2_version_lifecycle_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE'
+     AND current_setting('bookquest.private_course_delete', TRUE) = OLD.course_id::text
+  THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.lifecycle_status IN ('published', 'superseded', 'archived') THEN
+    IF TG_OP = 'UPDATE'
+       AND OLD.lifecycle_status = 'published'
+       AND NEW.lifecycle_status = 'superseded'
+       AND NEW.superseded_at IS NOT NULL
+       AND (to_jsonb(NEW) - 'lifecycle_status' - 'superseded_at')
+           IS NOT DISTINCT FROM
+           (to_jsonb(OLD) - 'lifecycle_status' - 'superseded_at')
+    THEN
+      RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Published course versions are immutable';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+`;
+
 /**
  * Ordered migration list. Append new migrations; never edit or reorder shipped
  * ones (see the rules at the top of this file).
@@ -3284,6 +3381,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: 25, name: "summary_generation_recovery", sql: SUMMARY_GENERATION_RECOVERY_SQL },
   { id: 26, name: "ai_daily_budget", sql: AI_DAILY_BUDGET_SQL },
   { id: 27, name: "reading_editions", sql: READING_EDITIONS_SQL },
+  { id: 28, name: "artifact_cover_images", sql: ARTIFACT_COVER_IMAGES_SQL },
 ];
 
 /**

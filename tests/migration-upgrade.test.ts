@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Pool, type PoolClient } from "pg";
 import { applyPendingMigrations, MIGRATIONS } from "../lib/migrations";
+import { deleteControlledCourseVersionChildren } from "../lib/course-history-deletion";
 
 // Upgrade test: prove the migration runner turns a realistic *old* production
 // database (the earliest Postgres schema, before the columns/tables later work
@@ -82,7 +83,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       const applied = await applyPendingMigrations(client);
       expect(applied).toEqual([
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
       ]);
     } finally {
       client.release();
@@ -125,6 +126,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       { id: 25, name: "summary_generation_recovery" },
       { id: 26, name: "ai_daily_budget" },
       { id: 27, name: "reading_editions" },
+      { id: 28, name: "artifact_cover_images" },
     ]);
   });
 
@@ -227,6 +229,7 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       "reading_editions",
       "reading_edition_units",
       "reading_progress",
+      "cover_images",
       "course_version_reviews",
       "course_version_comments",
       "course_generation_jobs",
@@ -426,6 +429,87 @@ describe.skipIf(!TEST_DB)("upgrading a realistic pre-ledger database", () => {
       await expect(
         client.query("UPDATE course_versions SET title = 'tampered' WHERE id = $1", [version.id])
       ).rejects.toThrow(/immutable/);
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+    }
+  });
+
+  it("installs indexed cover references and permits only controlled private-history cleanup", async () => {
+    const columns = (
+      await raw.query(
+        `SELECT table_name, column_name FROM information_schema.columns
+          WHERE column_name = 'cover_image_hash'
+          ORDER BY table_name`
+      )
+    ).rows;
+    expect(columns).toEqual(expect.arrayContaining([
+      { table_name: "courses", column_name: "cover_image_hash" },
+      { table_name: "course_versions", column_name: "cover_image_hash" },
+      { table_name: "reading_editions", column_name: "cover_image_hash" },
+    ]));
+    const indexes = (
+      await raw.query(
+        `SELECT indexname FROM pg_indexes
+          WHERE indexname IN ('courses_cover_image_hash','course_versions_cover_image_hash','reading_editions_cover_image_hash')`
+      )
+    ).rows.map((row) => (row as { indexname: string }).indexname);
+    expect(indexes).toHaveLength(3);
+    const coverColumns = (
+      await raw.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_name='cover_images'`
+      )
+    ).rows.map((row) => (row as { column_name: string }).column_name);
+    expect(coverColumns).toEqual(expect.arrayContaining([
+      "image_data",
+      "thumbnail_data",
+      "thumbnail_width",
+      "thumbnail_height",
+      "thumbnail_byte_size",
+    ]));
+
+    const client = await raw.connect();
+    try {
+      await client.query("BEGIN");
+      const draft = (
+        await client.query<{ current_draft_version_id: string }>(
+          "SELECT current_draft_version_id FROM courses WHERE id = 1"
+        )
+      ).rows[0];
+      const revisionCount = Number((
+        await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM course_block_revisions revision
+             JOIN course_blocks block ON block.id = revision.block_id
+            WHERE block.course_version_id = $1`,
+          [draft.current_draft_version_id]
+        )
+      ).rows[0].count);
+      expect(revisionCount).toBeGreaterThan(0);
+      await client.query(
+        `INSERT INTO course_version_reviews
+          (course_version_id,reviewer_user_id,decision,summary)
+         VALUES ($1,1,'commented','Private draft cleanup fixture')`,
+        [draft.current_draft_version_id]
+      );
+      await client.query(
+        "UPDATE course_versions SET lifecycle_status='archived' WHERE id=$1",
+        [draft.current_draft_version_id]
+      );
+      await client.query("SAVEPOINT standalone_delete");
+      await expect(client.query(
+        "DELETE FROM course_versions WHERE id=$1",
+        [draft.current_draft_version_id]
+      )).rejects.toThrow(/immutable/);
+      await client.query("ROLLBACK TO SAVEPOINT standalone_delete");
+      await client.query(
+        "SELECT set_config('bookquest.private_course_delete',$1,TRUE)",
+        ["1"]
+      );
+      await deleteControlledCourseVersionChildren(client, 1, "all");
+      const removed = await client.query("DELETE FROM courses WHERE id=1 RETURNING id");
+      expect(removed.rowCount).toBe(1);
       await client.query("ROLLBACK");
     } finally {
       client.release();

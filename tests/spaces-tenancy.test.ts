@@ -445,6 +445,13 @@ describe.skipIf(!TEST_DB)("Phase 1 Space tenancy vertical slice", () => {
       spaceId: mapped.space_id,
       basis: "assignment",
     });
+    await spaces.removeSpaceMember(ownerId, mapped.space_id, revokedInviteeId);
+    expect(await spaces.resolveCourseLearningContext(revokedInviteeId, courseId, pg.pool)).toBeUndefined();
+    expect(await db.canReadCourseWithoutEnrollment(revokedInviteeId, courseId)).toBe(false);
+    expect(await pg.one(
+      "SELECT 1 AS present FROM classroom_members WHERE classroom_id=$1 AND user_id=$2",
+      [classroom.id, revokedInviteeId]
+    )).toBeUndefined();
     await spaces.unassignLegacyClassroomCourse(ownerId, classroom.id, courseId);
     expect(await spaces.resolveCourseLearningContext(revokedInviteeId, courseId, pg.pool)).toBeUndefined();
 

@@ -1,7 +1,7 @@
 # Privacy, Retention and Controlled Deletion
 
 **Status:** implemented Phase 0 baseline  
-**Last updated:** 12 July 2026
+**Last updated:** 19 July 2026
 
 This policy defines how BookQuest records consent, exports user-owned data,
 retains operational and evidentiary records, and handles deletion without
@@ -16,8 +16,9 @@ silently rewriting learning history.
   earlier record is never edited.
 - An authenticated user can download a snapshot-consistent JSON export containing
   profile data, consent and privacy history, owned sources and courses, learning
-  activity, pseudonymous evidence, collaboration records, credentials and billing
-  history. Password hashes, sessions and account tokens are never exported.
+  activity, normalized course/book cover WebPs, pseudonymous evidence,
+  collaboration records, credentials and billing history. Password hashes,
+  sessions and account tokens are never exported.
 - Account deletion requires the current password and has a 30-day cancellation
   period. The sole remaining administrator cannot schedule deletion until another
   administrator exists.
@@ -31,6 +32,7 @@ silently rewriting learning history.
 | Rate-limit buckets | Until window expiry | Physical deletion |
 | Operational events | 90 days by default, configurable 7-3650 days | Physical deletion |
 | Private sources and generated courses | Account lifetime or explicit owner deletion | Physical deletion; immutable question/evidence history remains detached |
+| Custom course and Reading Edition covers | While referenced by an owned artifact or retained published version | Unreferenced bytes are physically deleted; published-version art follows the version's evidentiary retention |
 | Published course versions | While published and while evidence depends on them | Withdraw, remove source text and archive on owner erasure |
 | Progress, review queues and current mastery projections | Account lifetime | Physical deletion on erasure; rebuildable projections are not historical truth |
 | Learning events and question versions | Seven years after last related activity by default | Keep pseudonymous; use controlled redaction only for a documented legal/privacy need |
@@ -47,7 +49,8 @@ named records and must have an owner, reason and review date.
 When the grace period ends, `npm run privacy:maintain`:
 
 1. withdraws published courses, removes their source material and archives the
-   evidentiary course version under the platform tombstone owner;
+   evidentiary course version, including its normalized presentation cover when
+   present, under the platform tombstone owner;
 2. physically deletes private owned courses and classrooms;
 3. deletes memberships, enrollments, projections, progress, reviews, credentials,
    sessions and tokens tied directly to the account;
@@ -68,6 +71,9 @@ account twice.
   cancellation window is important; it is not presented as completed erasure.
 - **Physical delete** is used for private source content, ephemeral security data
   and projections that are neither required evidence nor subject to a hold.
+  Private course cleanup runs in one transaction: the exact-course guard first
+  verifies and removes append-only child rows while their parent version still
+  exists, then removes the private version/course and any orphaned cover bytes.
 - **Controlled redaction** is exceptional. Immutable events are never updated or
   deleted through ordinary application code. A redaction must name the legal or
   privacy basis, affected evidence IDs, authorizer, timestamp and fields hidden;
@@ -76,6 +82,11 @@ account twice.
   incident/change procedure, never a product endpoint.
 - A URL, course deletion or account tombstone never silently destroys evidence
   another learner, credential or audit report depends on.
+- Raw uploaded cover files are never retained. BookQuest strips metadata,
+  re-encodes accepted JPG/PNG/WebP input once, and stores only a bounded WebP
+  plus a lightweight derived thumbnail.
+  Private-course and Reading Edition deletion removes cover bytes once no other
+  current or historical artifact references the same content hash.
 
 ## Volume decisions
 

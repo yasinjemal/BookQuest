@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AppIcon from "@/components/AppIcon";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
 import CourseWorld from "@/components/CourseWorld";
 import ReadingEditionCard from "@/components/ReadingEditionCard";
 import type { ReadingEditionListItem } from "@/lib/reading-types";
@@ -81,7 +82,7 @@ export default function BooksPage() {
       </header>
 
       {continueBook && <section className="relative z-10 mx-auto -mt-5 grid max-w-4xl gap-5 rounded-[1.45rem] border border-line bg-card p-5 shadow-pop sm:-mt-7 sm:grid-cols-[1fr_auto] sm:items-center sm:p-6" aria-labelledby="continue-book-heading">
-        <div className="flex min-w-0 items-start gap-4"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-sky text-dusk"><AppIcon name="bookmark" className="h-5 w-5" /></span><div className="min-w-0"><p className="section-label">Continue where you left off</p><h2 id="continue-book-heading" className="mt-1 truncate text-lg font-bold">{continueBook.title}</h2><p className="mt-1 text-xs text-ink-soft">{Math.round(continueBook.progress?.overallProgress ?? 0)}% read · saved {new Date(continueBook.progress!.updatedAt).toLocaleDateString()}</p></div></div>
+        <div className="flex min-w-0 items-start gap-4"><span className="relative grid h-14 w-11 shrink-0 place-items-center overflow-hidden rounded-md bg-sky text-dusk shadow-card"><AppIcon name="bookmark" className="h-5 w-5" /><ArtifactCoverImage kind="book" artifactId={continueBook.id} contentHash={continueBook.coverHash} variant="book" rendition="thumbnail" /></span><div className="min-w-0"><p className="section-label">Continue where you left off</p><h2 id="continue-book-heading" className="mt-1 truncate text-lg font-bold">{continueBook.title}</h2><p className="mt-1 text-xs text-ink-soft">{Math.round(continueBook.progress?.overallProgress ?? 0)}% read · saved {new Date(continueBook.progress!.updatedAt).toLocaleDateString()}</p></div></div>
         <Link href={`/book/${continueBook.id}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-semibold text-white">Continue reading <AppIcon name="arrow" className="h-4 w-4" /></Link>
       </section>}
 

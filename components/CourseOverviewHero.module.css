@@ -41,6 +41,7 @@
 .backLink,
 .themePill {
   display: inline-flex;
+  min-height: 1.5rem;
   align-items: center;
   gap: 0.5rem;
   color: color-mix(in srgb, var(--course-on-primary) 72%, transparent);
@@ -90,7 +91,7 @@
   margin-top: 0.65rem;
   font-size: var(--course-type-display);
   line-height: 0.86;
-  overflow-wrap: normal;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 

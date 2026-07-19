@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   deleteCourse,
+  CourseDeletionConflictError,
   canAccessCourse,
   countDueReviewsForCourse,
+  canReadCourseWithoutEnrollment,
   getCompletedLessonIds,
   getCourse,
   getCourseAppearanceJson,
@@ -11,10 +13,13 @@ import {
   listModules,
 } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { authorizeCourseAction } from "@/lib/spaces";
+import { authorizeCourseAction, authorizeStoredMembership } from "@/lib/spaces";
 import { spaceApiError } from "@/lib/space-api";
 import { parseCourseAppearance } from "@/lib/course-appearance";
 import { isCourseGenerationStalled } from "@/lib/generation";
+import { getCourseDisplayCoverHash } from "@/lib/cover-images";
+import { pool } from "@/lib/pg";
+import { isCoursePubliclyVisible } from "@/lib/public-product";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,16 +34,37 @@ export async function GET(
   const course = await getCourse(Number(id));
   if (!course) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const isOwner = course.owner_id === user.id;
-  if (!(await canAccessCourse(user.id, course.id))) {
+  const legacyOwner = course.owner_id === user.id;
+  let canViewDraft = false;
+  if (course.owning_space_id) {
+    try {
+      await authorizeStoredMembership(user.id, course.owning_space_id, "content.review", pool);
+      canViewDraft = true;
+    } catch {
+      canViewDraft = false;
+    }
+  }
+  let canEdit = false;
+  try {
+    await authorizeCourseAction(user.id, course.id, "content.update");
+    canEdit = true;
+  } catch {
+    canEdit = false;
+  }
+  const hasExistingLearningAccess = !canViewDraft && await canReadCourseWithoutEnrollment(user.id, course.id);
+  const canOpenPublicCourse = !canViewDraft && !hasExistingLearningAccess &&
+    await isCoursePubliclyVisible(course.id) && await canAccessCourse(user.id, course.id);
+  if (!canViewDraft && !hasExistingLearningAccess && !canOpenPublicCourse) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [completed, moduleRows, mastery, dueReviews] = await Promise.all([
+  const [completed, moduleRows, mastery, dueReviews, appearanceJson, coverHash] = await Promise.all([
     getCompletedLessonIds(user.id),
     listModules(course.id),
     getCourseMastery(user.id, course.id),
     countDueReviewsForCourse(user.id, course.id),
+    getCourseAppearanceJson(course.id, canViewDraft),
+    getCourseDisplayCoverHash(course.id, canViewDraft),
   ]);
   const modules = await Promise.all(
     moduleRows.map(async (m) => ({
@@ -56,9 +82,11 @@ export async function GET(
     viewerId: user.id,
     course: {
       ...course,
-      isOwner,
+      isOwner: legacyOwner && canEdit,
+      canEdit,
       generation_stalled: isCourseGenerationStalled(course),
-      appearance: parseCourseAppearance(await getCourseAppearanceJson(course.id, isOwner)),
+      appearance: parseCourseAppearance(appearanceJson),
+      coverHash,
     },
     modules,
     learning: {
@@ -86,6 +114,13 @@ export async function DELETE(
     if (response) return response;
     throw error;
   }
-  await deleteCourse(course.id);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteCourse(course.id);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof CourseDeletionConflictError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
 }

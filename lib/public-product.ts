@@ -1,6 +1,7 @@
-import { many, one, q } from "./pg";
+import { many, one, pool, q } from "./pg";
 import { canAccessCourse, getCourse } from "./db";
 import { parseCourseAppearance } from "./course-appearance";
+import { authorizeStoredMembership } from "./spaces";
 
 export class PublicProductError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
@@ -11,7 +12,7 @@ const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
 
 interface PublicCourseRow {
   id: number; title: string; description: string; category: string; public_slug: string;
-  appearance_json: string; created_at: string; creator_name: string;
+  appearance_json: string; cover_image_hash: string | null; content_version: number; created_at: string; creator_name: string;
   creator_slug: string | null; creator_headline: string; learner_count: number;
 }
 interface AnalyticsCourseRow {
@@ -19,28 +20,52 @@ interface AnalyticsCourseRow {
   enrollments: number; started: number; completions: number; views: number; shares: number; reader_opens: number;
 }
 
+export async function isCoursePubliclyVisible(courseId: number, coverHash?: string) {
+  return Boolean(await one<{ visible: number }>(
+    `SELECT 1 AS visible
+       FROM courses course
+       JOIN users owner ON owner.id = course.owner_id
+       JOIN spaces owning_space ON owning_space.id = course.owning_space_id
+      WHERE course.id = $1
+        AND course.published = 1
+        AND course.status = 'ready'
+        AND owner.account_status = 'active'
+        AND owning_space.status = 'active'
+        AND ($2::text IS NULL OR course.cover_image_hash = $2)`,
+    [courseId, coverHash ?? null]
+  ));
+}
+
 export async function getPublicCourseBySlug(slug: string) {
   const course = await one<PublicCourseRow>(
     `SELECT c.id, c.title, c.description, c.category, c.public_slug, c.appearance_json,
+            c.cover_image_hash, c.content_version,
             c.created_at, u.name AS creator_name,
             CASE WHEN u.creator_public THEN u.creator_slug ELSE NULL END AS creator_slug,
             CASE WHEN u.creator_public THEN u.creator_headline ELSE '' END AS creator_headline,
             (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id = c.id) AS learner_count
-     FROM courses c JOIN users u ON u.id = c.owner_id
+     FROM courses c
+     JOIN users u ON u.id = c.owner_id
+     JOIN spaces owning_space ON owning_space.id = c.owning_space_id
      WHERE lower(c.public_slug) = lower($1) AND c.published = 1 AND c.status = 'ready'
-       AND u.account_status = 'active'`, [slug]);
+       AND u.account_status = 'active' AND owning_space.status = 'active'`, [slug]);
   if (!course) return undefined;
   const modules = await many<{ id: number; title: string; summary: string; position: number }>(
-    `SELECT id, title, summary, position FROM modules WHERE course_id = $1 ORDER BY position`, [course.id]);
+    `SELECT id, title, summary, position FROM modules
+      WHERE course_id = $1 AND content_version = $2 ORDER BY position`,
+    [course.id, course.content_version]);
   const lessons = await many<{ id: number; module_id: number; title: string; position: number; card_count: number }>(
     `SELECT l.id, l.module_id, l.title, l.position,
             jsonb_array_length(l.cards::jsonb)::int AS card_count
      FROM lessons l JOIN modules m ON m.id = l.module_id
-     WHERE m.course_id = $1 ORDER BY m.position, l.position`, [course.id]);
+     WHERE m.course_id = $1 AND m.content_version = $2 AND l.content_version = $2
+     ORDER BY m.position, l.position`, [course.id, course.content_version]);
   return {
     ...course,
     appearance: parseCourseAppearance(String(course.appearance_json ?? "{}")),
     appearance_json: undefined,
+    coverHash: course.cover_image_hash,
+    cover_image_hash: undefined,
     lesson_count: lessons.length,
     modules: modules.map((module) => ({
       ...module,
@@ -52,7 +77,13 @@ export async function getPublicCourseBySlug(slug: string) {
 export async function recordPublicCourseEvent(slug: string, eventType: PublicEventType) {
   const result = await q(
     `INSERT INTO public_course_events (course_id, event_type)
-     SELECT id, $2 FROM courses WHERE lower(public_slug) = lower($1) AND published = 1 AND status = 'ready'`,
+     SELECT course.id, $2
+       FROM courses course
+       JOIN users owner ON owner.id = course.owner_id
+       JOIN spaces owning_space ON owning_space.id = course.owning_space_id
+      WHERE lower(course.public_slug) = lower($1)
+        AND course.published = 1 AND course.status = 'ready'
+        AND owner.account_status = 'active' AND owning_space.status = 'active'`,
     [slug, eventType]);
   return result.rowCount === 1;
 }
@@ -88,19 +119,32 @@ export async function getPublicCreator(slug: string) {
     `SELECT id, name, creator_slug, creator_headline, creator_bio
      FROM users WHERE lower(creator_slug) = lower($1) AND creator_public = TRUE AND account_status = 'active'`, [slug]);
   if (!creator) return undefined;
-  const courses = await many<{ id: number; title: string; description: string; category: string; public_slug: string; appearance_json: string; learner_count: number }>(
-    `SELECT id, title, description, category, public_slug, appearance_json,
+  const courses = await many<{ id: number; title: string; description: string; category: string; public_slug: string; appearance_json: string; cover_image_hash: string | null; learner_count: number }>(
+    `SELECT id, title, description, category, public_slug, appearance_json, cover_image_hash,
             (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id = c.id) AS learner_count
-     FROM courses c WHERE owner_id = $1 AND published = 1 AND status = 'ready' ORDER BY created_at DESC`, [creator.id]);
-  return { ...creator, id: undefined, courses: courses.map((course) => ({ ...course, appearance: parseCourseAppearance(String(course.appearance_json ?? "{}")), appearance_json: undefined })) };
+     FROM courses c
+     JOIN spaces owning_space ON owning_space.id = c.owning_space_id
+     WHERE c.owner_id = $1 AND c.published = 1 AND c.status = 'ready'
+       AND owning_space.status = 'active'
+     ORDER BY c.created_at DESC`, [creator.id]);
+  return { ...creator, id: undefined, courses: courses.map((course) => ({
+    ...course,
+    appearance: parseCourseAppearance(String(course.appearance_json ?? "{}")),
+    appearance_json: undefined,
+    coverHash: course.cover_image_hash,
+    cover_image_hash: undefined,
+  })) };
 }
 
 export async function listPublicSeoEntries() {
   const [courses, creators] = await Promise.all([
     many<{ slug: string; created_at: string }>(
       `SELECT c.public_slug AS slug, c.created_at
-       FROM courses c JOIN users u ON u.id = c.owner_id
-       WHERE c.published = 1 AND c.status = 'ready' AND u.account_status = 'active'
+       FROM courses c
+       JOIN users u ON u.id = c.owner_id
+       JOIN spaces owning_space ON owning_space.id = c.owning_space_id
+       WHERE c.published = 1 AND c.status = 'ready'
+         AND u.account_status = 'active' AND owning_space.status = 'active'
        ORDER BY c.created_at DESC`
     ),
     many<{ slug: string; created_at: string }>(
@@ -150,7 +194,18 @@ function readableChapters(content: unknown) {
 export async function getCourseReader(userId: number, courseId: number) {
   const course = await getCourse(courseId);
   if (!course || !(await canAccessCourse(userId, courseId))) throw new PublicProductError("Course not found", 404);
-  const versionId = course.owner_id === userId ? (course.current_draft_version_id ?? course.published_version_id) : course.published_version_id;
+  let canViewDraft = false;
+  if (course.owning_space_id) {
+    try {
+      await authorizeStoredMembership(userId, course.owning_space_id, "content.review", pool);
+      canViewDraft = true;
+    } catch {
+      canViewDraft = false;
+    }
+  }
+  const versionId = canViewDraft
+    ? (course.current_draft_version_id ?? course.published_version_id)
+    : course.published_version_id;
   if (!versionId) throw new PublicProductError("This course does not have a readable document yet.", 404);
   const rows = await many<{ title: string; source_version_id: string; extracted_content_json: string | null }>(
     `SELECT source.title, version.id AS source_version_id, version.extracted_content_json

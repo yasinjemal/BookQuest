@@ -36,6 +36,7 @@ async function withProgress(
       return {
         ...c,
         appearance: parseCourseAppearance(c.appearance_json),
+        coverHash: c.cover_image_hash,
         totalLessons,
         doneLessons,
         nextLessonId,

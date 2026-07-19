@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Allows verification builds to avoid colliding with a running dev server.
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  serverExternalPackages: ["pg", "unpdf"],
+  serverExternalPackages: ["pg", "sharp", "unpdf"],
   async headers() {
     const securityHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },
@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
     ];
     const privatePaths = [
       "/api/:path*", "/admin/:path*", "/analytics/:path*", "/class/:path*",
-      "/classes/:path*", "/course/:path*", "/create", "/lesson/:path*",
+      "/book/:path*", "/books", "/classes/:path*", "/course/:path*", "/create", "/lesson/:path*",
       "/cert/:path*",
       "/login", "/register", "/forgot-password", "/reset-password",
       "/verify-email", "/lti/:path*", "/passport", "/profile",

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppIcon from "@/components/AppIcon";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
 import CourseWorld from "@/components/CourseWorld";
 import { COURSE_ACCENT_HEX, type CourseAppearance } from "@/lib/course-appearance";
 import { resolveCourseThemeDefinition } from "@/lib/course-themes";
@@ -16,6 +17,7 @@ export default function CourseOverviewHero({
   moduleCount,
   nextLessonId,
   sourceHref,
+  coverHash,
 }: {
   courseId: string | number;
   title: string;
@@ -27,11 +29,13 @@ export default function CourseOverviewHero({
   moduleCount: number;
   nextLessonId?: number;
   sourceHref?: string | null;
+  coverHash?: string | null;
 }) {
   const theme = resolveCourseThemeDefinition(appearance);
   return (
     <header className={styles.hero}>
       <CourseWorld seed={courseId} title={title} theme={appearance.worldTheme} accent={COURSE_ACCENT_HEX[appearance.accent]} progress={progress} mood={appearance.atmosphere === "full" ? "bright" : "calm"} className={styles.world} />
+      <ArtifactCoverImage kind="course" artifactId={courseId} contentHash={coverHash} variant="course" priority className={styles.world} />
       <div className={styles.shade} aria-hidden="true" />
       <div className={styles.topline}>
         <Link href="/" className={styles.backLink}><span aria-hidden="true">←</span> Home</Link>

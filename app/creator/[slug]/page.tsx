@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
 import PublicFooter from "@/components/PublicFooter";
 import PublicHeader from "@/components/PublicHeader";
 import CourseWorld from "@/components/CourseWorld";
@@ -66,7 +67,7 @@ export default async function CreatorPage({ params }: { params: Promise<{ slug: 
       </header>
       <section className="mt-14">
         <p className="section-label">Published courses</p><h2 className="display mt-3 text-5xl">Open the library.</h2>
-        {courses.length ? <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{courses.map((course) => <Link key={String(course.id)} href={`/c/${String(course.public_slug)}`} className="group overflow-hidden rounded-[1.5rem] border border-line bg-card shadow-card transition-transform hover:-translate-y-1"><CourseWorld seed={Number(course.id)} title={String(course.title)} theme={course.appearance.worldTheme} progress={0} className="min-h-60" /><div className="p-6"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-teal">{String(course.category)}</p><h3 className="display mt-2 text-3xl">{String(course.title)}</h3><p className="mt-3 line-clamp-2 text-sm leading-6 text-ink-soft">{String(course.description)}</p><p className="mt-4 text-xs font-semibold text-ink-soft">{Number(course.learner_count)} learner{Number(course.learner_count) === 1 ? "" : "s"}</p></div></Link>)}</div> : <div className="mt-8 rounded-[1.5rem] border border-dashed border-line-deep p-12 text-center text-ink-soft">The next course is being prepared.</div>}
+        {courses.length ? <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">{courses.map((course) => <Link key={String(course.id)} href={`/c/${String(course.public_slug)}`} className="group overflow-hidden rounded-[1.5rem] border border-line bg-card shadow-card transition-transform hover:-translate-y-1"><div className="relative min-h-60 overflow-hidden"><CourseWorld seed={Number(course.id)} title={String(course.title)} theme={course.appearance.worldTheme} progress={0} className="absolute inset-0 min-h-full" /><ArtifactCoverImage kind="course" artifactId={Number(course.id)} contentHash={course.coverHash} variant="course" rendition="thumbnail" /></div><div className="p-6"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-teal">{String(course.category)}</p><h3 className="display mt-2 text-3xl">{String(course.title)}</h3><p className="mt-3 line-clamp-2 text-sm leading-6 text-ink-soft">{String(course.description)}</p><p className="mt-4 text-xs font-semibold text-ink-soft">{Number(course.learner_count)} learner{Number(course.learner_count) === 1 ? "" : "s"}</p></div></Link>)}</div> : <div className="mt-8 rounded-[1.5rem] border border-dashed border-line-deep p-12 text-center text-ink-soft">The next course is being prepared.</div>}
       </section>
     </main>
     <PublicFooter />

@@ -1,7 +1,8 @@
 # Phase 5 portable course archive
 
 **Engineering status:** In progress  
-**Archive format:** `bookquest.course` schema version `1`  
+**Archive format:** `bookquest.course` schema version `2` (version `1` remains importable)
+
 **Recipe format:** `bookquest.recipe` schema version `1`
 **External validation status:** Not available yet
 
@@ -14,8 +15,8 @@ deployment.
 
 The archive contains:
 
-- the selected draft or published course version, appearance and lifecycle
-  metadata;
+- the selected draft or published course version, appearance, optional exact
+  normalized cover WebP and lifecycle metadata;
 - exact attached source versions, extracted content, usage policy and hashes;
 - the exact teaching recipe definition when one is attached; and
 - current lesson blocks, layout, accessibility data and package-local source
@@ -73,6 +74,13 @@ Before a write, BookQuest enforces:
   while installation-specific `sourceVersionId` values fail closed; and
 - a title between 2 and 120 characters.
 
+Schema version `2` adds an optional, content-hashed normalized WebP cover. The
+dry-run decodes and validates its real format, dimensions, metadata state, byte
+count and digest. Restore persists those exact bytes without another lossy
+encode. Version `1` archives remain accepted for backward compatibility, while
+unknown versions fail closed. Downloads use compact JSON so every archive that
+passes the 10 MB service limit also passes the physical-file limit on restore.
+
 Unknown format versions fail closed. The imported course must pass the normal
 review and publishing lifecycle before learners can access it.
 
@@ -85,7 +93,7 @@ review and publishing lifecycle before learners can access it.
 | Identifier or secret leakage | Archive-local IDs and recursive sensitive-metadata filtering |
 | Broken or substituted citations | Package-local reference validation and transactional remapping |
 | Unsupported or malicious block payload | Strict Zod envelope and current block-registry validation |
-| Oversized-resource abuse | Route and service size limits plus bounded arrays |
+| Oversized-resource abuse | Required request length, user/IP rate limits, service size limits, bounded arrays and cover storage quotas |
 | Partial restore | One database transaction |
 | Duplicate replay | Unique destination-Space and archive-digest ledger entry |
 | Accidental publication | Imported courses and recipes are private drafts |

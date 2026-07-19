@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AppIcon from "@/components/AppIcon";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
+import CoverImageEditor from "@/components/CoverImageEditor";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import { readingAppearance, READING_VIBES } from "@/lib/reading-vibe";
@@ -363,7 +365,7 @@ export default function ReadingEditionReader({
             <button type="button" onClick={() => void openUnit(unitIndex, progress?.unitProgress ?? 0)} className={styles.beginButton}>{visibleProgress > 0 ? "Continue reading" : "Begin the book"}<AppIcon name="arrow" /></button>
             <small>{preview ? "Original words preserved · demo progress stays in this browser · no AI reading charge" : "Original words preserved · private to your account · no AI reading charge"}</small>
           </div>
-          <div className={styles.coverWorld}><CourseWorld seed={`${book.id}:${book.title}`} theme={appearance.worldTheme} title={book.title} progress={visibleProgress} className={styles.world} /></div>
+          <div className={styles.coverWorld}><CourseWorld seed={`${book.id}:${book.title}`} theme={appearance.worldTheme} title={book.title} progress={visibleProgress} className={styles.world} /><ArtifactCoverImage kind="book" artifactId={book.id} contentHash={book.coverHash} variant="book" priority /></div>
         </section>
       </main> : <div className={styles.readerLayout}>
         {!focusMode && <aside className={styles.contentsRail} aria-label="Book contents">
@@ -388,13 +390,14 @@ export default function ReadingEditionReader({
         <header><div><p>Navigate the full text</p><h2 className="display">Contents</h2></div><button type="button" onClick={() => tocDialog.current?.close()} aria-label="Close contents">×</button></header>
         <label className={styles.searchLabel}>Find in this book<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search the full text" autoFocus /></label>
         <div className={styles.dialogBody}>
-          {query.trim().length >= 2 ? <div className={styles.searchResults} aria-live="polite"><p>{searching ? "Searching…" : `${searchResults.length} matching ${searchResults.length === 1 ? "section" : "sections"}`}</p>{searchResults.map((result) => <button key={result.index} type="button" onClick={() => void openUnit(result.index)}><strong>{result.title}</strong><span>{result.snippet}</span></button>)}</div> : <nav className={styles.dialogContents} aria-label="Full table of contents">{book.outline.map((item) => <button key={item.index} type="button" onClick={() => void openUnit(item.index)} aria-current={item.index === unitIndex ? "page" : undefined}><span>{String(item.index + 1).padStart(2, "0")}</span><strong>{item.title}</strong><small>{item.wordCount.toLocaleString()} words</small></button>)}</nav>}
+          {query.trim().length >= 2 ? <div className={styles.searchResults} aria-live="polite"><p>{searching ? "Searching…" : `${searchResults.length} matching ${searchResults.length === 1 ? "section" : "sections"}`}</p>{searchResults.map((result) => <button key={result.index} type="button" onClick={() => void openUnit(result.index)}><strong>{result.title}</strong><span>{result.snippet}</span></button>)}</div> : <nav className={styles.dialogContents} aria-label="Full table of contents"><button type="button" onClick={() => { setShowCover(true); tocDialog.current?.close(); }} aria-current={showCover ? "page" : undefined}><span>00</span><strong>Book cover</strong><small>About this edition</small></button>{book.outline.map((item) => <button key={item.index} type="button" onClick={() => void openUnit(item.index)} aria-current={!showCover && item.index === unitIndex ? "page" : undefined}><span>{String(item.index + 1).padStart(2, "0")}</span><strong>{item.title}</strong><small>{item.wordCount.toLocaleString()} words</small></button>)}</nav>}
         </div>
       </dialog>
 
       <dialog ref={appearanceDialog} className={styles.dialog}>
         <header><div><p>Make the room yours</p><h2 className="display">Reading vibe</h2></div><button type="button" onClick={() => appearanceDialog.current?.close()} aria-label="Close reading appearance">×</button></header>
         <div className={styles.settingsBody}>
+          {!preview && <fieldset><legend>Book cover</legend><div className={styles.coverSettingPreview} aria-label="Current book cover preview"><CourseWorld seed={`${book.id}:${book.title}:settings`} theme={appearance.worldTheme} title={book.title} progress={visibleProgress} className={styles.world} /><ArtifactCoverImage kind="book" artifactId={book.id} contentHash={book.coverHash} variant="book" /></div><CoverImageEditor kind="book" artifactId={book.id} title={book.title} coverHash={book.coverHash} compact onChanged={(coverHash) => setBook((current) => current ? { ...current, coverHash } : current)} /></fieldset>}
           <fieldset><legend>Atmosphere</legend><div className={styles.modeGrid}>{(["auto", "paper", "night", "focus"] as const).map((mode) => <label key={mode}><input type="radio" name="reading-atmosphere" value={mode} checked={atmosphere === mode} onChange={() => setAtmosphere(mode)} /><span>{mode === "auto" ? `Auto · ${READING_VIBES[book.vibeId].name}` : mode === "paper" ? "Paper" : mode === "night" ? "Night" : "Clear focus"}</span></label>)}</div><small>Auto uses deterministic source signals. It never calls an AI model.</small></fieldset>
           <fieldset><legend>Text size</legend><div className={styles.stepper}><button type="button" onClick={() => setFontSize((value) => clamp(value - 1, 16, 25))} aria-label="Decrease text size">A−</button><span>{fontSize}px</span><button type="button" onClick={() => setFontSize((value) => clamp(value + 1, 16, 25))} aria-label="Increase text size">A+</button></div></fieldset>
           <fieldset><legend>Line spacing</legend><div className={styles.stepper}><button type="button" onClick={() => setLineHeight((value) => clamp(Number((value - 0.08).toFixed(2)), 1.55, 2.05))} aria-label="Decrease line spacing">−</button><span>{lineHeight.toFixed(2)}</span><button type="button" onClick={() => setLineHeight((value) => clamp(Number((value + 0.08).toFixed(2)), 1.55, 2.05))} aria-label="Increase line spacing">+</button></div></fieldset>

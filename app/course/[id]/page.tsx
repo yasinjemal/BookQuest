@@ -41,9 +41,11 @@ interface CourseData {
     error: string | null;
     generation_stalled: boolean;
     isOwner: boolean;
+    canEdit: boolean;
     published: number;
     category: string;
     appearance: CourseAppearance;
+    coverHash: string | null;
     public_slug: string;
   };
   modules: ModuleData[];
@@ -59,6 +61,7 @@ export default function CoursePathPage() {
   const [publishing, setPublishing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [generationError, setGenerationError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/courses/${id}`);
@@ -115,7 +118,13 @@ export default function CoursePathPage() {
 
   async function remove() {
     if (!confirm("Delete this course and all progress?")) return;
-    await fetch(`/api/courses/${id}`, { method: "DELETE" });
+    setDeleteError("");
+    const response = await fetch(`/api/courses/${id}`, { method: "DELETE" });
+    const result = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) {
+      setDeleteError(result.error || "This course could not be deleted.");
+      return;
+    }
     router.push("/");
   }
 
@@ -142,6 +151,7 @@ export default function CoursePathPage() {
           totalLessons={allLessons.length}
           moduleCount={data.modules.length}
           nextLessonId={firstIncomplete?.id}
+          coverHash={data.course.coverHash}
         />
 
         {busy && !data.course.generation_stalled && <div className={styles.generationNotice}><span />Still shaping this world — new lessons appear as they finish.</div>}
@@ -183,14 +193,15 @@ export default function CoursePathPage() {
           </section>
         )}
 
-        {data.course.isOwner && data.course.status === "ready" && (
-          <CourseAppearanceEditor courseId={data.course.id} courseTitle={data.course.title} value={appearance} onSaved={(nextAppearance) => setData((current) => current ? { ...current, course: { ...current.course, appearance: nextAppearance } } : current)} />
+        {data.course.canEdit && data.course.status === "ready" && (
+          <CourseAppearanceEditor courseId={data.course.id} courseTitle={data.course.title} value={appearance} coverHash={data.course.coverHash} published={Boolean(data.course.published)} onCoverChanged={(coverHash) => setData((current) => current ? { ...current, course: { ...current.course, coverHash } } : current)} onSaved={(nextAppearance) => setData((current) => current ? { ...current, course: { ...current.course, appearance: nextAppearance } } : current)} />
         )}
 
         {data.course.isOwner && (
           <details className={styles.dangerZone}>
             <summary>Course settings</summary>
-            <div><p>Deleting removes the course and its learner progress.</p><button onClick={() => void remove()} aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>
+            <div><p>Private drafts can be deleted. Published history is retained for learner evidence.</p><button onClick={() => void remove()} aria-label={`Delete ${data.course.title}`}><span aria-hidden="true">×</span> Delete course</button></div>
+            {deleteError && <p role="alert" className="mt-3 text-sm font-semibold text-no">{deleteError}</p>}
           </details>
         )}
       </div>

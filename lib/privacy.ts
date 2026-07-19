@@ -2,12 +2,15 @@ import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { many, one, pool, q, ready, tx } from "./pg";
 import { enqueueWebhookEvent } from "./integrations";
+import { deleteCoverIfUnreferenced, lockCoverHashes } from "./cover-images";
+import { deleteControlledCourseVersionChildren } from "./course-history-deletion";
+import { lockCourseMutation } from "./course-mutation-lock";
 
 export const SERVICE_CONSENT_VERSION = "service-v1";
 export const ANALYTICS_CONSENT_VERSION = "analytics-v1";
 export const PRODUCT_RESEARCH_CONSENT_VERSION = "product-research-v1";
 export const ACCOUNT_DELETION_GRACE_DAYS = 30;
-export const ACCOUNT_EXPORT_SCHEMA_VERSION = 11;
+export const ACCOUNT_EXPORT_SCHEMA_VERSION = 12;
 
 export type ConsentPurpose = "service" | "analytics" | "product_research";
 export type ConsentDecision = "granted" | "withdrawn";
@@ -117,7 +120,8 @@ export async function createAccountExport(userId: number) {
       client,
       `SELECT id, title, description, source_filename, source_json, status,
               error, published, category, price_cents, content_version,
-              generation_run_id, lifecycle_status, archived_at, created_at, public_slug
+              generation_run_id, lifecycle_status, archived_at, created_at, public_slug,
+              cover_image_hash
          FROM courses WHERE owner_id = $1 ORDER BY id`,
       [userId]
     );
@@ -149,7 +153,7 @@ export async function createAccountExport(userId: number) {
       `SELECT id, owning_space_id, title, source_filename,
               chapter_outline_json, source_chapter_count, word_count,
               estimated_minutes, unit_kind, vibe_id, profile_json,
-              created_at, updated_at
+              cover_image_hash, created_at, updated_at
          FROM reading_editions WHERE owner_id = $1 ORDER BY id`,
       [userId]
     );
@@ -174,6 +178,26 @@ export async function createAccountExport(userId: number) {
           [userId, readingEditionIds]
         )
       : [];
+    const coverImages = await rows(
+      client,
+      `SELECT image.content_hash, image.mime_type, image.width, image.height,
+              image.byte_size, encode(image.image_data, 'base64') AS data_base64,
+              image.created_at, image.updated_at
+         FROM cover_images image
+        WHERE image.content_hash IN (
+          SELECT course.cover_image_hash FROM courses course
+           WHERE course.owner_id = $1 AND course.cover_image_hash IS NOT NULL
+          UNION
+          SELECT version.cover_image_hash FROM course_versions version
+           JOIN courses course ON course.id = version.course_id
+           WHERE course.owner_id = $1 AND version.cover_image_hash IS NOT NULL
+          UNION
+          SELECT edition.cover_image_hash FROM reading_editions edition
+           WHERE edition.owner_id = $1 AND edition.cover_image_hash IS NOT NULL
+        )
+        ORDER BY image.content_hash`,
+      [userId]
+    );
     const personalSpaces = await rows(
       client,
       `SELECT id, name, type, status, policy_version, created_at, updated_at
@@ -329,6 +353,7 @@ export async function createAccountExport(userId: number) {
         readingEditions,
         readingEditionUnits,
         readingProgress,
+        coverImages,
         modules,
         lessons,
         authoring: {
@@ -367,6 +392,10 @@ export async function createAccountExport(userId: number) {
       collaboration: {
         ownedClassrooms: await rows(client, "SELECT id, name, code, lifecycle_status, archived_at, created_at FROM classrooms WHERE owner_id = $1 ORDER BY id", [userId]),
         memberships: await rows(client, `SELECT cm.classroom_id, cm.joined_at, c.name FROM classroom_members cm JOIN classrooms c ON c.id = cm.classroom_id WHERE cm.user_id = $1 ORDER BY cm.joined_at`, [userId]),
+        spaceAuditEvents: await rows(client, `SELECT event_type,space_id,subject_user_id,
+          course_id,assignment_id,policy_version,metadata_json,occurred_at
+          FROM space_audit_events WHERE actor_user_id=$1 OR subject_user_id=$1
+          ORDER BY occurred_at,id`, [userId]),
       },
       credentials: await rows(client, `SELECT ct.id, ct.course_id, ct.score_pct, ct.issued_at, c.title AS course_title FROM certificates ct JOIN courses c ON c.id = ct.course_id WHERE ct.user_id = $1 ORDER BY ct.issued_at`, [userId]),
       skillPassport: passport ? {
@@ -570,17 +599,87 @@ async function eraseAccount(client: PoolClient, userId: number, erasedAt: string
   );
   await client.query("DELETE FROM lti_launch_tickets WHERE consumed_by_user_id=$1", [userId]);
   await client.query("DELETE FROM lti_user_links WHERE user_id=$1", [userId]);
+  // The due-account row is already locked, preventing new owned courses. Take
+  // every course advisory lock in id order before any course/version row lock,
+  // matching Studio writers and avoiding block↔version deadlock cycles.
+  const ownedCourseIds = (
+    await client.query<{ id: number }>(
+      "SELECT id FROM courses WHERE owner_id = $1 ORDER BY id",
+      [userId]
+    )
+  ).rows.map((course) => Number(course.id));
+  for (const courseId of ownedCourseIds) {
+    await lockCourseMutation(client, courseId);
+  }
   // Published content is withdrawn and retained only as an archived evidentiary
   // version. Private content is destroyed. Original source text is always erased.
-  await client.query(
-    `UPDATE courses SET owner_id = 0, published = 0, source_json = NULL,
-            source_filename = 'removed', lifecycle_status = 'archived', archived_at = $1
-      WHERE owner_id = $2 AND published = 1`,
-    [erasedAt, userId]
-  );
+  const retainedCourseIds = (
+    await client.query<{ id: number }>(
+      `SELECT course.id FROM courses course
+        WHERE course.owner_id = $1 AND (
+          course.published = 1 OR EXISTS (
+            SELECT 1 FROM course_versions version
+             WHERE version.course_id = course.id
+               AND (version.published_at IS NOT NULL OR
+                    version.lifecycle_status IN ('published','superseded'))
+          )
+        )
+        FOR UPDATE`,
+      [userId]
+    )
+  ).rows.map((course) => Number(course.id));
+  for (const courseId of retainedCourseIds) {
+    // Destroy draft-only presentation/content while preserving only versions
+    // that actually entered published evidence history.
+    await client.query(
+      "SELECT set_config('bookquest.private_course_delete', $1, TRUE)",
+      [String(courseId)]
+    );
+    await deleteControlledCourseVersionChildren(client, courseId, "unpublished");
+    await client.query(
+      `DELETE FROM course_versions
+        WHERE course_id = $1
+          AND published_at IS NULL
+          AND lifecycle_status NOT IN ('published','superseded')`,
+      [courseId]
+    );
+    await client.query(
+      `UPDATE courses SET owner_id = 0, published = 0, source_json = NULL,
+              cover_image_hash = NULL, current_draft_version_id = NULL,
+              source_filename = 'removed', lifecycle_status = 'archived', archived_at = $1
+        WHERE id = $2`,
+      [erasedAt, courseId]
+    );
+  }
   await client.query("DELETE FROM summaries WHERE owner_id = $1", [userId]);
   await client.query("DELETE FROM reading_editions WHERE owner_id = $1", [userId]);
-  await client.query("DELETE FROM courses WHERE owner_id = $1", [userId]);
+  const privateCourseIds = (
+    await client.query<{ id: number }>(
+      "SELECT id FROM courses WHERE owner_id = $1 FOR UPDATE",
+      [userId]
+    )
+  ).rows.map((course) => Number(course.id));
+  for (const courseId of privateCourseIds) {
+    await client.query(
+      "SELECT set_config('bookquest.private_course_delete', $1, TRUE)",
+      [String(courseId)]
+    );
+    await deleteControlledCourseVersionChildren(client, courseId, "all");
+    await client.query("DELETE FROM courses WHERE id = $1", [courseId]);
+  }
+  const orphanCoverHashes = (
+    await client.query<{ content_hash: string }>(
+      `SELECT image.content_hash FROM cover_images image
+        WHERE NOT EXISTS (SELECT 1 FROM courses WHERE cover_image_hash = image.content_hash)
+          AND NOT EXISTS (SELECT 1 FROM course_versions WHERE cover_image_hash = image.content_hash)
+          AND NOT EXISTS (SELECT 1 FROM reading_editions WHERE cover_image_hash = image.content_hash)
+        ORDER BY image.content_hash`
+    )
+  ).rows.map((image) => image.content_hash);
+  await lockCoverHashes(client, orphanCoverHashes);
+  for (const contentHash of orphanCoverHashes) {
+    await deleteCoverIfUnreferenced(client, contentHash);
+  }
   await client.query("DELETE FROM classrooms WHERE owner_id = $1", [userId]);
   for (const table of [
     "classroom_members",

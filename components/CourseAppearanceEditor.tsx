@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import AppIcon from "@/components/AppIcon";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
+import CoverImageEditor from "@/components/CoverImageEditor";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
 import {
@@ -61,11 +63,17 @@ export default function CourseAppearanceEditor({
   courseTitle,
   value,
   onSaved,
+  coverHash,
+  onCoverChanged,
+  published,
 }: {
   courseId: number;
   courseTitle: string;
   value: CourseAppearance;
   onSaved: (appearance: CourseAppearance) => void | Promise<void>;
+  coverHash: string | null;
+  onCoverChanged: (coverHash: string | null) => void;
+  published?: boolean;
 }) {
   const [draft, setDraft] = useState(() => parseCourseAppearance(value));
   const [saving, setSaving] = useState(false);
@@ -108,7 +116,7 @@ export default function CourseAppearanceEditor({
   }
 
   return (
-    <details id="course-appearance" className="course-theme-editor group mb-8 overflow-hidden border border-line bg-card shadow-card">
+    <details id="course-appearance" className="course-theme-editor group mb-8 border border-line bg-card shadow-card">
       <summary className="flex min-h-20 items-center justify-between gap-5 px-5 py-4 sm:px-7" aria-controls="course-appearance-controls">
         <span><span className="section-label block">World system</span><span className="mt-1 block text-base font-semibold">{draftTheme.name}</span></span>
         <span className="flex shrink-0 items-center gap-3 text-xs font-semibold text-ink-soft"><span className="hidden sm:inline">{titleCase(draftTheme.cardStyle)} cards · {titleCase(draftTheme.lockStyle)} locks</span><span className="grid h-10 w-10 place-items-center rounded-full bg-paper transition-transform group-open:rotate-45" aria-hidden="true">+</span></span>
@@ -118,6 +126,8 @@ export default function CourseAppearanceEditor({
           <p className="section-label">Subject atmosphere</p>
           <h2 id="course-appearance-heading" className="display mt-2 text-4xl">Choose the world, keep the rules.</h2>
           <p className="mt-3 max-w-xl text-sm leading-6 text-ink-soft">Every preset changes the mood, card treatment, pattern language, locks, and controls while navigation and reading behaviour stay familiar.</p>
+
+          <div className="mt-6"><CoverImageEditor kind="course" artifactId={courseId} title={courseTitle} coverHash={coverHash} onChanged={onCoverChanged} /></div>
 
           <fieldset className="mt-6">
             <legend className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft">Premium presets</legend>
@@ -161,11 +171,14 @@ export default function CourseAppearanceEditor({
           {error && <p role="alert" className="mt-3 rounded-xl bg-no-soft px-4 py-3 text-xs font-semibold leading-5 text-no">{error}</p>}
         </div>
 
-        <CourseAppearanceFrame appearance={draft} className="course-preview-bg border-t border-line p-4 sm:p-6 lg:border-l lg:border-t-0">
+        <CourseAppearanceFrame appearance={draft} className="course-preview-bg order-first border-b border-line p-4 sm:p-6 lg:order-last lg:border-b-0 lg:border-l">
           <div className="sticky top-5 overflow-hidden border border-[var(--course-line)] bg-[var(--course-canvas)] shadow-pop" style={{ borderRadius: "var(--course-card-radius)" }}>
-            <CourseWorld seed={`appearance:${courseId}`} title={courseTitle} theme={draft.worldTheme} accent={COURSE_ACCENT_HEX[draft.accent]} mood={draft.atmosphere === "full" ? "bright" : "calm"} progress={42} className="min-h-44" />
+            <div className="relative min-h-44 overflow-hidden">
+              <CourseWorld seed={`appearance:${courseId}`} title={courseTitle} theme={draft.worldTheme} accent={COURSE_ACCENT_HEX[draft.accent]} mood={draft.atmosphere === "full" ? "bright" : "calm"} progress={42} className="absolute inset-0 min-h-full" />
+              <ArtifactCoverImage kind="course" artifactId={courseId} contentHash={coverHash} variant="course" priority />
+            </div>
             <div className="course-reading-surface p-5 sm:p-6">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft">{draftTheme.name} · Learner preview</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-soft">{draftTheme.name} · {published ? "Draft preview — published course unchanged" : "Learner preview"}</p>
               <h3 className="display mt-2 text-3xl leading-[0.98]">{courseTitle}</h3>
               <p className="reading mt-3 text-ink-soft">One idea at a time, in a world shaped to fit the subject.</p>
               <div className="mt-5 h-1 overflow-hidden rounded-full bg-line"><div className="h-full w-[42%] rounded-full bg-[var(--course-accent)]" /></div>

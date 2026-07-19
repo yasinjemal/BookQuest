@@ -159,6 +159,29 @@ async function recordSpaceAudit(
   );
 }
 
+export async function recordCourseContentAuditEvent(
+  exec: Queryable,
+  input: {
+    eventType: string;
+    spaceId: string;
+    actorUserId: number;
+    courseId: number;
+    metadata?: Record<string, string | number | boolean | null>;
+  }
+) {
+  const space = (
+    await exec.query<SpaceRow>("SELECT * FROM spaces WHERE id = $1", [input.spaceId])
+  ).rows[0];
+  if (!space) throw new SpaceAccessError("wrong_space");
+  await recordSpaceAudit(exec, {
+    eventType: input.eventType,
+    space,
+    actorUserId: input.actorUserId,
+    courseId: input.courseId,
+    metadata: input.metadata,
+  });
+}
+
 export async function ensurePersonalSpaceForUser(
   userId: number,
   userName: string,
@@ -1136,6 +1159,14 @@ export async function removeSpaceMember(
        WHERE space_id = $1 AND user_id = $2`,
       [spaceId, subjectUserId, removedAt]
     );
+    await client.query(
+      `DELETE FROM classroom_members member
+        USING legacy_classroom_spaces legacy
+        WHERE legacy.space_id = $1
+          AND member.classroom_id = legacy.classroom_id
+          AND member.user_id = $2`,
+      [spaceId, subjectUserId]
+    );
     for (const history of assignmentHistory) {
       await client.query(
         `INSERT INTO assignment_audience_events
@@ -1678,10 +1709,13 @@ export async function resolveCourseLearningContext(
        FROM space_assignments a
        JOIN space_courses sc
          ON sc.space_id = a.space_id AND sc.course_id = a.course_id
+       JOIN courses course ON course.id = a.course_id
+       JOIN spaces owning_space ON owning_space.id = course.owning_space_id
        JOIN space_assignment_members am ON am.assignment_id = a.id
        JOIN space_memberships m ON m.id = am.membership_id AND m.user_id = $1
        JOIN spaces s ON s.id = a.space_id
        WHERE a.course_id = $2 AND a.status = 'active'
+         AND owning_space.status = 'active'
        ORDER BY a.created_at DESC`,
       [userId, courseId]
     )
@@ -1727,14 +1761,38 @@ export async function resolveCourseLearningContext(
        FROM spaces s
        JOIN space_memberships m ON m.space_id = s.id AND m.user_id = $1
        JOIN courses c ON c.id = $2
+       JOIN users course_owner ON course_owner.id = c.owner_id
+       JOIN spaces owning_space ON owning_space.id = c.owning_space_id
        WHERE s.personal_owner_user_id = $1
+         AND owning_space.status = 'active'
          AND (
-           c.owner_id = $1 OR c.published = 1 OR
+           (c.published = 1 AND c.status = 'ready'
+             AND course_owner.account_status = 'active'
+             AND owning_space.status = 'active') OR
            EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id = $1 AND e.course_id = c.id) OR
            EXISTS (
              SELECT 1 FROM classroom_assignments ca
              JOIN classroom_members cm ON cm.classroom_id = ca.classroom_id
+             JOIN classrooms classroom ON classroom.id = ca.classroom_id
+             JOIN legacy_classroom_spaces legacy ON legacy.classroom_id = ca.classroom_id
+             JOIN spaces class_space ON class_space.id = legacy.space_id
+             JOIN space_memberships class_membership
+               ON class_membership.space_id = class_space.id
+              AND class_membership.user_id = cm.user_id
              WHERE ca.course_id = c.id AND cm.user_id = $1
+               AND classroom.lifecycle_status = 'active' AND class_space.status = 'active'
+               AND class_membership.status = 'active'
+               AND class_membership.role <> 'auditor'
+               AND (class_membership.expires_at IS NULL OR
+                    class_membership.expires_at::timestamptz > now())
+           ) OR EXISTS (
+             SELECT 1 FROM space_memberships author_membership
+              WHERE author_membership.space_id = c.owning_space_id
+                AND author_membership.user_id = $1
+                AND author_membership.status = 'active'
+                AND author_membership.role IN ('owner','administrator','creator','reviewer')
+                AND (author_membership.expires_at IS NULL OR
+                     author_membership.expires_at::timestamptz > now())
            )
          )`,
       [userId, courseId]

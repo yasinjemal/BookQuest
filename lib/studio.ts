@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { newGenerationRunId } from "./generation-run";
 import { pool, tx, type Queryable } from "./pg";
-import { authorizeStoredMembership } from "./spaces";
+import { authorizeStoredMembership, recordCourseContentAuditEvent } from "./spaces";
 import {
   BLOCK_CHANNELS,
   type BlockType,
@@ -13,6 +13,14 @@ import {
   type CourseAppearance,
 } from "./course-appearance";
 import { enqueueWebhookEvent } from "./integrations";
+import {
+  assertCoverStorageCapacity,
+  deleteCoverIfUnreferenced,
+  insertCoverImage,
+  lockCoverHashes,
+  type ProcessedCoverImage,
+} from "./cover-images";
+import { lockCourseMutation } from "./course-mutation-lock";
 
 export type SourceKind =
   | "pdf"
@@ -33,7 +41,6 @@ export class StudioConflictError extends Error {
 
 const nowIso = () => new Date().toISOString();
 const hash = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
-
 export function sourceKindForFilename(filename: string): SourceKind {
   const extension = filename.toLowerCase().split(".").pop();
   if (extension === "pdf") return "pdf";
@@ -535,12 +542,14 @@ export async function branchCourseVersionForRegeneration(
   const parentId = course.current_draft_version_id ?? course.published_version_id;
   const parent = parentId
     ? (
-        await exec.query<{
-          source_collection_version_id: string | null;
-          recipe_version_id: string | null;
-          appearance_json: string;
-        }>(
-          `SELECT source_collection_version_id, recipe_version_id, appearance_json
+      await exec.query<{
+        source_collection_version_id: string | null;
+        recipe_version_id: string | null;
+        appearance_json: string;
+        cover_image_hash: string | null;
+      }>(
+          `SELECT source_collection_version_id, recipe_version_id, appearance_json,
+                  cover_image_hash
            FROM course_versions WHERE id = $1`,
           [parentId]
         )
@@ -553,9 +562,9 @@ export async function branchCourseVersionForRegeneration(
       `INSERT INTO course_versions
         (course_id, version_number, parent_version_id, lifecycle_status,
          title, description, source_collection_version_id, recipe_version_id,
-         appearance_json, outline_json, content_json, content_hash,
+         appearance_json, cover_image_hash, outline_json, content_json, content_hash,
          created_by_user_id, created_at, updated_at)
-       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, '{}', $9, $10, $11, $12, $12)
+       VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, '{}', $10, $11, $12, $13, $13)
        RETURNING id`,
       [
         courseId,
@@ -566,6 +575,7 @@ export async function branchCourseVersionForRegeneration(
          parent?.source_collection_version_id ?? null,
          parent?.recipe_version_id ?? null,
          parent?.appearance_json ?? "{}",
+         parent?.cover_image_hash ?? null,
          emptyContent,
          hash(emptyContent),
          course.owner_id,
@@ -933,13 +943,18 @@ async function authorizeCourseStudio(
   courseId: number,
   capability: "content.read" | "content.update" | "content.review" | "content.publish"
 ) {
+  if (capability !== "content.read") {
+    await lockCourseMutation(exec, courseId);
+  }
   const course = (
     await exec.query<{
       id: number;
+      owner_id: number;
       owning_space_id: string;
+      published: number;
       current_draft_version_id: string | null;
       published_version_id: string | null;
-    }>("SELECT id, owning_space_id, current_draft_version_id, published_version_id FROM courses WHERE id = $1", [courseId])
+    }>("SELECT id, owner_id, owning_space_id, published, current_draft_version_id, published_version_id FROM courses WHERE id = $1", [courseId])
   ).rows[0];
   if (!course) throw new StudioConflictError("Course not found");
   await authorizeStoredMembership(userId, course.owning_space_id, capability, exec);
@@ -1023,7 +1038,7 @@ export async function getCourseStudio(userId: number, courseId: number) {
     const version = (
       await client.query(
         `SELECT id, course_id, version_number, parent_version_id,
-                lifecycle_status, title, description, appearance_json, outline_json,
+                lifecycle_status, title, description, appearance_json, cover_image_hash, outline_json,
                 source_collection_version_id, recipe_version_id,
                 created_at, updated_at
          FROM course_versions WHERE id = $1`,
@@ -1990,6 +2005,7 @@ function toLearnerCard(block: StudioBlock): unknown {
 
 export async function submitCourseVersionForReview(userId: number, courseId: number) {
   return tx(async (client) => {
+    await lockCourseMutation(client, courseId);
     const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
     if (!course.current_draft_version_id) throw new StudioConflictError("No draft is ready for review");
     const version = (
@@ -2022,6 +2038,7 @@ export async function reviewCourseVersion(
   input: { decision: CourseReviewDecision; summary?: string; checklist?: Record<string, unknown> }
 ) {
   return tx(async (client) => {
+    await lockCourseMutation(client, courseId);
     const course = await authorizeCourseStudio(client, userId, courseId, "content.review");
     if (!course.current_draft_version_id) throw new StudioConflictError("Course review version not found");
     const version = (
@@ -2112,12 +2129,17 @@ export async function resolveCourseVersionComment(
   });
 }
 
-export async function branchPublishedCourseVersion(
+async function branchPublishedCourseVersionInTransaction(
+  client: Queryable,
   userId: number,
   courseId: number,
   fromVersionId?: string
 ) {
-  return tx(async (client) => {
+    // Serialize branching with every cover mutation. Without this row lock,
+    // concurrent requests can both observe an empty draft pointer and create
+    // competing working versions.
+    await lockCourseMutation(client, courseId);
+    await client.query("SELECT id FROM courses WHERE id = $1 FOR UPDATE", [courseId]);
     const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
     if (course.current_draft_version_id) {
       const current = (
@@ -2143,6 +2165,7 @@ export async function branchPublishedCourseVersion(
         content_json: string;
         content_hash: string;
         appearance_json: string;
+        cover_image_hash: string | null;
       }>(
         `SELECT * FROM course_versions
          WHERE id = $1 AND course_id = $2
@@ -2164,13 +2187,14 @@ export async function branchPublishedCourseVersion(
         `INSERT INTO course_versions
           (course_id, version_number, parent_version_id, lifecycle_status, title,
             description, source_collection_version_id, recipe_version_id, outline_json,
-            content_json, content_hash, appearance_json, created_by_user_id)
-          VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            content_json, content_hash, appearance_json, cover_image_hash, created_by_user_id)
+          VALUES ($1, $2, $3, 'draft', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
           courseId, nextVersion, sourceVersionId, parent.title, parent.description,
            parent.source_collection_version_id, parent.recipe_version_id, parent.outline_json,
-           parent.content_json, parent.content_hash, parent.appearance_json, userId,
+           parent.content_json, parent.content_hash, parent.appearance_json,
+           parent.cover_image_hash, userId,
         ]
       )
     ).rows[0];
@@ -2214,11 +2238,121 @@ export async function branchPublishedCourseVersion(
       [courseId, draft.id]
     );
     return { versionId: draft.id, versionNumber: nextVersion, parentVersionId: sourceVersionId };
+}
+
+export async function branchPublishedCourseVersion(
+  userId: number,
+  courseId: number,
+  fromVersionId?: string
+) {
+  return tx((client) => branchPublishedCourseVersionInTransaction(
+    client,
+    userId,
+    courseId,
+    fromVersionId
+  ));
+}
+
+async function changeCourseDraftCover(
+  userId: number,
+  courseId: number,
+  cover: ProcessedCoverImage | null
+) {
+  return tx(async (client) => {
+    await lockCourseMutation(client, courseId);
+    await client.query("SELECT id FROM courses WHERE id = $1 FOR UPDATE", [courseId]);
+    const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
+    let versionId = course.current_draft_version_id;
+    let branched = false;
+    if (!versionId) {
+      if (!course.published_version_id) {
+        throw new StudioConflictError("Course draft not found");
+      }
+      const branch = await branchPublishedCourseVersionInTransaction(client, userId, courseId);
+      versionId = branch.versionId;
+      branched = true;
+    }
+
+    const version = (
+      await client.query<{
+        version_number: number;
+        lifecycle_status: string;
+        cover_image_hash: string | null;
+      }>(
+        `SELECT version_number, lifecycle_status, cover_image_hash
+           FROM course_versions
+          WHERE id = $1 AND course_id = $2
+          FOR UPDATE`,
+        [versionId, courseId]
+      )
+    ).rows[0];
+    if (!version || version.lifecycle_status !== "draft") {
+      throw new StudioConflictError(
+        "This course version is locked. Create an editable draft before changing its cover."
+      );
+    }
+
+    const at = nowIso();
+    await lockCoverHashes(client, [version.cover_image_hash, cover?.contentHash]);
+    if (cover) {
+      await insertCoverImage(client, cover, at);
+    }
+    await client.query(
+      "UPDATE course_versions SET cover_image_hash = $2, updated_at = $3 WHERE id = $1",
+      [versionId, cover?.contentHash ?? null, at]
+    );
+    if (!course.published) {
+      await client.query(
+        "UPDATE courses SET cover_image_hash = $2 WHERE id = $1",
+        [courseId, cover?.contentHash ?? null]
+      );
+    }
+    await deleteCoverIfUnreferenced(client, version.cover_image_hash);
+    if (cover) {
+      await assertCoverStorageCapacity(
+        client,
+        { ownerId: course.owner_id, spaceId: course.owning_space_id }
+      );
+    }
+    await recordCourseContentAuditEvent(client, {
+      eventType: cover ? "course.cover_updated" : "course.cover_removed",
+      spaceId: course.owning_space_id,
+      actorUserId: userId,
+      courseId,
+      metadata: {
+        version_id: versionId,
+        version_number: Number(version.version_number),
+        branched,
+        cover_hash: cover?.contentHash ?? null,
+        previous_cover_hash: version.cover_image_hash,
+      },
+    });
+    return {
+      coverHash: cover?.contentHash ?? null,
+      removed: !cover && version.cover_image_hash !== null,
+      versionId,
+      versionNumber: Number(version.version_number),
+      branched,
+      publishedCoverUnchanged: Boolean(course.published),
+    };
   });
+}
+
+export async function setCourseDraftCover(
+  userId: number,
+  courseId: number,
+  cover: ProcessedCoverImage
+) {
+  return changeCourseDraftCover(userId, courseId, cover);
+}
+
+export async function clearCourseDraftCover(userId: number, courseId: number) {
+  return changeCourseDraftCover(userId, courseId, null);
 }
 
 export async function archiveCourseDraftVersion(userId: number, courseId: number) {
   return tx(async (client) => {
+    await lockCourseMutation(client, courseId);
     const course = await authorizeCourseStudio(client, userId, courseId, "content.update");
     if (!course.current_draft_version_id) throw new StudioConflictError("Draft version not found");
     const version = (
@@ -2247,8 +2381,8 @@ export async function archiveCourseDraftVersion(userId: number, courseId: number
 export async function diffCourseVersions(userId: number, courseId: number, baseId: string, compareId: string) {
   return tx(async (client) => {
     await authorizeCourseStudio(client, userId, courseId, "content.read");
-    const versions = await client.query<{ id: string; appearance_json: string }>(
-      "SELECT id, appearance_json FROM course_versions WHERE course_id = $1 AND id = ANY($2::text[])",
+    const versions = await client.query<{ id: string; appearance_json: string; cover_image_hash: string | null }>(
+      "SELECT id, appearance_json, cover_image_hash FROM course_versions WHERE course_id = $1 AND id = ANY($2::text[])",
       [courseId, [baseId, compareId]]
     );
     if (versions.rowCount !== 2 || baseId === compareId) throw new StudioConflictError("Choose two versions from this course");
@@ -2273,6 +2407,8 @@ export async function diffCourseVersions(userId: number, courseId: number, baseI
       removed: removed.map((block) => block.lineageId),
       changed: changed.map((block) => block.lineageId),
       appearanceChanged: JSON.stringify(appearanceByVersion.get(baseId)) !== JSON.stringify(appearanceByVersion.get(compareId)),
+      coverChanged: versions.rows.find((version) => version.id === baseId)?.cover_image_hash !==
+        versions.rows.find((version) => version.id === compareId)?.cover_image_hash,
     };
   });
 }
@@ -2283,11 +2419,12 @@ export async function publishApprovedCourseVersion(
   category: string
 ) {
   return tx(async (client) => {
+    await lockCourseMutation(client, courseId);
     const course = await authorizeCourseStudio(client, userId, courseId, "content.publish");
     if (!course.current_draft_version_id) throw new StudioConflictError("Approved version not found");
     const version = (
-      await client.query<{ id: string; version_number: number; lifecycle_status: string; title: string; description: string; appearance_json: string }>(
-        "SELECT id, version_number, lifecycle_status, title, description, appearance_json FROM course_versions WHERE id = $1 FOR UPDATE",
+      await client.query<{ id: string; version_number: number; lifecycle_status: string; title: string; description: string; appearance_json: string; cover_image_hash: string | null }>(
+        "SELECT id, version_number, lifecycle_status, title, description, appearance_json, cover_image_hash FROM course_versions WHERE id = $1 FOR UPDATE",
         [course.current_draft_version_id]
       )
     ).rows[0];
@@ -2358,9 +2495,9 @@ export async function publishApprovedCourseVersion(
       `UPDATE courses SET title = $2, description = $3, category = $4,
          content_version = $5, published = 1, authoring_status = 'published',
          published_version_id = $6, current_draft_version_id = NULL, status = 'ready',
-         appearance_json = $7
+         appearance_json = $7, cover_image_hash = $8
        WHERE id = $1`,
-      [courseId, version.title, version.description, category, version.version_number, version.id, version.appearance_json]
+      [courseId, version.title, version.description, category, version.version_number, version.id, version.appearance_json, version.cover_image_hash]
     );
     await enqueueWebhookEvent(client, {
       spaceId: course.owning_space_id,

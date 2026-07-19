@@ -45,6 +45,7 @@ const book: ReadingEditionMetadata = {
   estimatedMinutes: Math.max(1, Math.ceil(totalWords / 230)),
   unitKind: "chapter",
   vibeId: "story-path",
+  coverHash: null,
   createdAt: "2026-07-19T00:00:00.000Z",
   progress: null,
   outline: passages.map((passage, index) => ({ index, title: passage.title, wordCount: counts[index] })),

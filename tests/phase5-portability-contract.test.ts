@@ -12,6 +12,7 @@ describe("Phase 5 course portability surface", () => {
     expect(route).toContain("privacyExportUser");
     expect(route).toContain('"Cache-Control": "private, no-store"');
     expect(route).toContain("application/vnd.bookquest.course+json");
+    expect(route).toContain("JSON.stringify(coursePackage)");
     expect(route).toContain('"X-Content-Type-Options": "nosniff"');
   });
 
@@ -26,13 +27,16 @@ describe("Phase 5 course portability surface", () => {
     expect(create).toContain("Learners, answers, credentials, members, and secrets are never imported");
     expect(route).toContain("analyzeCourseArchive");
     expect(route).toContain("importCourseArchive");
-    expect(route).toContain("MAX_COURSE_ARCHIVE_BYTES");
+    expect(route).toContain("MAX_COURSE_IMPORT_REQUEST_BYTES");
   });
 
   it("publishes one canonical format and preserves the unfinished full-install gate", () => {
     const implementation = source("lib/portability.ts");
     const tracker = source("docs/PLATFORM_PHASE_TRACKER.md");
     expect(implementation).toContain('COURSE_ARCHIVE_FORMAT = "bookquest.course"');
+    expect(implementation).toContain("COURSE_ARCHIVE_SCHEMA_VERSION = 2");
+    expect(implementation).toContain("CourseArchiveSchemaV1");
+    expect(implementation).toContain("validateStoredCoverImage");
     expect(implementation).toContain("portable_course_imports");
     expect(implementation).toContain("content.create");
     expect(tracker).toContain("**Engineering status:** Tested (15 July 2026 UTC; bounded sovereign core)");

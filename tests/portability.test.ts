@@ -57,7 +57,7 @@ describe.skipIf(!TEST_DB)("Phase 5 portable course archive", () => {
   it("exports a versioned, integrity-protected archive without tenant identity or secret metadata", async () => {
     archive = await portability.exportCourseArchive(ownerId, courseId);
     expect(archive).toMatchObject({
-      format: "bookquest.course", schemaVersion: 1,
+      format: "bookquest.course", schemaVersion: 2,
       payload: { course: { title: "Blacksteel Shop Playbook" }, sources: [{ portableId: "source-1" }], recipe: { portableId: "recipe-1" } },
       integrity: { algorithm: "sha256", sha256: expect.stringMatching(/^[0-9a-f]{64}$/) },
     });

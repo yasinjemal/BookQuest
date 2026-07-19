@@ -1,5 +1,5 @@
 import type { Chapter } from "./extract";
-import { many, one, q, tx } from "./pg";
+import { many, one, tx } from "./pg";
 import {
   cleanBookTitle,
   deriveReadingEditionProfile,
@@ -16,6 +16,7 @@ import type {
   ReadingVibeId,
 } from "./reading-types";
 import { ensurePersonalSpaceForUser } from "./spaces";
+import { deleteCoverIfUnreferenced } from "./cover-images";
 
 interface ReadingEditionRow {
   id: number;
@@ -29,6 +30,7 @@ interface ReadingEditionRow {
   estimated_minutes: number;
   unit_kind: ReadingUnitKind;
   vibe_id: ReadingVibeId;
+  cover_image_hash: string | null;
   profile_json: string;
   created_at: string;
   updated_at: string;
@@ -79,6 +81,7 @@ function listItem(row: ReadingEditionRow): ReadingEditionListItem {
     estimatedMinutes: Number(row.estimated_minutes),
     unitKind: row.unit_kind,
     vibeId: row.vibe_id,
+    coverHash: row.cover_image_hash,
     createdAt: row.created_at,
     progress: progressFrom(row),
   };
@@ -88,7 +91,7 @@ const READING_SELECT = `
   SELECT edition.id, edition.owner_id, edition.owning_space_id, edition.title,
     edition.source_filename, edition.chapter_outline_json,
     edition.source_chapter_count, edition.word_count, edition.estimated_minutes,
-    edition.unit_kind, edition.vibe_id, edition.profile_json,
+    edition.unit_kind, edition.vibe_id, edition.cover_image_hash, edition.profile_json,
     edition.created_at, edition.updated_at,
     progress.unit_index AS progress_unit_index,
     progress.unit_progress::float8 AS progress_unit,
@@ -301,9 +304,16 @@ export async function saveReadingProgress(args: {
 }
 
 export async function deleteReadingEdition(editionId: number, ownerId: number) {
-  const result = await q(
-    "DELETE FROM reading_editions WHERE id = $1 AND owner_id = $2",
-    [editionId, ownerId]
-  );
-  return result.rowCount === 1;
+  return tx(async (client) => {
+    const edition = (
+      await client.query<{ cover_image_hash: string | null }>(
+        "SELECT cover_image_hash FROM reading_editions WHERE id = $1 AND owner_id = $2 FOR UPDATE",
+        [editionId, ownerId]
+      )
+    ).rows[0];
+    if (!edition) return false;
+    await client.query("DELETE FROM reading_editions WHERE id = $1", [editionId]);
+    await deleteCoverIfUnreferenced(client, edition.cover_image_hash);
+    return true;
+  });
 }

@@ -350,3 +350,25 @@ start.
    (e.g. `CREATE INDEX CONCURRENTLY`).
 4. Apply and verify with `node scripts/migrate.mjs`, and run the
    `migration runner` integration test against a scratch database.
+
+### Migration 28: artifact covers
+
+Migration `28` creates content-addressed `cover_images` storage and indexed,
+nullable cover references on `courses`, `course_versions`, and
+`reading_editions`. Only normalized WebP bytes are stored (1.5 MB maximum for
+the reader image plus a generated 150 KB gallery thumbnail); raw uploads and
+embedded metadata are not retained. Course covers follow
+the draft/review/publish lifecycle, so the published projection changes only
+when its version is released.
+
+Private-course deletion remains fail-closed. Migration `28` permits guarded
+child-history deletion only for the exact course named by the transaction;
+application cleanup removes those verified children before the parent cascade,
+so the trigger never relies on a parent row that is already gone.
+
+Cover bytes live in Postgres deliberately: existing logical backup and PITR
+procedures therefore restore them with the artifact transaction that references
+them. Budget database/WAL growth for the enforced 50 MB retained-cover limit per
+owner and per Space. After deployment, verify migration `28`, all three partial
+cover-reference indexes, and a backup/restore drill before enabling uploads in a
+new environment.

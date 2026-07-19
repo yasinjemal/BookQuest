@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import type { Card, CourseRow, CourseStatus, LessonRow, ModuleRow } from "./schemas";
+import { deleteCoverIfUnreferenced, lockCoverHashes } from "./cover-images";
+import { deleteControlledCourseVersionChildren } from "./course-history-deletion";
+import { lockCourseMutation } from "./course-mutation-lock";
 import type { PracticeSessionItem, QuizAnswerValue, QuizCard } from "./learning-types";
 import {
   answerEvidence,
@@ -38,6 +41,15 @@ import {
  */
 
 const nowIso = () => new Date().toISOString();
+
+export class CourseDeletionConflictError extends Error {
+  readonly status = 409;
+
+  constructor() {
+    super("Courses with published history are retained for learner evidence and cannot be deleted.");
+    this.name = "CourseDeletionConflictError";
+  }
+}
 
 // ---------- Users ----------
 
@@ -415,6 +427,7 @@ export interface PlatformCourseCols {
   current_draft_version_id: string | null;
   published_version_id: string | null;
   appearance_json: string;
+  cover_image_hash: string | null;
   public_slug: string;
 }
 
@@ -437,7 +450,15 @@ export async function listOwnedCourses(
   userId: number
 ): Promise<(CourseRow & PlatformCourseCols)[]> {
   return (await many(
-    "SELECT * FROM courses WHERE owner_id = $1 ORDER BY created_at DESC",
+    `SELECT course.* FROM courses course
+     JOIN spaces owning_space ON owning_space.id = course.owning_space_id
+     JOIN space_memberships membership
+       ON membership.space_id = owning_space.id AND membership.user_id = $1
+     WHERE course.owner_id = $1 AND owning_space.status <> 'suspended'
+       AND membership.status = 'active'
+       AND membership.role IN ('owner','administrator','creator','reviewer')
+       AND (membership.expires_at IS NULL OR membership.expires_at::timestamptz > now())
+     ORDER BY course.created_at DESC`,
     [userId]
   )) as (CourseRow & PlatformCourseCols)[];
 }
@@ -448,7 +469,20 @@ export async function listEnrolledCourses(
   return (await many(
     `SELECT c.* FROM courses c
      JOIN enrollments e ON e.course_id = c.id
-     WHERE e.user_id = $1 AND c.owner_id != $1
+     JOIN spaces owning_space ON owning_space.id = c.owning_space_id
+     WHERE e.user_id = $1
+       AND owning_space.status <> 'suspended'
+       AND NOT (
+         c.owner_id = $1 AND EXISTS (
+           SELECT 1 FROM space_memberships creator_membership
+            WHERE creator_membership.space_id = c.owning_space_id
+              AND creator_membership.user_id = $1
+              AND creator_membership.status = 'active'
+              AND creator_membership.role IN ('owner','administrator','creator','reviewer')
+              AND (creator_membership.expires_at IS NULL OR
+                   creator_membership.expires_at::timestamptz > now())
+         )
+       )
      ORDER BY e.created_at DESC`,
     [userId]
   )) as (CourseRow & PlatformCourseCols)[];
@@ -459,8 +493,11 @@ export async function listPublishedCourses(qStr?: string, category?: string) {
   let sql = `
     SELECT c.*, u.name AS owner_name,
       (SELECT COUNT(*)::int FROM enrollments e WHERE e.course_id = c.id) AS enroll_count
-    FROM courses c JOIN users u ON u.id = c.owner_id
-    WHERE c.published = 1 AND c.status = 'ready'`;
+    FROM courses c
+    JOIN users u ON u.id = c.owner_id
+    JOIN spaces owning_space ON owning_space.id = c.owning_space_id
+    WHERE c.published = 1 AND c.status = 'ready'
+      AND u.account_status = 'active' AND owning_space.status = 'active'`;
   if (qStr) {
     args.push(`%${qStr}%`);
     const a = `$${args.length}`;
@@ -478,7 +515,44 @@ export async function listPublishedCourses(qStr?: string, category?: string) {
 }
 
 export async function deleteCourse(id: number) {
-  await q("DELETE FROM courses WHERE id = $1", [id]);
+  await tx(async (client) => {
+    await lockCourseMutation(client, id);
+    const course = (
+      await client.query<{ published: number; has_published_history: boolean }>(
+        `SELECT course.published,
+                EXISTS (
+                  SELECT 1 FROM course_versions version
+                   WHERE version.course_id = course.id
+                     AND (version.published_at IS NOT NULL OR
+                          version.lifecycle_status IN ('published','superseded'))
+                ) AS has_published_history
+           FROM courses course WHERE course.id = $1 FOR UPDATE`,
+        [id]
+      )
+    ).rows[0];
+    if (!course) return;
+    if (course.published || course.has_published_history) {
+      throw new CourseDeletionConflictError();
+    }
+    const hashes = (
+      await client.query<{ content_hash: string }>(
+        `SELECT cover_image_hash AS content_hash FROM courses
+          WHERE id = $1 AND cover_image_hash IS NOT NULL
+         UNION
+         SELECT cover_image_hash AS content_hash FROM course_versions
+          WHERE course_id = $1 AND cover_image_hash IS NOT NULL`,
+        [id]
+      )
+    ).rows.map((row) => row.content_hash);
+    await lockCoverHashes(client, hashes);
+    await client.query(
+      "SELECT set_config('bookquest.private_course_delete', $1, TRUE)",
+      [String(id)]
+    );
+    await deleteControlledCourseVersionChildren(client, id, "all");
+    await client.query("DELETE FROM courses WHERE id = $1", [id]);
+    for (const hash of hashes) await deleteCoverIfUnreferenced(client, hash);
+  });
 }
 
 /** Claim a failed course for a new isolated generation run. */
@@ -516,6 +590,31 @@ export async function enroll(userId: number, courseId: number) {
   );
 }
 
+/** Enroll only while the complete public visibility predicate is locked and
+ * true, so takedown/account/Space transitions cannot race an ID-based enroll. */
+export async function enrollPublicCourse(userId: number, courseId: number): Promise<boolean> {
+  return tx(async (client) => {
+    const eligible = (
+      await client.query<{ id: number }>(
+        `SELECT candidate.id
+           FROM courses candidate
+           JOIN users owner ON owner.id = candidate.owner_id
+           JOIN spaces owning_space ON owning_space.id = candidate.owning_space_id
+          WHERE candidate.id = $1 AND candidate.published = 1 AND candidate.status = 'ready'
+            AND owner.account_status = 'active' AND owning_space.status = 'active'
+          FOR SHARE OF candidate, owner, owning_space`,
+        [courseId]
+      )
+    ).rows[0];
+    if (!eligible) return false;
+    await client.query(
+      "INSERT INTO enrollments (user_id, course_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [userId, courseId]
+    );
+    return true;
+  });
+}
+
 export async function isEnrolled(userId: number, courseId: number): Promise<boolean> {
   return !!(await one(
     "SELECT 1 AS x FROM enrollments WHERE user_id = $1 AND course_id = $2",
@@ -532,9 +631,44 @@ export async function canAccessCourse(
   const course = await getCourse(courseId);
   if (!course) return false;
   if (course.published) {
-    await enroll(userId, courseId);
+    await enrollPublicCourse(userId, courseId);
   }
   return !!(await resolveCourseLearningContext(userId, courseId, pool));
+}
+
+/** Read-only access check for asset delivery. Unlike canAccessCourse, this
+ * never enrolls a user merely because a browser requested an image. */
+export async function canReadCourseWithoutEnrollment(userId: number, courseId: number) {
+  return Boolean(await one<{ allowed: number }>(
+    `SELECT 1 AS allowed FROM courses course
+      JOIN spaces owning_space ON owning_space.id = course.owning_space_id
+      WHERE course.id = $2 AND owning_space.status <> 'suspended' AND (
+        EXISTS (SELECT 1 FROM enrollments enrollment
+                 WHERE enrollment.user_id = $1 AND enrollment.course_id = course.id) OR
+        EXISTS (SELECT 1 FROM classroom_assignments assignment
+                 JOIN classroom_members member ON member.classroom_id = assignment.classroom_id
+                 JOIN classrooms classroom ON classroom.id = assignment.classroom_id
+                 JOIN legacy_classroom_spaces legacy ON legacy.classroom_id = assignment.classroom_id
+                 JOIN spaces class_space ON class_space.id = legacy.space_id
+                 JOIN space_memberships class_membership
+                   ON class_membership.space_id = class_space.id
+                  AND class_membership.user_id = member.user_id
+                WHERE assignment.course_id = course.id AND member.user_id = $1
+                  AND classroom.lifecycle_status = 'active' AND class_space.status = 'active'
+                  AND class_membership.status = 'active'
+                  AND (class_membership.expires_at IS NULL OR
+                       class_membership.expires_at::timestamptz > now())) OR
+        EXISTS (SELECT 1 FROM space_assignments assignment
+                 JOIN space_assignment_members audience ON audience.assignment_id = assignment.id
+                 JOIN space_memberships membership ON membership.id = audience.membership_id
+                 JOIN spaces space ON space.id = assignment.space_id
+                WHERE assignment.course_id = course.id AND assignment.status = 'active'
+                  AND membership.user_id = $1 AND membership.status = 'active'
+                  AND (membership.expires_at IS NULL OR membership.expires_at::timestamptz > now())
+                  AND space.status = 'active')
+      )`,
+    [userId, courseId]
+  ));
 }
 
 // ---------- Modules / lessons ----------

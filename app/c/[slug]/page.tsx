@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
+import ArtifactCoverImage from "@/components/ArtifactCoverImage";
 import PublicFooter from "@/components/PublicFooter";
 import PublicHeader from "@/components/PublicHeader";
 import CourseWorld from "@/components/CourseWorld";
@@ -10,13 +11,19 @@ import ShareCourseButton from "@/components/ShareCourseButton";
 import PublicCourseViewTracker from "@/components/PublicCourseViewTracker";
 import { getPublicCourseBySlug } from "@/lib/public-product";
 import { absoluteUrl, publicMetadata } from "@/lib/seo";
+import { coverImageUrl } from "@/lib/cover-contract";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const slug = (await params).slug;
   const course = await getPublicCourseBySlug(slug);
   if (!course) return { title: "Course not found", robots: { index: false, follow: false } };
   const description = String(course.description || `Preview ${course.title}, an interactive course on BookQuest.`);
-  return publicMetadata({ title: String(course.title), description, path: `/c/${slug}` });
+  return publicMetadata({
+    title: String(course.title),
+    description,
+    path: `/c/${slug}`,
+    image: coverImageUrl("course", Number(course.id), course.coverHash) ?? "/opengraph-image",
+  });
 }
 export default async function PublicCoursePage({ params }: { params: Promise<{ slug: string }> }) {
   const slug = (await params).slug;
@@ -61,7 +68,10 @@ export default async function PublicCoursePage({ params }: { params: Promise<{ s
         <Link href="/explore" className="hover:text-teal-deep">Courses</Link><span aria-hidden="true"> / </span><span>{String(course.title)}</span>
       </nav>
       <section className="grid overflow-hidden rounded-[2rem] bg-pine text-white shadow-pop lg:grid-cols-[1.05fr_.95fr]">
-        <CourseWorld seed={Number(course.id)} title={String(course.title)} theme={course.appearance.worldTheme} progress={0} className="min-h-[22rem] lg:min-h-[36rem]" />
+        <div className="relative min-h-[22rem] overflow-hidden lg:min-h-[36rem]">
+          <CourseWorld seed={Number(course.id)} title={String(course.title)} theme={course.appearance.worldTheme} progress={0} className="absolute inset-0 min-h-full" />
+          <ArtifactCoverImage kind="course" artifactId={Number(course.id)} contentHash={course.coverHash} variant="course" priority />
+        </div>
         <div className="flex flex-col justify-center p-7 sm:p-12">
           <p className="text-[10px] font-bold uppercase tracking-[.2em] text-signal">{String(course.category)}</p>
           <h1 className="display mt-4 text-[clamp(3.4rem,10vw,6.7rem)] leading-[.86]">{String(course.title)}</h1>

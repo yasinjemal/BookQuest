@@ -55,6 +55,10 @@ export const RATE_LIMITS = {
   },
   uploadUser: { scope: "course.upload.user", limit: 10, windowSeconds: 60 * 60 },
   uploadIp: { scope: "course.upload.ip", limit: 30, windowSeconds: 60 * 60 },
+  coverUploadUser: { scope: "cover.upload.user", limit: 30, windowSeconds: 60 * 60 },
+  coverUploadIp: { scope: "cover.upload.ip", limit: 100, windowSeconds: 60 * 60 },
+  portableImportUser: { scope: "portable.import.user", limit: 30, windowSeconds: 60 * 60 },
+  portableImportIp: { scope: "portable.import.ip", limit: 100, windowSeconds: 60 * 60 },
   courseRetryUser: {
     scope: "course.retry.user",
     limit: 5,

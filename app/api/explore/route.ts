@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
       owner_name: c.owner_name,
       enroll_count: c.enroll_count,
       appearance: parseCourseAppearance(c.appearance_json),
+      coverHash: c.cover_image_hash,
       public_slug: c.public_slug,
       mine: user ? c.owner_id === user.id : false,
       enrolled: user ? await isEnrolled(user.id, c.id) : false,

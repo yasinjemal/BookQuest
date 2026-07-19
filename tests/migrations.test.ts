@@ -76,6 +76,23 @@ describe("migration list", () => {
     expect(migration?.sql).toContain("CREATE TABLE reading_progress");
   });
 
+  it("adds bounded, version-aware custom covers without weakening published history", () => {
+    const migration = MIGRATIONS.find((item) => item.name === "artifact_cover_images");
+    expect(migration).toMatchObject({ id: 28 });
+    expect(migration?.sql).toContain("CREATE TABLE cover_images");
+    expect(migration?.sql).toContain("ALTER TABLE course_versions");
+    expect(migration?.sql).toContain("ALTER TABLE reading_editions");
+    expect(migration?.sql).toContain("octet_length(image_data)");
+    expect(migration?.sql).toContain("thumbnail_byte_size <= 150000");
+    expect(migration?.sql).toContain("octet_length(thumbnail_data)");
+    expect(migration?.sql).toContain("course_versions_cover_image_hash");
+    expect(migration?.sql).toContain("reading_editions_cover_image_hash");
+    expect(migration?.sql).toContain("to_jsonb(NEW)");
+    expect(migration?.sql).toContain("RETURN OLD");
+    expect(migration?.sql).toContain("TG_TABLE_NAME = 'course_block_revisions'");
+    expect(migration?.sql).toContain("TG_TABLE_NAME = 'course_version_reviews'");
+  });
+
   it("rejects a gap in migration ids", () => {
     const gapped: Migration[] = [
       { id: 1, name: "baseline", sql: "SELECT 1" },
