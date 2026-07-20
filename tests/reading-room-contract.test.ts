@@ -76,6 +76,10 @@ describe("Reading Room product contract", () => {
     expect(reader).toContain("positionReady");
     expect(reader).toContain("saveQueue");
     expect(reader).toContain("pendingHeadingFocus");
+    expect(reader).toContain("LongReadingDock");
+    expect(reader).toContain("Lumen Voyage");
+    expect(reader).toContain("Quest Marks");
+    expect(reader).toContain("sightline");
     expect(reader).toMatch(/lumenMode\s*&&\s*<LumenField/);
     expect(reader).not.toContain('id="main-content"');
     expect(reader).not.toContain('event.key === "ArrowLeft"');
@@ -86,6 +90,8 @@ describe("Reading Room product contract", () => {
     expect(contentModel).toContain("readingBookProgress");
     expect(readerStyles).toContain(".pageHeader");
     expect(readerStyles).toContain(".focusMode");
+    expect(readerStyles).toContain(".sightlineHorizon");
+    expect(readerStyles).toContain(".restHarbor");
     expect(readerStyles).toContain("overflow-wrap: anywhere");
     expect(readerStyles).toContain("prefers-reduced-motion");
     expect(readerStyles).toContain("forced-colors");

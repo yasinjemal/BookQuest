@@ -7,7 +7,7 @@ import { publicMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = publicMetadata({
   title: "Interactive Document-to-Course Demo",
-  description: "Try BookQuest's interactive course demo and Lumen, a passage-aware full-book experience that uses no AI credits while you read.",
+  description: "Try BookQuest's interactive course demo and Lumen Voyage, a passage-aware long-reading experience with natural stopping points and no AI credits while you read.",
   path: "/demo",
 });
 
@@ -28,8 +28,8 @@ export default function DemoPage() {
         <div className="flex flex-col justify-center p-8 sm:p-12">
           <p className="text-[10px] font-bold uppercase tracking-[.2em] text-teal-deep">Lumen living reader</p>
           <h2 className="display mt-4 max-w-[11ch] text-[clamp(3.2rem,8vw,5.4rem)] leading-[.88]">The page notices where you are.</h2>
-          <p className="mt-5 max-w-xl text-sm leading-7 text-ink-soft">A passage-aware focus light, cinematic chapter thresholds, and a visual Book Atlas turn the original full text into a room that quietly keeps pace. No rewritten words. No AI credits while reading.</p>
-          <div className="mt-6 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-ink-soft"><span className="rounded-full border border-line px-3 py-2">Local passage resume</span><span className="rounded-full border border-line px-3 py-2">Reduced-motion safe</span><span className="rounded-full border border-line px-3 py-2">No AI reading credits</span></div>
+          <p className="mt-5 max-w-xl text-sm leading-7 text-ink-soft">Lumen Voyages count only active reading time, wait for natural passage boundaries, and pair contrast-safe Sightlines with private Quest Marks. No rewritten words. No AI credits while reading.</p>
+          <div className="mt-6 flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-[.1em] text-ink-soft"><span className="rounded-full border border-line px-3 py-2">Natural-stop Voyages</span><span className="rounded-full border border-line px-3 py-2">Sightline modes</span><span className="rounded-full border border-line px-3 py-2">Private Quest Marks</span></div>
           <Link href="/demo/reading-room" className="mt-7 inline-flex min-h-12 w-fit items-center rounded-full bg-forest px-6 text-sm font-bold text-white">Enter Lumen →</Link>
         </div>
         <div className="relative min-h-[25rem] border-t border-line lg:min-h-[34rem] lg:border-l lg:border-t-0">

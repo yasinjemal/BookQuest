@@ -5,7 +5,7 @@ import { publicMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = publicMetadata({
   title: "Lumen Living Reader Demo",
-  description: "Experience Lumen: BookQuest's passage-aware full-book reader with a living focus light, visual Book Atlas, local passage resume, and no AI credits while reading.",
+  description: "Experience Lumen Voyage: BookQuest's passage-aware full-book reader with natural stopping points, Sightline modes, private Quest Marks, and no AI credits while reading.",
   path: "/demo/reading-room",
 });
 

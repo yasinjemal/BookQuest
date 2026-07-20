@@ -1,0 +1,75 @@
+.card {
+  display: grid;
+  justify-items: center;
+  border: 1px solid color-mix(in srgb, var(--course-accent) 38%, var(--course-line-deep));
+  border-radius: 1.3rem;
+  padding: 1rem .8rem;
+  background: color-mix(in srgb, var(--course-canvas) 86%, transparent);
+  box-shadow: 0 20px 60px color-mix(in srgb, var(--course-ink) 10%, transparent), 0 0 3rem color-mix(in srgb, var(--course-accent) 8%, transparent);
+  text-align: center;
+  backdrop-filter: blur(18px);
+}
+
+.dial {
+  position: relative;
+  display: grid;
+  width: 5.25rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: conic-gradient(var(--course-accent) var(--voyage-progress), color-mix(in srgb, var(--course-line) 82%, transparent) 0);
+  box-shadow: 0 0 2.4rem color-mix(in srgb, var(--course-accent) 16%, transparent);
+}
+
+.dial::before { position: absolute; width: 4.35rem; aspect-ratio: 1; border-radius: 50%; background: var(--course-canvas); content: ""; }
+.dial > span { position: relative; z-index: 1; }
+.dial strong,
+.dial small { display: block; }
+.dial strong { font-family: var(--font-longform), Georgia, serif; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.dial small { margin-top: .06rem; color: var(--course-ink-soft); font-size: .42rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.eyebrow { display: flex; align-items: center; gap: .3rem; margin-top: .9rem; color: var(--course-accent-ink); font-size: .5rem; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
+.eyebrow svg { width: .8rem; height: .8rem; }
+.passage { margin-top: .38rem; font-size: .66rem; line-height: 1.4; }
+.destination { margin-top: .22rem; color: var(--course-ink-soft); font-size: .54rem; line-height: 1.45; }
+.actions { display: grid; width: 100%; grid-template-columns: 1fr auto; gap: .35rem; margin-top: .8rem; }
+.actions button { display: inline-flex; min-height: 2.6rem; align-items: center; justify-content: center; gap: .3rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .5rem .65rem; font-size: .55rem; font-weight: 800; }
+.actions button[aria-pressed="true"] { border-color: var(--course-accent); background: color-mix(in srgb, var(--course-accent) 12%, var(--course-canvas)); }
+.actions svg { width: .75rem; height: .75rem; }
+.note { margin-top: .55rem; color: var(--course-ink-soft); font-size: .43rem; line-height: 1.4; }
+
+@media (max-width: 78rem) {
+  .card { grid-template: "dial eyebrow actions" auto "dial passage actions" auto "dial destination actions" auto / 3.7rem minmax(0, 1fr) auto; justify-items: start; column-gap: .75rem; padding: .65rem .7rem; text-align: left; }
+  .dial { width: 3.6rem; grid-area: dial; }
+  .dial::before { width: 2.95rem; }
+  .dial strong { font-size: .72rem; }
+  .dial small { font-size: .34rem; }
+  .eyebrow { grid-area: eyebrow; margin-top: 0; }
+  .passage { grid-area: passage; margin-top: 0; }
+  .destination { grid-area: destination; margin-top: 0; }
+  .actions { width: auto; grid-area: actions; align-self: center; margin-top: 0; }
+  .note { display: none; }
+}
+
+@media (max-width: 30rem) {
+  .card { grid-template: "dial eyebrow actions" auto "dial passage actions" auto "dial destination actions" auto / 3.35rem minmax(0, 1fr) auto; gap: 0 .55rem; }
+  .dial { width: 3.25rem; }
+  .dial::before { width: 2.65rem; }
+  .actions button { min-width: 2.7rem; padding-inline: .55rem; }
+  .actions button:first-child { font-size: 0; }
+  .actions button:first-child svg { width: .85rem; height: .85rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dial { box-shadow: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .card { background: var(--course-canvas); backdrop-filter: none; }
+}
+
+@media (forced-colors: active) {
+  .card { background: Canvas; }
+  .dial { border: 2px solid Highlight; background: Canvas; }
+  .dial::before { background: Canvas; }
+  .actions button[aria-pressed="true"] { border: 2px solid Highlight; background: Canvas; }
+}

@@ -37,6 +37,22 @@
 
 .lumenMode .shell::before { opacity: .8; }
 
+.sightlineHorizon {
+  position: fixed;
+  z-index: 0;
+  width: min(54rem, calc(100vw - 3rem));
+  height: var(--sightline-height);
+  top: calc(42dvh - var(--sightline-height) / 2);
+  left: 50%;
+  border-block: 1px solid color-mix(in srgb, var(--course-accent) 34%, transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--course-accent) 4%, transparent) 18% 82%, transparent);
+  box-shadow: 0 0 3rem color-mix(in srgb, var(--course-accent) 7%, transparent);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.sightlineHorizon span { position: absolute; width: 4.5rem; height: 1px; top: 50%; left: 50%; background: linear-gradient(90deg, transparent, var(--course-accent), transparent); opacity: .55; transform: translate(-50%, -50%); }
+
 .topbar {
   position: sticky;
   z-index: 50;
@@ -231,6 +247,21 @@
   transition: background 500ms ease, box-shadow 500ms ease, transform 500ms cubic-bezier(.2, .8, .2, 1);
 }
 
+.passage::before {
+  position: absolute;
+  width: 2px;
+  top: .25rem;
+  bottom: .25rem;
+  left: -.8rem;
+  border-radius: 999px;
+  background: linear-gradient(transparent, var(--course-accent) 28% 72%, transparent);
+  box-shadow: 0 0 1.2rem color-mix(in srgb, var(--course-accent) 42%, transparent);
+  content: "";
+  opacity: 0;
+  transform: scaleY(.55);
+  transition: opacity 300ms ease, transform 500ms cubic-bezier(.2, .8, .2, 1);
+}
+
 .passage + .passage { margin-top: 1.15em; }
 .passage:has(.sourceHeading) { margin-top: 3rem; }
 .passageMarker {
@@ -254,6 +285,9 @@
 }
 .lumenMode .passage[data-active="true"] .passageMarker { color: var(--course-accent-ink); opacity: 1; transform: translateX(-.2rem); }
 .lumenMode .passage[data-active="true"] .passageMarker i { border-color: var(--course-accent); background: var(--course-accent); box-shadow: 0 0 0 .32rem color-mix(in srgb, var(--course-accent) 12%, transparent), 0 0 1.2rem color-mix(in srgb, var(--course-accent) 52%, transparent); }
+.passageSightlineMode .passage[data-active="true"]::before { opacity: 1; transform: scaleY(1); }
+.passageSightlineMode .passage[data-active="true"] { outline: 1px solid color-mix(in srgb, var(--course-accent) 18%, transparent); outline-offset: .45rem; }
+.passageSightlineMode .passage[data-nearby="true"] { background: linear-gradient(90deg, color-mix(in srgb, var(--course-accent) 3%, transparent), transparent 75%); }
 
 .sourceParagraph,
 .sourceList,
@@ -316,15 +350,19 @@ ol.sourceList { list-style: decimal; }
 .compassEyebrow svg { width: .8rem; height: .8rem; }
 .compassCard > strong { margin-top: .35rem; font-size: .66rem; line-height: 1.4; }
 .compassCard > span { margin-top: .2rem; color: var(--course-ink-soft); font-size: .55rem; }
-.compassCard > button { min-height: 2.6rem; margin-top: .8rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .55rem .75rem; font-size: .58rem; font-weight: 800; }
+.compassActions { display: grid; width: 100%; grid-template-columns: 1fr; gap: .35rem; margin-top: .8rem; }
+.compassActions button { display: inline-flex; min-height: 2.6rem; align-items: center; justify-content: center; gap: .3rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .55rem .65rem; font-size: .55rem; font-weight: 800; }
+.compassActions button[aria-pressed="true"] { border-color: var(--course-accent); background: color-mix(in srgb, var(--course-accent) 11%, var(--course-canvas)); }
+.compassActions svg { width: .75rem; height: .75rem; }
 .compassCard > small { margin-top: .55rem; color: var(--course-ink-soft); font-size: .45rem; }
 
-.themeFrame:not(.lumenMode) .lumenCompass { display: none; }
-.themeFrame:not(.lumenMode) .readerLayout { grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); }
-.focusMode .contentsRail,
-.focusMode .lumenCompass { display: none; }
+.themeFrame:not(.lumenMode):not(.voyageMode) .lumenCompass { display: none; }
+.themeFrame:not(.lumenMode):not(.voyageMode) .readerLayout { grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); }
+.focusMode .contentsRail { display: none; }
+.focusMode:not(.voyageMode) .lumenCompass { display: none; }
 .focusMode .readerLayout { display: block; width: min(100%, 74rem); }
 .focusMode .readingPaper { width: min(100%, calc(var(--reader-measure) + 5rem)); }
+.focusMode.voyageMode .readerLayout { display: grid; width: min(100%, 88rem); grid-template-columns: minmax(0, 1fr) minmax(8.5rem, 10.5rem); }
 
 .dialog {
   width: min(calc(100% - 1.5rem), 40rem);
@@ -363,6 +401,73 @@ ol.sourceList { list-style: decimal; }
 .atlasSummary strong { margin-top: .2rem; font-family: var(--font-longform), Georgia, serif; font-size: 1.15rem; }
 .atlasSummary em { margin-top: .25rem; color: var(--course-ink-soft); font-size: .55rem; font-style: normal; }
 .atlasCover { position: relative; display: block; width: 4rem; aspect-ratio: 2 / 3; overflow: hidden; border-radius: .65rem; box-shadow: var(--course-card-shadow); }
+
+.questMarks { margin-bottom: 1rem; border: 1px solid color-mix(in srgb, var(--course-accent) 28%, var(--course-line)); border-radius: 1rem; padding: .9rem; background: color-mix(in srgb, var(--course-accent) 4%, var(--course-page)); }
+.questMarks > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.questMarks > header p { color: var(--course-accent-ink); font-size: .48rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.questMarks > header h3 { margin-top: .12rem; font-family: var(--font-longform), Georgia, serif; font-size: 1.05rem; }
+.questMarks > header > span { display: grid; min-width: 1.8rem; min-height: 1.8rem; place-items: center; border-radius: 999px; background: var(--course-primary); color: var(--course-on-primary); font-size: .55rem; font-weight: 850; }
+.questMarks > div { display: grid; gap: .35rem; margin-top: .75rem; }
+.questMarks > div button { display: block; width: 100%; border-top: 1px solid var(--course-line); padding: .7rem .2rem .2rem; text-align: left; }
+.questMarks > div small,
+.questMarks > div strong { display: block; overflow-wrap: anywhere; }
+.questMarks > div small { color: var(--course-accent-ink); font-size: .48rem; font-weight: 800; }
+.questMarks > div strong { display: -webkit-box; overflow: hidden; margin-top: .2rem; color: var(--course-ink); font-family: var(--font-longform), Georgia, serif; font-size: .72rem; font-weight: 600; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.questMarks > p { margin-top: .75rem; color: var(--course-ink-soft); font-size: .48rem; line-height: 1.5; }
+
+.voyageDialog { width: min(calc(100% - 1.5rem), 46rem); }
+.voyageBody { display: grid; gap: 1rem; max-height: 72dvh; overflow-y: auto; padding: 1.2rem; }
+.voyageBody fieldset { border: 1px solid var(--course-line); border-radius: 1rem; padding: 1rem; }
+.voyageBody legend { padding-inline: .35rem; font-size: .65rem; font-weight: 850; }
+.voyageIntro { position: relative; display: grid; overflow: hidden; min-height: 11rem; grid-template-columns: minmax(0, 1fr) 7rem; align-items: center; border-radius: 1.2rem; padding: 1.4rem; background: radial-gradient(circle at 90% 20%, color-mix(in srgb, var(--course-accent) 36%, transparent), transparent 9rem), var(--course-primary); color: var(--course-on-primary); isolation: isolate; }
+.voyageIntro::after { position: absolute; width: 13rem; aspect-ratio: 1; right: -4rem; border: 1px solid color-mix(in srgb, var(--course-accent) 46%, transparent); border-radius: 50%; box-shadow: 0 0 0 2.8rem color-mix(in srgb, var(--course-accent) 6%, transparent), 0 0 0 5.2rem color-mix(in srgb, var(--course-accent) 4%, transparent); content: ""; }
+.voyageIntro > div { position: relative; z-index: 1; }
+.voyageIntro > div > p { color: color-mix(in srgb, var(--course-accent) 76%, white); font-size: .5rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+.voyageIntro h3 { max-width: 24ch; margin-top: .4rem; font-family: var(--font-longform), Georgia, serif; font-size: clamp(1.45rem, 4vw, 2.2rem); line-height: 1.05; }
+.voyageIntro span { display: block; max-width: 34rem; margin-top: .7rem; color: color-mix(in srgb, var(--course-on-primary) 72%, transparent); font-size: .58rem; line-height: 1.6; }
+.voyageIntro > svg { position: relative; z-index: 1; width: 4.2rem; height: 4.2rem; justify-self: center; color: var(--course-accent); filter: drop-shadow(0 0 1.4rem color-mix(in srgb, var(--course-accent) 45%, transparent)); }
+.voyageGoalGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.voyageGoalGrid button { display: grid; min-height: 5.2rem; align-content: center; border: 1px solid var(--course-line-deep); border-radius: .9rem; padding: .75rem; text-align: left; }
+.voyageGoalGrid button:hover { border-color: var(--course-accent); background: color-mix(in srgb, var(--course-accent) 5%, var(--course-canvas)); }
+.voyageGoalGrid button[aria-pressed="true"] { border-color: var(--course-primary); background: var(--course-primary); color: var(--course-on-primary); }
+.voyageGoalGrid button > span { font-size: .68rem; font-weight: 850; }
+.voyageGoalGrid button > small { margin-top: .25rem; color: var(--course-ink-soft); font-size: .5rem; line-height: 1.4; }
+.voyageGoalGrid button[aria-pressed="true"] > small { color: color-mix(in srgb, var(--course-on-primary) 72%, transparent); }
+.endVoyageButton { min-height: 2.75rem; margin-top: .65rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .55rem .8rem; font-size: .58rem; font-weight: 800; }
+.fieldIntro { margin-bottom: .7rem; color: var(--course-ink-soft); font-size: .54rem; line-height: 1.55; }
+.sightlineGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .45rem; }
+.sightlineGrid label { position: relative; }
+.sightlineGrid input { position: absolute; opacity: 0; }
+.sightlineGrid label > span { display: grid; min-height: 4.5rem; align-content: center; border: 1px solid var(--course-line-deep); border-radius: .85rem; padding: .65rem; text-align: center; }
+.sightlineGrid strong,
+.sightlineGrid small { display: block; }
+.sightlineGrid strong { font-size: .62rem; }
+.sightlineGrid small { margin-top: .2rem; color: var(--course-ink-soft); font-size: .46rem; line-height: 1.35; }
+.sightlineGrid input:checked + span { border-color: var(--course-primary); background: var(--course-primary); color: var(--course-on-primary); }
+.sightlineGrid input:checked + span small { color: color-mix(in srgb, var(--course-on-primary) 72%, transparent); }
+.sightlineGrid input:focus-visible + span { outline: 3px solid var(--course-focus-ring); outline-offset: 3px; }
+.trailSummary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; border: 1px solid color-mix(in srgb, var(--course-accent) 28%, var(--course-line)); border-radius: 1rem; padding: 1rem; background: color-mix(in srgb, var(--course-accent) 4%, var(--course-page)); }
+.trailSummary p { color: var(--course-accent-ink); font-size: .48rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.trailSummary strong,
+.trailSummary span { display: block; }
+.trailSummary strong { margin-top: .15rem; font-size: .7rem; }
+.trailSummary span { margin-top: .22rem; color: var(--course-ink-soft); font-size: .5rem; line-height: 1.5; }
+.trailSummary button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .35rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .6rem .85rem; font-size: .55rem; font-weight: 800; }
+.trailSummary button[aria-pressed="true"] { border-color: var(--course-accent); background: color-mix(in srgb, var(--course-accent) 12%, var(--course-canvas)); }
+.trailSummary button:disabled { opacity: .45; }
+.trailSummary svg { width: .8rem; height: .8rem; }
+.voyagePrivacy { display: flex; align-items: flex-start; gap: .45rem; color: var(--course-ink-soft); font-size: .5rem; line-height: 1.55; }
+.voyagePrivacy svg { width: .8rem; height: .8rem; flex: 0 0 auto; margin-top: .05rem; }
+
+.restHarbor { position: fixed; z-index: 60; display: grid; width: min(calc(100% - 2rem), 46rem); grid-template-columns: 3.2rem minmax(0, 1fr) auto; align-items: center; gap: 1rem; right: 1rem; bottom: calc(1rem + env(safe-area-inset-bottom)); overflow: hidden; border: 1px solid color-mix(in srgb, var(--course-accent) 38%, var(--course-line-deep)); border-radius: 1.4rem; padding: .85rem 1rem; background: color-mix(in srgb, var(--course-canvas) 91%, transparent); box-shadow: 0 24px 80px color-mix(in srgb, var(--course-ink) 18%, transparent); backdrop-filter: blur(22px); }
+.harborGlow { display: grid; width: 3rem; aspect-ratio: 1; place-items: center; border-radius: 50%; background: var(--course-primary); color: var(--course-accent); box-shadow: 0 0 2rem color-mix(in srgb, var(--course-accent) 25%, transparent); }
+.harborGlow svg { width: 1.2rem; height: 1.2rem; }
+.restHarbor p { color: var(--course-accent-ink); font-size: .46rem; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+.restHarbor h2 { margin-top: .12rem; font-size: 1.55rem; line-height: 1; }
+.restHarbor div:nth-child(2) > span { display: block; margin-top: .3rem; color: var(--course-ink-soft); font-size: .54rem; line-height: 1.45; }
+.harborActions { display: flex; gap: .4rem; }
+.restHarbor button { min-height: 2.75rem; border: 1px solid var(--course-line-deep); border-radius: 999px; padding: .55rem .8rem; font-size: .55rem; font-weight: 800; }
+.restHarbor button:first-child { border-color: var(--course-primary); background: var(--course-primary); color: var(--course-on-primary); }
 
 .settingsBody { display: grid; gap: 1rem; max-height: 72dvh; overflow-y: auto; padding: 1.2rem; }
 .settingsBody fieldset { border: 1px solid var(--course-line); border-radius: 1rem; padding: 1rem; }
@@ -415,8 +520,9 @@ ol.sourceList { list-style: decimal; }
   .compassEyebrow { grid-area: eyebrow; margin-top: 0; }
   .compassCard > strong { grid-area: title; margin-top: 0; }
   .compassCard > span { grid-area: meta; margin-top: 0; }
-  .compassCard > button { grid-area: button; align-self: center; min-height: 2.75rem; margin-top: 0; }
+  .compassActions { width: auto; grid-area: button; align-self: center; grid-template-columns: auto auto; margin-top: 0; }
   .compassCard > small { display: none; }
+  .focusMode.voyageMode .readerLayout { display: block; width: min(100%, 62rem); }
 }
 
 @media (max-width: 64rem) {
@@ -466,10 +572,26 @@ ol.sourceList { list-style: decimal; }
   .compassCard { grid-template: "dial eyebrow button" auto "dial title button" auto "dial meta button" auto / 3.35rem minmax(0, 1fr) auto; }
   .lumenDial { width: 3.25rem; }
   .lumenDial::before { width: 2.65rem; }
-  .compassCard > button { max-width: 7rem; padding-inline: .65rem; }
+  .compassActions { gap: .2rem; }
+  .compassActions button { min-width: 2.7rem; padding-inline: .55rem; }
+  .compassActions button:first-child { font-size: 0; }
+  .compassActions button:first-child svg { width: .85rem; height: .85rem; }
   .dialog { width: calc(100% - .7rem); max-height: calc(100dvh - .7rem); border-radius: 1.1rem; }
   .dialogBody { max-height: 64dvh; padding-inline: .8rem; }
   .searchLabel { padding-inline: .8rem; }
+  .voyageBody { max-height: 76dvh; padding: .8rem; }
+  .voyageIntro { min-height: 10rem; grid-template-columns: minmax(0, 1fr) 3.5rem; padding: 1.1rem; }
+  .voyageIntro > svg { width: 2.8rem; height: 2.8rem; }
+  .voyageGoalGrid { grid-template-columns: 1fr; }
+  .sightlineGrid { grid-template-columns: 1fr; }
+  .sightlineGrid label > span { min-height: 3.6rem; }
+  .trailSummary { grid-template-columns: 1fr; }
+  .trailSummary button { width: 100%; }
+  .restHarbor { width: calc(100% - .9rem); grid-template-columns: 2.7rem minmax(0, 1fr); right: .45rem; bottom: calc(.45rem + env(safe-area-inset-bottom)); gap: .7rem; padding: .7rem; }
+  .harborGlow { width: 2.6rem; }
+  .restHarbor h2 { font-size: 1.25rem; }
+  .harborActions { grid-column: 1 / -1; }
+  .restHarbor button { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -477,6 +599,8 @@ ol.sourceList { list-style: decimal; }
   .headerProgress span,
   .readingPaper,
   .passage,
+  .passage::before,
+  .sightlineHorizon,
   .passageMarker,
   .backLink,
   .topActions button,
@@ -489,6 +613,13 @@ ol.sourceList { list-style: decimal; }
   .passageMarker { opacity: .8; }
   .lumenMode .passage[data-active="true"] { outline: 2px solid var(--course-accent-ink); background: var(--course-canvas); box-shadow: none; }
   .compassCard { background: var(--course-canvas); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .topbar,
+  .compassCard,
+  .dialog,
+  .restHarbor { background: var(--course-canvas); backdrop-filter: none; }
 }
 
 @media (forced-colors: active) {
@@ -504,4 +635,17 @@ ol.sourceList { list-style: decimal; }
   .lumenDial { border: 2px solid Highlight; background: Canvas; }
   .lumenDial::before { background: Canvas; }
   .modeGrid input:checked + span { border: 2px solid Highlight; }
+  .sightlineHorizon { border-color: Highlight; background: Canvas; box-shadow: none; }
+  .sightlineHorizon span { background: Highlight; }
+  .passageSightlineMode .passage[data-active="true"] { outline: 2px solid Highlight; }
+  .passageSightlineMode .passage[data-active="true"]::before { background: Highlight; box-shadow: none; }
+  .voyageIntro { border: 2px solid CanvasText; background: Canvas; color: CanvasText; }
+  .voyageIntro::after { display: none; }
+  .voyageIntro > div > p,
+  .voyageIntro span,
+  .voyageIntro > svg { color: CanvasText; }
+  .voyageGoalGrid button[aria-pressed="true"],
+  .sightlineGrid input:checked + span,
+  .compassActions button[aria-pressed="true"] { border: 2px solid Highlight; background: Canvas; color: CanvasText; }
+  .restHarbor { border: 2px solid CanvasText; background: Canvas; }
 }

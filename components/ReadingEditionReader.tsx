@@ -8,8 +8,17 @@ import ArtifactCoverImage from "@/components/ArtifactCoverImage";
 import CoverImageEditor from "@/components/CoverImageEditor";
 import CourseAppearanceFrame from "@/components/CourseAppearanceFrame";
 import CourseWorld from "@/components/CourseWorld";
+import LongReadingDock from "@/components/LongReadingDock";
 import LumenField from "@/components/LumenField";
 import ReadingSpine from "@/components/ReadingSpine";
+import {
+  isSightlineMode,
+  sanitizeQuestMarks,
+  VOYAGE_GOALS,
+  type QuestMark,
+  type SightlineMode,
+  type VoyageGoal,
+} from "@/lib/long-reading";
 import {
   parseReadingDisplayBlocks,
   readingBookProgress,
@@ -29,6 +38,7 @@ import type {
 import styles from "./ReadingEditionReader.module.css";
 
 type ReadingWidth = "focused" | "balanced" | "wide";
+type VoyageSession = { id: number; goal: VoyageGoal };
 type ReadingEditionPreview = {
   book: ReadingEditionMetadata;
   units: ReadingUnit[];
@@ -42,6 +52,7 @@ type StoredSettings = {
   atmosphere?: ReadingAtmosphereMode;
   lumen?: boolean;
   focus?: boolean;
+  sightline?: SightlineMode;
 };
 
 function progressKey(bookId: number) {
@@ -50,6 +61,10 @@ function progressKey(bookId: number) {
 
 function settingsKey() {
   return "bookquest.reading-room.settings";
+}
+
+function questMarksKey(bookId: number) {
+  return `bookquest.book.${bookId}.quest-marks`;
 }
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -92,6 +107,17 @@ function unitLabel(book: ReadingEditionMetadata, index: number) {
 function timeLeftLabel(minutes: number) {
   if (minutes <= 0) return "Last passage";
   return minutes === 1 ? "About 1 min left" : `About ${minutes} min left`;
+}
+
+function voyageGoalName(goal: (typeof VOYAGE_GOALS)[number]) {
+  return goal === "open" ? "Open voyage" : `${goal} minutes`;
+}
+
+function voyageGoalDescription(goal: (typeof VOYAGE_GOALS)[number]) {
+  if (goal === "open") return "No clock. Keep only active reading time.";
+  if (goal === 25) return "A focused chapter-sized journey.";
+  if (goal === 45) return "Settle into a substantial reading arc.";
+  return "A long horizon with a natural stopping point.";
 }
 
 function displayUnitTitle(title: string) {
@@ -161,6 +187,11 @@ export default function ReadingEditionReader({
   const [showCover, setShowCover] = useState(false);
   const [lumenMode, setLumenMode] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [sightline, setSightline] = useState<SightlineMode>("off");
+  const [voyageSession, setVoyageSession] = useState<VoyageSession | null>(null);
+  const [restHarborMilliseconds, setRestHarborMilliseconds] = useState<number | null>(null);
+  const [questMarks, setQuestMarks] = useState<QuestMark[]>([]);
+  const [questMarksReady, setQuestMarksReady] = useState(false);
   const [atmosphere, setAtmosphere] = useState<ReadingAtmosphereMode>("auto");
   const [fontSize, setFontSize] = useState(19);
   const [lineHeight, setLineHeight] = useState(1.82);
@@ -188,6 +219,7 @@ export default function ReadingEditionReader({
   const topbarRef = useRef<HTMLElement>(null);
   const tocDialog = useRef<HTMLDialogElement>(null);
   const appearanceDialog = useRef<HTMLDialogElement>(null);
+  const voyageDialog = useRef<HTMLDialogElement>(null);
   const progressRef = useRef<ReadingProgress | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -195,6 +227,8 @@ export default function ReadingEditionReader({
 
   const blocks = useMemo(() => parseReadingDisplayBlocks(unit?.text ?? ""), [unit]);
   const activeBlock = blocks[activeBlockIndex] ?? blocks[0] ?? null;
+  const activeMarkId = activeBlock ? `${unitIndex}:${activeBlock.id}` : null;
+  const activePassageMarked = Boolean(activeMarkId && questMarks.some((mark) => mark.id === activeMarkId));
 
   useEffect(() => {
     const settings = readStoredJson<StoredSettings>(settingsKey(), {});
@@ -204,13 +238,24 @@ export default function ReadingEditionReader({
     if (settings.atmosphere === "auto" || settings.atmosphere === "paper" || settings.atmosphere === "night" || settings.atmosphere === "focus") setAtmosphere(settings.atmosphere);
     if (typeof settings.lumen === "boolean") setLumenMode(settings.lumen);
     if (typeof settings.focus === "boolean") setFocusMode(settings.focus);
+    if (isSightlineMode(settings.sightline)) setSightline(settings.sightline);
     setSettingsReady(true);
   }, []);
 
   useEffect(() => {
     if (!settingsReady) return;
-    writeStoredJson(settingsKey(), { fontSize, lineHeight, width, atmosphere, lumen: lumenMode, focus: focusMode } satisfies StoredSettings);
-  }, [atmosphere, focusMode, fontSize, lineHeight, lumenMode, settingsReady, width]);
+    writeStoredJson(settingsKey(), { fontSize, lineHeight, width, atmosphere, lumen: lumenMode, focus: focusMode, sightline } satisfies StoredSettings);
+  }, [atmosphere, focusMode, fontSize, lineHeight, lumenMode, settingsReady, sightline, width]);
+
+  useEffect(() => {
+    setQuestMarks(sanitizeQuestMarks(readStoredJson<unknown>(questMarksKey(bookId), [])));
+    setQuestMarksReady(true);
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!questMarksReady) return;
+    writeStoredJson(questMarksKey(bookId), questMarks);
+  }, [bookId, questMarks, questMarksReady]);
 
   const rememberUnit = useCallback((next: ReadingUnit) => {
     unitCache.current.set(next.index, next);
@@ -533,7 +578,7 @@ export default function ReadingEditionReader({
     return () => { clearTimeout(timer); controller.abort(); };
   }, [book, bookId, preview, query]);
 
-  const moveTo = useCallback((nextIndex: number, completingCurrent = false) => {
+  const moveTo = useCallback((nextIndex: number, completingCurrent = false, restoreAt = 0, passageId?: string) => {
     if (!book) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
@@ -543,14 +588,50 @@ export default function ReadingEditionReader({
         : progressRef.current;
       syncProgress(current);
     }
-    void openUnit(nextIndex, 0);
+    void openUnit(nextIndex, restoreAt, passageId);
   }, [book, openUnit, syncProgress, unitIndex]);
 
   const finishReading = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
     if (progressRef.current) syncProgress({ ...progressRef.current, unitProgress: 100, overallProgress: 100, updatedAt: new Date().toISOString() });
+    setVoyageSession(null);
   }, [syncProgress]);
+
+  const toggleQuestMark = useCallback(() => {
+    if (!activeBlock || !unit) return;
+    const id = `${unitIndex}:${activeBlock.id}`;
+    const alreadyMarked = questMarks.some((mark) => mark.id === id);
+    setQuestMarks((current) => alreadyMarked
+      ? current.filter((mark) => mark.id !== id)
+      : [{
+          id,
+          unitIndex,
+          unitTitle: unit.title,
+          passageId: activeBlock.id,
+          excerpt: activeBlock.text.replace(/\s+/gu, " ").trim().slice(0, 180),
+          createdAt: new Date().toISOString(),
+        }, ...current].slice(0, 200));
+    setReaderAnnouncement(alreadyMarked ? "Quest Mark removed from this passage." : "Passage saved as a private Quest Mark in this browser.");
+  }, [activeBlock, questMarks, unit, unitIndex]);
+
+  const startVoyage = useCallback((goal: VoyageGoal) => {
+    setRestHarborMilliseconds(null);
+    setVoyageSession({ id: Date.now(), goal });
+    setReaderAnnouncement(goal === "open" ? "Open Lumen Voyage started." : `${goal}-minute Lumen Voyage started.`);
+  }, []);
+
+  const endVoyage = useCallback(() => {
+    setVoyageSession(null);
+    setRestHarborMilliseconds(null);
+    setReaderAnnouncement("Lumen Voyage ended. Your reading position is saved.");
+  }, []);
+
+  const reachRestHarbor = useCallback((activeMilliseconds: number) => {
+    setVoyageSession(null);
+    setRestHarborMilliseconds(activeMilliseconds);
+    setReaderAnnouncement("You reached a natural stopping point. Continue when you are ready.");
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -594,10 +675,13 @@ export default function ReadingEditionReader({
     "--reader-measure": width === "focused" ? "36rem" : width === "wide" ? "50rem" : "43rem",
   } as CSSProperties;
   const dialStyle = { "--dial-progress": `${unitProgress * 3.6}deg` } as CSSProperties;
+  const sightlineStyle = { "--sightline-height": `${Math.round(fontSize * lineHeight * 3 + 18)}px` } as CSSProperties;
+  const voyageModeActive = Boolean(voyageSession || sightline !== "off" || focusMode);
 
-  return <CourseAppearanceFrame appearance={appearance} className={`${styles.themeFrame} ${lumenMode ? styles.lumenMode : ""} ${focusMode ? styles.focusMode : ""}`}>
+  return <CourseAppearanceFrame appearance={appearance} className={`${styles.themeFrame} ${lumenMode ? styles.lumenMode : ""} ${focusMode ? styles.focusMode : ""} ${voyageSession ? styles.voyageMode : ""} ${sightline === "passage" ? styles.passageSightlineMode : ""}`}>
     <div ref={shellRef} className={styles.shell}>
       {lumenMode && <LumenField seed={`${book.id}:${book.title}:${unitIndex}`} progress={visibleProgress} signal={activeBlock?.signal ?? .5} enabled />}
+      {sightline === "horizon" && !showCover && <div className={styles.sightlineHorizon} style={sightlineStyle} aria-hidden="true"><span /></div>}
       <header ref={topbarRef} className={styles.topbar}>
         <div className={styles.topbarInner}>
           <Link href={preview?.backHref ?? "/books"} className={styles.backLink} aria-label={`Return to ${preview?.backLabel ?? "Reading Room"}`}><span aria-hidden="true">←</span><span>{preview?.backLabel ?? "Reading Room"}</span></Link>
@@ -606,7 +690,7 @@ export default function ReadingEditionReader({
             <button type="button" onClick={() => { setAtlasOpen(true); tocDialog.current?.showModal(); }} aria-label="Open book path and search"><AppIcon name="library" /><span>Book path</span></button>
             <button type="button" onClick={() => appearanceDialog.current?.showModal()} aria-label="Open reading appearance"><span aria-hidden="true">Aa</span><span>Vibe</span></button>
             <button type="button" onClick={() => setLumenMode((current) => !current)} aria-pressed={lumenMode} aria-label={lumenMode ? "Turn off Lumen reading light" : "Turn on Lumen reading light"}><AppIcon name="spark" /><span>Lumen</span></button>
-            <button type="button" onClick={() => setFocusMode((current) => !current)} aria-pressed={focusMode} aria-label={focusMode ? "Leave distraction-free focus" : "Enter distraction-free focus"}><AppIcon name="bookmark" /><span>Focus</span></button>
+            <button type="button" onClick={() => voyageDialog.current?.showModal()} aria-pressed={voyageModeActive} aria-label="Open Lumen Voyage long-reading modes"><AppIcon name="compass" /><span>Voyage</span></button>
           </div>
         </div>
         <div className={styles.headerProgress} role="progressbar" aria-label={`Reading progress through ${book.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(visibleProgress)}><span style={{ width: `${visibleProgress}%` }} /></div>
@@ -654,16 +738,35 @@ export default function ReadingEditionReader({
         </main>
 
         <aside className={styles.lumenCompass} aria-label="Live reading position">
-          <div className={styles.compassCard}>
+          {voyageSession ? <LongReadingDock
+            key={voyageSession.id}
+            goal={voyageSession.goal}
+            activePassageId={activeBlock?.id ?? null}
+            passageLabel={`Passage ${Math.min(blocks.length, activeBlockIndex + 1)} of ${blocks.length}`}
+            marked={activePassageMarked}
+            onToggleMark={toggleQuestMark}
+            onEnd={endVoyage}
+            onHarbor={reachRestHarbor}
+          /> : <div className={styles.compassCard}>
             <div className={styles.lumenDial} style={dialStyle}><span><strong>{Math.round(unitProgress)}%</strong><small>{book.unitKind}</small></span></div>
             <p className={styles.compassEyebrow}><AppIcon name="spark" /> Lumen</p>
             <strong>Passage {Math.min(blocks.length, activeBlockIndex + 1)} of {blocks.length}</strong>
             <span>{timeLeftLabel(chapterMinutesLeft)}</span>
-            <button type="button" onClick={() => setLumenMode((current) => !current)} aria-pressed={lumenMode}>{lumenMode ? "Quiet the light" : "Wake the page"}</button>
+            <div className={styles.compassActions}>
+              <button type="button" onClick={toggleQuestMark} aria-pressed={activePassageMarked}><AppIcon name="bookmark" />{activePassageMarked ? "Marked" : "Mark"}</button>
+              <button type="button" onClick={() => setLumenMode((current) => !current)} aria-pressed={lumenMode}>{lumenMode ? "Quiet light" : "Wake light"}</button>
+            </div>
             <small>Alt + L toggles Lumen</small>
-          </div>
+          </div>}
         </aside>
       </div>}
+
+      {restHarborMilliseconds !== null && <section className={styles.restHarbor} aria-labelledby={`rest-harbor-${book.id}`}>
+        <div className={styles.harborGlow} aria-hidden="true"><AppIcon name="spark" /></div>
+        <div><p>Natural stopping point · {Math.max(1, Math.round(restHarborMilliseconds / 60_000))} active min</p><h2 id={`rest-harbor-${book.id}`} className="display">You reached a quiet harbor.</h2><span>Look away, move a little, or continue when the next page is calling.</span></div>
+        <div className={styles.harborActions}><button type="button" onClick={() => startVoyage(10)}>Continue 10 min</button><button type="button" onClick={() => setRestHarborMilliseconds(null)}>End for now</button></div>
+        <span className="screen-reader-text" role="status" aria-live="polite">You reached a natural stopping point.</span>
+      </section>}
 
       <p className="screen-reader-text" role="status" aria-live="polite">{unitLoading ? "Opening the next part." : readerAnnouncement}</p>
 
@@ -675,8 +778,37 @@ export default function ReadingEditionReader({
             <div className={styles.atlasSummary}>
               <button type="button" onClick={() => { setShowCover(true); tocDialog.current?.close(); }}><span className={styles.atlasCover}><CourseWorld seed={`${book.id}:${book.title}:atlas`} theme={appearance.worldTheme} title={book.title} progress={visibleProgress} className={styles.world} /><ArtifactCoverImage kind="book" artifactId={book.id} contentHash={book.coverHash} variant="book" /></span><span><small>Lumen Edition</small><strong>{book.title}</strong><em>{Math.round(visibleProgress)}% explored · {bookMinutesLeft > 0 ? `${bookMinutesLeft} min left` : "complete"}</em></span></button>
             </div>
+            {questMarks.length > 0 && <section className={styles.questMarks} aria-labelledby={`quest-marks-${book.id}`}>
+              <header><div><p>Private return trail</p><h3 id={`quest-marks-${book.id}`}>Quest Marks</h3></div><span>{questMarks.length}</span></header>
+              <div>{questMarks.map((mark) => <button key={mark.id} type="button" onClick={() => moveTo(mark.unitIndex, false, 0, mark.passageId)}><small>{mark.unitTitle}</small><strong>{mark.excerpt}</strong></button>)}</div>
+              <p>Saved in this browser. Open a marked passage and use Mark again to remove it.</p>
+            </section>}
             <ReadingSpine outline={book.outline} currentIndex={unitIndex} unitProgress={unitProgress} onSelect={(index) => moveTo(index)} variant="atlas" />
           </> : null}
+        </div>
+      </dialog>
+
+      <dialog ref={voyageDialog} className={`${styles.dialog} ${styles.voyageDialog}`} aria-labelledby={`lumen-voyage-${book.id}`}>
+        <header><div><p>Long-read studio</p><h2 id={`lumen-voyage-${book.id}`} className="display">Lumen Voyage</h2></div><button type="button" onClick={() => voyageDialog.current?.close()} aria-label="Close Lumen Voyage controls">×</button></header>
+        <div className={styles.voyageBody}>
+          <section className={styles.voyageIntro}>
+            <div><p>{voyageSession ? "Voyage in progress" : "Choose a reading horizon"}</p><h3>{voyageSession ? (voyageSession.goal === "open" ? "Open destination" : `${voyageSession.goal}-minute destination`) : "Read longer without turning it into a race."}</h3><span>Only visible, recently active reading time counts. Stops wait for a passage boundary.</span></div>
+            <AppIcon name="compass" />
+          </section>
+
+          <fieldset><legend>Destination</legend><div className={styles.voyageGoalGrid}>{VOYAGE_GOALS.map((goal) => <button key={goal} type="button" onClick={() => startVoyage(goal)} aria-pressed={voyageSession?.goal === goal}><span>{voyageGoalName(goal)}</span><small>{voyageGoalDescription(goal)}</small></button>)}</div>{voyageSession && <button type="button" className={styles.endVoyageButton} onClick={endVoyage}>End current voyage</button>}</fieldset>
+
+          <fieldset><legend>Sightline</legend><p className={styles.fieldIntro}>A visual tracking layer that never rewrites, hides, or fades the source text.</p><div className={styles.sightlineGrid}>{([
+            ["off", "Natural", "The original Lumen page"],
+            ["horizon", "Horizon", "A three-line reading ribbon"],
+            ["passage", "Passage", "Frame the live passage"],
+          ] as const).map(([mode, name, description]) => <label key={mode}><input type="radio" name="reading-sightline" value={mode} checked={sightline === mode} onChange={() => setSightline(mode)} /><span><strong>{name}</strong><small>{description}</small></span></label>)}</div></fieldset>
+
+          <fieldset><legend>Sanctuary</legend><label className={styles.lumenToggle}><input type="checkbox" checked={focusMode} onChange={(event) => setFocusMode(event.target.checked)} /><span aria-hidden="true"><i /></span><strong>Quiet the room</strong><small>Hide the Book Spine and ordinary compass. Active Voyage controls remain within reach.</small></label></fieldset>
+
+          <section className={styles.trailSummary}><div><p>Return trail</p><strong>{questMarks.length === 0 ? "No Quest Marks yet" : `${questMarks.length} saved ${questMarks.length === 1 ? "passage" : "passages"}`}</strong><span>Marks stay private in this browser and appear inside Book Atlas.</span></div><button type="button" onClick={toggleQuestMark} aria-pressed={activePassageMarked} disabled={showCover || !activeBlock}><AppIcon name="bookmark" />{activePassageMarked ? "Remove current mark" : "Mark current passage"}</button></section>
+
+          <p className={styles.voyagePrivacy}><AppIcon name="lock" /> Voyage runs locally. No AI calls, credits, sound, streak pressure, or source rewriting.</p>
         </div>
       </dialog>
 
@@ -684,7 +816,6 @@ export default function ReadingEditionReader({
         <header><div><p>Make the room yours</p><h2 id={`reading-vibe-${book.id}`} className="display">Reading vibe</h2></div><button type="button" onClick={() => appearanceDialog.current?.close()} aria-label="Close reading appearance">×</button></header>
         <div className={styles.settingsBody}>
           <fieldset><legend>Living page</legend><label className={styles.lumenToggle}><input type="checkbox" checked={lumenMode} onChange={(event) => setLumenMode(event.target.checked)} /><span aria-hidden="true"><i /></span><strong>Lumen reading light</strong><small>Follows your active passage and evolves with progress. No AI, sound, or rewritten text.</small></label><small>Keyboard shortcut: Alt + L. Reduced-motion preferences are respected automatically.</small></fieldset>
-          <fieldset><legend>Distraction-free focus</legend><label className={styles.lumenToggle}><input type="checkbox" checked={focusMode} onChange={(event) => setFocusMode(event.target.checked)} /><span aria-hidden="true"><i /></span><strong>Quiet the room</strong><small>Hides the Book Spine and Lumen compass while preserving your typography and atmosphere.</small></label></fieldset>
           {!preview && <fieldset><legend>Book cover</legend><div className={styles.coverSettingPreview} aria-label="Current book cover preview"><CourseWorld seed={`${book.id}:${book.title}:settings`} theme={appearance.worldTheme} title={book.title} progress={visibleProgress} className={styles.world} /><ArtifactCoverImage kind="book" artifactId={book.id} contentHash={book.coverHash} variant="book" /></div><CoverImageEditor kind="book" artifactId={book.id} title={book.title} coverHash={book.coverHash} compact onChanged={(coverHash) => setBook((current) => current ? { ...current, coverHash } : current)} /></fieldset>}
           <fieldset><legend>Atmosphere</legend><div className={styles.modeGrid}>{(["auto", "paper", "night", "focus"] as const).map((mode) => <label key={mode}><input type="radio" name="reading-atmosphere" value={mode} checked={atmosphere === mode} onChange={() => setAtmosphere(mode)} /><span>{mode === "auto" ? `Auto · ${READING_VIBES[book.vibeId].name}` : mode === "paper" ? "Paper" : mode === "night" ? "Night" : "Clear focus"}</span></label>)}</div><small>Auto uses deterministic source signals. It never calls an AI model.</small></fieldset>
           <fieldset><legend>Text size</legend><div className={styles.stepper}><button type="button" onClick={() => setFontSize((value) => clamp(value - 1, 16, 25))} disabled={fontSize <= 16} aria-label="Decrease text size">A−</button><span>{fontSize}px</span><button type="button" onClick={() => setFontSize((value) => clamp(value + 1, 16, 25))} disabled={fontSize >= 25} aria-label="Increase text size">A+</button></div></fieldset>
